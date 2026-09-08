@@ -1,0 +1,97 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Helper function to check if the user is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    // Helper function to check if the authenticated user is accessing their own data
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+    
+    // Helper function to check if the user has an admin role
+    function isAdmin() {
+      return isAuthenticated() && (
+        request.auth.token.role == 'super_admin' || 
+        request.auth.token.role == 'ministry_admin' ||
+        request.auth.token.role == 'content_manager' ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['super_admin', 'ministry_admin', 'content_manager', 'teacher', 'moderator'])
+      );
+    }
+
+    // User Profile
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      allow create: if isOwner(userId);
+      allow update: if isOwner(userId) || isAdmin();
+      allow delete: if isAdmin();
+      
+      // Isolated Private Subcollections for each user UID
+      match /notes/{noteId} {
+        allow read, write: if isOwner(userId);
+      }
+      
+      match /bookmarks/{bookmarkId} {
+        allow read, write: if isOwner(userId);
+      }
+      
+      match /highlights/{highlightId} {
+        allow read, write: if isOwner(userId);
+      }
+      
+      match /dreams/{dreamId} {
+        allow read, write: if isOwner(userId);
+      }
+      
+      match /visions/{visionId} {
+        allow read, write: if isOwner(userId);
+      }
+      
+      match /prayers/{prayerId} {
+        allow read, write: if isOwner(userId);
+      }
+      
+      match /readingProgress/{progressId} {
+        allow read, write: if isOwner(userId);
+      }
+
+      match /savedEncouragements/{itemId} {
+        allow read, write: if isOwner(userId);
+      }
+    }
+
+    // Words of Encouragement (Daily text messages & reflections)
+    match /encouragements/{encouragementId} {
+      allow read: if true; // Publicly accessible to all believers
+      allow create, update, delete: if isAuthenticated(); // Enabled for users and leaders to post and share encouragement
+    }
+
+    // Community Prayer Requests
+    match /prayers/{prayerId} {
+      allow read: if true;
+      allow create: if isAuthenticated();
+      allow update, delete: if isAuthenticated() && (resource.data.authorId == request.auth.uid || isAdmin());
+    }
+
+    match /studyPlans/{planId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /communityPosts/{postId} {
+      allow read: if true;
+      allow create: if isAuthenticated();
+      allow update: if isAuthenticated(); // Allows community members to increment prayer count and add prayer responses
+      allow delete: if isAuthenticated() && (resource.data.authorId == request.auth.uid || isAdmin());
+    }
+
+    match /feedback/{feedbackId} {
+      allow create: if true;
+      allow read, update, delete: if isAdmin();
+    }
+  }
+}

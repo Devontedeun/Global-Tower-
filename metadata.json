@@ -1,0 +1,6 @@
+{
+  "name": "Global Tower of Christ",
+  "description": "A comprehensive Bible-based research and discipleship platform featuring biblical doctrine, dreams & visions interpretation, biblical symbols dictionary, scripture inquiry, and interactive study plans.",
+  "requestFramePermissions": ["microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

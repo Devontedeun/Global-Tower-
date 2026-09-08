@@ -1,0 +1,28 @@
+{
+  "name": "Global Tower of Christ",
+  "short_name": "Global Tower",
+  "description": "A premier digital Christian ministry platform for Bible study, sermon streaming, AI-powered Spiritual Insight, dream & vision journals, and global discipleship.",
+  "start_url": "/",
+  "id": "/",
+  "display": "standalone",
+  "display_override": ["standalone", "fullscreen", "minimal-ui"],
+  "orientation": "portrait-primary",
+  "background_color": "#F9F7F2",
+  "theme_color": "#2D2D2D",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "192x192 512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/logo.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["lifestyle", "education", "books"],
+  "screenshots": []
+}

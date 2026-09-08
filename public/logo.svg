@@ -1,0 +1,60 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bgGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#232323" />
+      <stop offset="50%" stop-color="#1B1B1B" />
+      <stop offset="100%" stop-color="#121212" />
+    </linearGradient>
+
+    <linearGradient id="goldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#F3E3B5" />
+      <stop offset="35%" stop-color="#D4AF37" />
+      <stop offset="70%" stop-color="#C5A059" />
+      <stop offset="100%" stop-color="#997732" />
+    </linearGradient>
+
+    <radialGradient id="goldGlow" cx="50%" cy="38%" r="45%">
+      <stop offset="0%" stop-color="#C5A059" stop-opacity="0.28" />
+      <stop offset="60%" stop-color="#C5A059" stop-opacity="0.08" />
+      <stop offset="100%" stop-color="#C5A059" stop-opacity="0" />
+    </radialGradient>
+  </defs>
+
+  <!-- Logo Box Container (App Icon Squircle / Rounded Square) -->
+  <rect x="8" y="8" width="496" height="496" rx="108" ry="108" fill="url(#bgGradient)" stroke="#C5A059" stroke-width="6" />
+  
+  <!-- Inner Border -->
+  <rect x="22" y="22" width="468" height="468" rx="96" ry="96" fill="none" stroke="#C5A059" stroke-width="1.5" stroke-opacity="0.4" stroke-dasharray="6 4" />
+
+  <!-- Center Radiance behind Emblem -->
+  <circle cx="256" cy="190" r="160" fill="url(#goldGlow)" />
+
+  <!-- Emblem (Cross & Global Tower) -->
+  <g transform="translate(136, 65) scale(2.4)">
+    <circle cx="50" cy="50" r="44" fill="none" stroke="#C5A059" stroke-width="1.2" stroke-dasharray="3 3" opacity="0.6" />
+    <circle cx="50" cy="50" r="39" fill="none" stroke="#E5E0D5" stroke-width="0.8" opacity="0.3" />
+
+    <circle cx="50" cy="62" r="26" stroke="#C5A059" stroke-width="1.8" fill="#262420" fill-opacity="0.7" />
+    <ellipse cx="50" cy="62" rx="26" ry="11" stroke="#C5A059" stroke-width="1.2" stroke-dasharray="2 2" opacity="0.8" fill="none" />
+    <line x1="24" y1="62" x2="76" y2="62" stroke="#C5A059" stroke-width="1.4" opacity="0.9" />
+    <line x1="50" y1="36" x2="50" y2="88" stroke="#C5A059" stroke-width="1.4" opacity="0.7" />
+
+    <path d="M40 54 Q45 50 49 55 Q53 60 48 66 Q42 68 40 54 Z" fill="#C5A059" opacity="0.4" />
+    <path d="M58 58 Q64 56 66 62 Q63 68 59 66 Z" fill="#C5A059" opacity="0.4" />
+
+    <path d="M46 12 H54 V26 H68 V34 H54 V72 H46 V34 H32 V26 H46 V12 Z" fill="url(#goldGrad)" />
+    <path d="M48.5 15 H51.5 V28 H65 V32 H51.5 V69 H48.5 V32 H35 V28 H48.5 V15 Z" fill="#FFFFFF" opacity="0.85" />
+    <circle cx="50" cy="12" r="3" fill="#FAF6EE" stroke="#C5A059" stroke-width="1" />
+  </g>
+
+  <!-- WORDS WITHIN THE LOGO BOX -->
+  <text x="256" y="375" text-anchor="middle" font-family="'Cormorant Garamond', 'Cinzel', 'Times New Roman', serif" font-size="52" font-weight="900" letter-spacing="4" fill="url(#goldGrad)">
+    GLOBAL TOWER
+  </text>
+  <text x="256" y="424" text-anchor="middle" font-family="'Cinzel', 'Cormorant Garamond', 'Times New Roman', serif" font-size="34" font-weight="800" letter-spacing="10" fill="#FAF6EE">
+    OF CHRIST
+  </text>
+  <text x="256" y="462" text-anchor="middle" font-family="'Plus Jakarta Sans', system-ui, sans-serif" font-size="14" font-weight="800" letter-spacing="4" fill="#C5A059" opacity="0.95">
+    WORSHIP • DOMINION • VICTORY
+  </text>
+</svg>
