@@ -21,11 +21,16 @@ import {
   Compass,
   Activity,
   Send,
-  X
+  X,
+  LogOut,
+  Sliders,
+  RotateCcw,
+  UserCog
 } from "lucide-react";
 import { UserRole, UserProfile } from "../types";
 import { Storage, APOSTLE_SANGO_ADMIN } from "../lib/storage";
 import { UserDataService } from "../lib/userDataService";
+import { useAuth } from "../lib/AuthContext";
 import { db, collection, onSnapshot } from "../lib/firebase";
 
 interface AdminPortalProps {
@@ -39,6 +44,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
   onSwitchRole,
   onNavigateToBible,
 }) => {
+  const { currentUser } = useAuth();
   const [activeTab, setActiveTab] = useState<"crm" | "analytics" | "bible_sources" | "feedback">("crm");
   const [feedbackList] = useState(Storage.getFeedback());
 
@@ -207,6 +213,20 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
           return next;
         });
 
+        // If target was current user, transition to farewell exit page
+        if (currentUser && (currentUser.email === target.email || currentUser.uid === target.id)) {
+          const farewellPayload = {
+            name: target.name,
+            email: target.email,
+            deletedAt: new Date().toISOString(),
+            reason: adminReason.trim() || "Administrative erasure"
+          };
+          try {
+            sessionStorage.setItem("gtc_farewell_exit_active", JSON.stringify(farewellPayload));
+          } catch {}
+          window.dispatchEvent(new CustomEvent("gtc_account_departed", { detail: farewellPayload }));
+        }
+
         setAdminNotice({
           type: "success",
           text: `Account for ${target.name} (${target.email}) was permanently deleted from Firebase Auth users and kicked from the application.`
@@ -223,6 +243,84 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
         type: "error",
         text: `Failed to delete account: ${e?.message || "Unknown error"}`
       });
+    } finally {
+      setIsDeletingAccount(false);
+    }
+  };
+
+  // Update member role (Believer / Ministry Leader)
+  const handleChangeMemberRole = async (newRole: "user" | "admin" | "super_admin") => {
+    if (!accountToDelete) return;
+    setIsDeletingAccount(true);
+    try {
+      const ok = await UserDataService.updateUserRole(accountToDelete.id, accountToDelete.email, newRole as any);
+      if (ok) {
+        setMembersList((prev) =>
+          prev.map((m) => (m.id === accountToDelete.id ? { ...m, role: newRole as any } : m))
+        );
+        setAccountToDelete((prev) => (prev ? { ...prev, role: newRole as any } : null));
+        setAdminNotice({
+          type: "success",
+          text: `Role changed to ${newRole === "super_admin" ? "Super Admin" : newRole === "admin" ? "Ministry Leader" : "Believer (User)"} for ${accountToDelete.name}.`
+        });
+      } else {
+        setAdminNotice({ type: "error", text: "Could not update user role." });
+      }
+    } catch (e: any) {
+      setAdminNotice({ type: "error", text: `Error updating role: ${e?.message || "Unknown error"}` });
+    } finally {
+      setIsDeletingAccount(false);
+    }
+  };
+
+  // Reset member spiritual records without deleting account
+  const handleResetMemberData = async () => {
+    if (!accountToDelete) return;
+    setIsDeletingAccount(true);
+    try {
+      const res = await UserDataService.purgeSelectiveData(accountToDelete.id, {
+        notes: true,
+        dreams: true,
+        reading: true,
+        bookmarks: true,
+        prayers: true
+      });
+      if (res.success) {
+        setAdminNotice({
+          type: "success",
+          text: `Spiritual records, notes, and study progress for ${accountToDelete.name} have been reset successfully.`
+        });
+      } else {
+        setAdminNotice({ type: "error", text: "Could not reset member data." });
+      }
+    } catch (e: any) {
+      setAdminNotice({ type: "error", text: `Error resetting data: ${e?.message || "Unknown error"}` });
+    } finally {
+      setIsDeletingAccount(false);
+    }
+  };
+
+  // Revoke active session (Kick user without deleting account)
+  const handleKickMemberSession = async () => {
+    if (!accountToDelete) return;
+    setIsDeletingAccount(true);
+    try {
+      const ok = await UserDataService.kickUserSession(
+        accountToDelete.id,
+        accountToDelete.email,
+        adminReason.trim() || "Administrative session revocation"
+      );
+      if (ok) {
+        setAdminNotice({
+          type: "success",
+          text: `Active session for ${accountToDelete.name} revoked and user kicked in real time.`
+        });
+        setAccountToDelete(null);
+      } else {
+        setAdminNotice({ type: "error", text: "Could not revoke session." });
+      }
+    } catch (e: any) {
+      setAdminNotice({ type: "error", text: `Error kicking session: ${e?.message || "Unknown error"}` });
     } finally {
       setIsDeletingAccount(false);
     }
@@ -664,16 +762,14 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                             <span>Ping</span>
                           </button>
 
-                          {!isSuperAdmin && (
-                            <button
-                              onClick={() => setAccountToDelete(member)}
-                              className="px-2.5 py-1 bg-rose-50 hover:bg-rose-600 hover:text-white border border-rose-200 text-rose-700 rounded-lg text-xs font-semibold cursor-pointer transition-all inline-flex items-center gap-1"
-                              title="Delete Account & Kick from App"
-                            >
-                              <Trash2 className="w-3 h-3" />
-                              <span>Delete</span>
-                            </button>
-                          )}
+                          <button
+                            onClick={() => setAccountToDelete(member)}
+                            className="px-2.5 py-1 bg-rose-50 hover:bg-rose-600 hover:text-white border border-rose-200 text-rose-700 rounded-lg text-xs font-semibold cursor-pointer transition-all inline-flex items-center gap-1"
+                            title={`Manage account, change role, reset data, or delete ${member.name}`}
+                          >
+                            <Trash2 className="w-3 h-3" />
+                            <span>Manage / Delete</span>
+                          </button>
                         </td>
                       </tr>
                     );
@@ -945,21 +1041,15 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                               </div>
                             </div>
 
-                            {/* DELETE BUTTON NEXT TO ALL ACCOUNTS */}
-                            {!isAdmin ? (
-                              <button
-                                onClick={() => setAccountToDelete(member)}
-                                className="px-3.5 py-2 bg-rose-50 hover:bg-rose-600 hover:text-white border border-rose-200 text-rose-700 text-xs font-bold uppercase tracking-wider rounded-xl transition-all cursor-pointer flex items-center gap-1.5 shadow-2xs"
-                                title={`Delete account for ${member.name} and kick from app`}
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                                <span>Delete Account</span>
-                              </button>
-                            ) : (
-                              <span className="text-[10px] text-[#8C6B2D] bg-[#FAF6EE] px-2.5 py-1 rounded-lg border border-[#C5A059]/30 font-bold uppercase">
-                                Protected Leader
-                              </span>
-                            )}
+                            {/* MANAGE & DELETE BUTTON NEXT TO ALL ACCOUNTS */}
+                            <button
+                              onClick={() => setAccountToDelete(member)}
+                              className="px-3.5 py-2 bg-rose-50 hover:bg-rose-600 hover:text-white border border-rose-200 text-rose-700 text-xs font-bold uppercase tracking-wider rounded-xl transition-all cursor-pointer flex items-center gap-1.5 shadow-2xs"
+                              title={`Manage account, change role, reset data, or delete ${member.name}`}
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                              <span>Manage & Delete</span>
+                            </button>
                           </div>
                         </div>
 
@@ -1122,88 +1212,184 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
         </div>
       )}
 
-      {/* MODAL: CONFIRM ACCOUNT DELETION & KICK FROM APPLICATION */}
+      {/* MODAL: ACCOUNT MANAGEMENT, ROLE MODIFICATION, & PERMANENT ERASURE */}
       {accountToDelete && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white border border-[#E5E0D5] rounded-[32px] max-w-md w-full p-6 sm:p-8 shadow-2xl space-y-5 animate-in fade-in zoom-in-95 duration-200">
-            <div className="flex items-center justify-between">
-              <div className="w-12 h-12 rounded-2xl bg-rose-50 border border-rose-200 text-rose-600 flex items-center justify-center">
-                <Trash2 className="w-6 h-6" />
+          <div className="bg-white border border-[#E5E0D5] rounded-[32px] max-w-lg w-full p-6 sm:p-8 shadow-2xl space-y-5 animate-in fade-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between border-b border-[#E5E0D5] pb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-2xl bg-rose-50 border border-rose-200 text-rose-600 flex items-center justify-center">
+                  <Trash2 className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="font-serif font-bold text-[#2D2D2D] text-lg">
+                    Member Management & Deletion
+                  </h3>
+                  <p className="text-xs text-[#7A7468] font-sans">
+                    {accountToDelete.name} (<code className="text-[#C5A059] font-mono">{accountToDelete.email}</code>)
+                  </p>
+                </div>
               </div>
               <button
+                id="btn-admin-close-modal"
                 onClick={() => setAccountToDelete(null)}
                 disabled={isDeletingAccount}
-                className="text-stone-400 hover:text-stone-700 p-1.5 rounded-full"
+                className="text-stone-400 hover:text-stone-700 p-1.5 rounded-full cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="space-y-2">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-rose-600 font-mono">
-                Permanent Revocation & Disconnection
+            {/* Current Status Badge */}
+            <div className="flex items-center justify-between p-3 bg-stone-50 border border-stone-200 rounded-xl text-xs">
+              <span className="text-stone-600 font-medium">Current Role in Sanctuary:</span>
+              <span className="font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-[#FAF6EE] text-[#8C6B2D] border border-[#C5A059]/30">
+                {accountToDelete.role === "super_admin"
+                  ? "Super Admin"
+                  : accountToDelete.role === "admin"
+                  ? "Ministry Leader"
+                  : "Believer (User)"}
               </span>
-              <h3 className="font-serif font-bold text-[#2D2D2D] text-xl">
-                Delete Believer Account & Kick From App?
-              </h3>
-              <p className="text-xs text-[#7A7468] font-sans leading-relaxed">
-                You are about to permanently purge the account of{" "}
-                <strong className="text-[#2D2D2D] font-semibold">{accountToDelete.name}</strong> (
-                <code className="text-[#C5A059] font-mono">{accountToDelete.email}</code>).
-              </p>
             </div>
 
-            <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-2xl text-[11px] text-rose-800 space-y-1">
-              <div className="font-bold flex items-center gap-1.5">
-                <AlertCircle className="w-3.5 h-3.5 text-rose-600" />
-                <span>Immediate Actions Triggered:</span>
+            {/* Action 1: Change Member Role */}
+            <div className="p-4 bg-[#FDFCF9] border border-[#E5E0D5] rounded-2xl space-y-2.5">
+              <div className="flex items-center gap-2 text-xs font-bold font-serif text-[#2D2D2D]">
+                <UserCog className="w-4 h-4 text-[#C5A059]" />
+                <span>1. Modify Ministry Role</span>
               </div>
-              <ul className="list-disc list-inside space-y-0.5 text-rose-700 pl-1">
-                <li>Account is deleted from Firebase Auth users & Firestore</li>
-                <li>Session credentials revoked across all devices</li>
-                <li>User is kicked out of the application in real-time</li>
-                <li>Account is removed from the CRM directory</li>
-              </ul>
+              <p className="text-[11px] text-[#7A7468] font-sans leading-relaxed">
+                Change permission clearance for this account across the sanctuary and administrative centers:
+              </p>
+              <div className="grid grid-cols-2 gap-2 pt-1">
+                <button
+                  type="button"
+                  id="btn-admin-role-user"
+                  disabled={isDeletingAccount || accountToDelete.role === "user"}
+                  onClick={() => handleChangeMemberRole("user")}
+                  className={`px-3 py-2 text-xs font-bold rounded-xl border transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                    accountToDelete.role === "user"
+                      ? "bg-stone-200 text-stone-500 border-stone-300 cursor-not-allowed"
+                      : "bg-white hover:bg-stone-50 border-stone-300 text-stone-800"
+                  }`}
+                >
+                  <UserCheck className="w-3.5 h-3.5" />
+                  <span>Set as Believer (User)</span>
+                </button>
+                <button
+                  type="button"
+                  id="btn-admin-role-admin"
+                  disabled={isDeletingAccount || accountToDelete.role === "admin"}
+                  onClick={() => handleChangeMemberRole("admin")}
+                  className={`px-3 py-2 text-xs font-bold rounded-xl border transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                    accountToDelete.role === "admin"
+                      ? "bg-[#FAF6EE] text-[#8C6B2D] border-[#C5A059] cursor-not-allowed"
+                      : "bg-[#FAF6EE]/60 hover:bg-[#FAF6EE] border-[#C5A059]/50 text-[#8C6B2D]"
+                  }`}
+                >
+                  <ShieldCheck className="w-3.5 h-3.5" />
+                  <span>Promote to Leader</span>
+                </button>
+              </div>
             </div>
 
-            <div className="space-y-1">
-              <label className="text-xs font-bold text-[#2D2D2D] block font-serif">
-                Pastoral Reason / Audit Note (Optional)
-              </label>
-              <input
-                type="text"
-                value={adminReason}
-                onChange={(e) => setAdminReason(e.target.value)}
-                placeholder="e.g. Member requested removal, discipline, duplicate record..."
-                disabled={isDeletingAccount}
-                className="w-full px-3.5 py-2 text-xs bg-[#FDFCF9] border border-[#E5E0D5] rounded-xl text-[#2D2D2D] focus:outline-none focus:border-rose-400"
-              />
-            </div>
-
-            <div className="flex items-center justify-end gap-3 pt-2">
+            {/* Action 2: Reset Spiritual Data Only */}
+            <div className="p-4 bg-[#FDFCF9] border border-[#E5E0D5] rounded-2xl space-y-2.5">
+              <div className="flex items-center gap-2 text-xs font-bold font-serif text-[#2D2D2D]">
+                <RotateCcw className="w-4 h-4 text-[#C5A059]" />
+                <span>2. Reset Spiritual Records Only</span>
+              </div>
+              <p className="text-[11px] text-[#7A7468] font-sans leading-relaxed">
+                Purge notes, dreams, prayer lists, and reading streaks without deleting the account:
+              </p>
               <button
-                onClick={() => setAccountToDelete(null)}
+                type="button"
+                id="btn-admin-reset-member-data"
                 disabled={isDeletingAccount}
-                className="px-5 py-2.5 bg-[#F9F7F2] hover:bg-[#F2EFE9] text-[#7A7468] text-xs font-bold uppercase tracking-wider rounded-full border border-[#E5E0D5] cursor-pointer transition-colors"
+                onClick={handleResetMemberData}
+                className="w-full py-2 px-3.5 bg-amber-50 hover:bg-amber-100/80 text-amber-900 border border-amber-300 text-xs font-bold uppercase tracking-wider rounded-xl transition-all cursor-pointer flex items-center justify-center gap-2"
               >
-                Cancel
+                <Sliders className="w-3.5 h-3.5 text-amber-700" />
+                <span>Reset Notes & Streaks (Keep Account)</span>
               </button>
+            </div>
+
+            {/* Action 3: Revoke Session (Kick Only) */}
+            <div className="p-4 bg-[#FDFCF9] border border-[#E5E0D5] rounded-2xl space-y-2.5">
+              <div className="flex items-center gap-2 text-xs font-bold font-serif text-[#2D2D2D]">
+                <LogOut className="w-4 h-4 text-rose-600" />
+                <span>3. Revoke Active Session (Kick Only)</span>
+              </div>
+              <p className="text-[11px] text-[#7A7468] font-sans leading-relaxed">
+                Immediately terminate all active sessions across devices without deleting the account:
+              </p>
               <button
+                type="button"
+                id="btn-admin-kick-session"
+                disabled={isDeletingAccount}
+                onClick={handleKickMemberSession}
+                className="w-full py-2 px-3.5 bg-rose-50 hover:bg-rose-100 text-rose-800 border border-rose-200 text-xs font-bold uppercase tracking-wider rounded-xl transition-all cursor-pointer flex items-center justify-center gap-2"
+              >
+                <LogOut className="w-3.5 h-3.5 text-rose-600" />
+                <span>Revoke Session & Disconnect Live</span>
+              </button>
+            </div>
+
+            {/* Action 4: Permanent Deletion & Kick */}
+            <div className="p-4 bg-rose-50/70 border border-rose-200 rounded-2xl space-y-3">
+              <div className="flex items-center gap-2 text-xs font-bold font-serif text-rose-950">
+                <Trash2 className="w-4 h-4 text-rose-600" />
+                <span>4. Permanent Account Erasure</span>
+              </div>
+              <p className="text-[11px] text-rose-900/80 font-sans leading-relaxed">
+                Deletes from Firebase Auth users, purges all Firestore subcollections, and removes from CRM.
+              </p>
+              <div className="space-y-1">
+                <label className="text-[11px] font-bold text-[#2D2D2D] block font-serif">
+                  Pastoral Reason / Audit Note (Optional)
+                </label>
+                <input
+                  type="text"
+                  id="input-admin-reason"
+                  value={adminReason}
+                  onChange={(e) => setAdminReason(e.target.value)}
+                  placeholder="e.g. Member requested removal, discipline, duplicate record..."
+                  disabled={isDeletingAccount}
+                  className="w-full px-3 py-1.5 text-xs bg-white border border-[#E5E0D5] rounded-xl text-[#2D2D2D] focus:outline-none focus:border-rose-400"
+                />
+              </div>
+              <button
+                type="button"
+                id="btn-admin-confirm-delete"
                 onClick={handleConfirmDeleteAccount}
                 disabled={isDeletingAccount}
-                className="px-5 py-2.5 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold uppercase tracking-wider rounded-full shadow-md shadow-rose-600/20 cursor-pointer flex items-center gap-2 transition-all"
+                className="w-full py-2.5 px-4 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold uppercase tracking-wider rounded-xl shadow-md shadow-rose-600/20 cursor-pointer flex items-center justify-center gap-2 transition-all"
               >
                 {isDeletingAccount ? (
                   <>
                     <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                    <span>Deleting & Kicking...</span>
+                    <span>Executing Changes...</span>
                   </>
                 ) : (
                   <>
                     <Trash2 className="w-3.5 h-3.5" />
-                    <span>Confirm Delete & Kick</span>
+                    <span>Confirm Permanent Delete & Kick</span>
                   </>
                 )}
+              </button>
+            </div>
+
+            {/* Close Button */}
+            <div className="flex items-center justify-end pt-1">
+              <button
+                type="button"
+                id="btn-admin-cancel-modal"
+                onClick={() => setAccountToDelete(null)}
+                disabled={isDeletingAccount}
+                className="px-5 py-2 bg-[#F9F7F2] hover:bg-[#F2EFE9] text-[#7A7468] text-xs font-bold uppercase tracking-wider rounded-full border border-[#E5E0D5] cursor-pointer transition-colors"
+              >
+                Close Window
               </button>
             </div>
           </div>

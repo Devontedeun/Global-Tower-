@@ -510,6 +510,164 @@ export class UserDataService {
   }
 
   /**
+   * Selectively purge chosen categories of spiritual records for a user
+   * (e.g. notes, dreams/visions, reading progress, bookmarks/highlights).
+   */
+  static async purgeSelectiveData(
+    userId: string,
+    options: {
+      notes?: boolean;
+      dreams?: boolean;
+      reading?: boolean;
+      bookmarks?: boolean;
+      prayers?: boolean;
+    }
+  ): Promise<{ success: boolean; message: string }> {
+    try {
+      if (options.notes) {
+        try {
+          const snap = await getDocs(collection(db, `users/${userId}/notes`));
+          if (!snap.empty) {
+            await Promise.allSettled(snap.docs.map((d) => deleteDoc(d.ref)));
+          }
+        } catch (e) {
+          console.warn("Could not purge notes from Firestore:", e);
+        }
+        Storage.clearNotes();
+        window.dispatchEvent(new CustomEvent("gtc_notes_updated"));
+      }
+
+      if (options.dreams) {
+        try {
+          const snapD = await getDocs(collection(db, `users/${userId}/dreams`));
+          if (!snapD.empty) {
+            await Promise.allSettled(snapD.docs.map((d) => deleteDoc(d.ref)));
+          }
+          const snapV = await getDocs(collection(db, `users/${userId}/visions`));
+          if (!snapV.empty) {
+            await Promise.allSettled(snapV.docs.map((d) => deleteDoc(d.ref)));
+          }
+        } catch (e) {
+          console.warn("Could not purge dreams/visions from Firestore:", e);
+        }
+        Storage.clearDreams();
+        Storage.clearVisions();
+        window.dispatchEvent(new CustomEvent("gtc_dreams_updated"));
+      }
+
+      if (options.reading) {
+        try {
+          const snapR = await getDocs(collection(db, `users/${userId}/readingProgress`));
+          if (!snapR.empty) {
+            await Promise.allSettled(snapR.docs.map((d) => deleteDoc(d.ref)));
+          }
+          const snapS = await getDocs(collection(db, `users/${userId}/studyProgress`));
+          if (!snapS.empty) {
+            await Promise.allSettled(snapS.docs.map((d) => deleteDoc(d.ref)));
+          }
+        } catch (e) {
+          console.warn("Could not purge reading progress from Firestore:", e);
+        }
+        Storage.clearStudyProgress();
+        window.dispatchEvent(new CustomEvent("gtc_reading_updated"));
+      }
+
+      if (options.bookmarks) {
+        try {
+          const snapB = await getDocs(collection(db, `users/${userId}/bookmarks`));
+          if (!snapB.empty) {
+            await Promise.allSettled(snapB.docs.map((d) => deleteDoc(d.ref)));
+          }
+          const snapH = await getDocs(collection(db, `users/${userId}/highlights`));
+          if (!snapH.empty) {
+            await Promise.allSettled(snapH.docs.map((d) => deleteDoc(d.ref)));
+          }
+        } catch (e) {
+          console.warn("Could not purge bookmarks/highlights from Firestore:", e);
+        }
+        Storage.clearBookmarks();
+        Storage.clearHighlights();
+        window.dispatchEvent(new CustomEvent("gtc_bookmarks_updated"));
+      }
+
+      if (options.prayers) {
+        try {
+          const snapP = await getDocs(collection(db, `users/${userId}/prayers`));
+          if (!snapP.empty) {
+            await Promise.allSettled(snapP.docs.map((d) => deleteDoc(d.ref)));
+          }
+        } catch (e) {
+          console.warn("Could not purge prayers from Firestore:", e);
+        }
+        Storage.clearUserPrayers();
+        window.dispatchEvent(new CustomEvent("gtc_prayers_updated"));
+      }
+
+      return { success: true, message: "Selected records have been cleared." };
+    } catch (err: any) {
+      console.error("purgeSelectiveData error:", err);
+      return { success: false, message: err?.message || "Failed to purge selected records." };
+    }
+  }
+
+  /**
+   * Update a user's role in CRM and Firestore
+   */
+  static async updateUserRole(userId: string, email: string, newRole: any): Promise<boolean> {
+    try {
+      // 1. Update in Firestore
+      try {
+        const userRef = doc(db, "users", userId);
+        await updateDoc(userRef, { role: newRole });
+      } catch (e) {
+        console.warn("Firestore role update note:", e);
+      }
+
+      // 2. Update in local storage CRM
+      Storage.updateJoinedMemberRole(userId, newRole);
+      if (email) Storage.updateJoinedMemberRole(email, newRole);
+
+      // 3. Update in local accounts registry
+      try {
+        const raw = localStorage.getItem("gtc_local_user_accounts");
+        if (raw) {
+          const accounts = JSON.parse(raw);
+          const cleanEmail = email.toLowerCase().trim();
+          if (accounts[cleanEmail]) {
+            accounts[cleanEmail].profile = { ...accounts[cleanEmail].profile, role: newRole };
+            localStorage.setItem("gtc_local_user_accounts", JSON.stringify(accounts));
+          }
+        }
+      } catch {}
+
+      window.dispatchEvent(new CustomEvent("gtc_crm_updated"));
+      return true;
+    } catch (err) {
+      console.error("updateUserRole error:", err);
+      return false;
+    }
+  }
+
+  /**
+   * Revoke session without full account deletion (Kick user session)
+   */
+  static async kickUserSession(userId: string, email: string, reason?: string): Promise<boolean> {
+    const cleanEmail = (email || "").toLowerCase().trim();
+    try {
+      // Broadcast kick signal
+      window.dispatchEvent(
+        new CustomEvent("gtc_user_kicked", { detail: { uid: userId, email: cleanEmail, reason } })
+      );
+      Storage.revokeUser(userId, cleanEmail);
+      window.dispatchEvent(new CustomEvent("gtc_crm_updated"));
+      return true;
+    } catch (err) {
+      console.error("kickUserSession error:", err);
+      return false;
+    }
+  }
+
+  /**
    * Delete an account completely (Admin-initiated from CRM):
    * deletes user from Firestore, purges subcollections, removes from CRM,
    * invokes Firebase Auth account deletion, and broadcasts real-time kick signal.

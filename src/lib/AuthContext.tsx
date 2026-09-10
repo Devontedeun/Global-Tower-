@@ -46,7 +46,7 @@ interface AuthContextType {
   kickedNotice: string | null;
   clearKickedNotice: () => void;
   login: (email: string, pass: string) => Promise<void>;
-  register: (data: SignUpData) => Promise<void>;
+  register: (data: SignUpData) => Promise<{ isNewAccount: boolean } | void>;
   continueAsGuest: () => void;
   logout: () => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
@@ -644,7 +644,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         console.warn("Could not set displayName on Firebase Auth user:", e);
       }
     } catch (fbErr: any) {
-      console.warn("Firebase createUser failed:", fbErr?.code || fbErr?.message);
+      console.warn("Firebase createUser result:", fbErr?.code || fbErr?.message);
+      if (fbErr?.code === "auth/email-already-in-use") {
+        // If an account already exists with this email, test if the credentials provided match their account
+        try {
+          await login(cleanEmail, data.password);
+          return { isNewAccount: false };
+        } catch (loginErr: any) {
+          console.warn("Existing account sign-in attempt failed:", loginErr?.code || loginErr?.message);
+          const customErr = new Error("This email address is already registered. Please sign in or reset your password.") as any;
+          customErr.code = "auth/email-already-in-use";
+          throw customErr;
+        }
+      }
       if (isFirebaseAuthUnavailable(fbErr)) {
         // Fall back gracefully to local authenticated member identity
         uid = `u-member-${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 7)}`;
@@ -656,7 +668,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           emailVerified: true
         };
       } else {
-        // Legitimate validation errors (e.g. email-already-in-use)
+        // Legitimate validation errors (e.g. invalid email)
         throw fbErr;
       }
     }
@@ -711,6 +723,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       new CustomEvent("gtc_member_registered", { detail: newProfile })
     );
     window.dispatchEvent(new CustomEvent("gtc_crm_updated", { detail: newProfile }));
+
+    return { isNewAccount: true };
   };
 
   const continueAsGuest = () => {

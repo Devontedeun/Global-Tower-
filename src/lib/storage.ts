@@ -1,5 +1,6 @@
 import {
   UserProfile,
+  UserRole,
   VerseBookmark,
   VerseHighlight,
   StudyNote,
@@ -902,6 +903,74 @@ export const Storage = {
       );
     } catch {
       return false;
+    }
+  },
+  clearNotes(): void {
+    try {
+      localStorage.removeItem(STORAGE_KEYS.NOTES);
+    } catch (e) {
+      console.error(e);
+    }
+  },
+  clearDreams(): void {
+    try {
+      localStorage.removeItem(STORAGE_KEYS.DREAMS);
+    } catch (e) {
+      console.error(e);
+    }
+  },
+  clearVisions(): void {
+    try {
+      localStorage.removeItem(STORAGE_KEYS.VISIONS);
+    } catch (e) {
+      console.error(e);
+    }
+  },
+  clearBookmarks(): void {
+    try {
+      localStorage.removeItem(STORAGE_KEYS.BOOKMARKS);
+    } catch (e) {
+      console.error(e);
+    }
+  },
+  clearHighlights(): void {
+    try {
+      localStorage.removeItem(STORAGE_KEYS.HIGHLIGHTS);
+    } catch (e) {
+      console.error(e);
+    }
+  },
+  clearStudyProgress(): void {
+    try {
+      localStorage.removeItem(STORAGE_KEYS.STUDY_PLANS);
+      localStorage.removeItem(STORAGE_KEYS.RECENT_READ);
+      localStorage.removeItem("gtc_reading_streaks");
+    } catch (e) {
+      console.error(e);
+    }
+  },
+  clearUserPrayers(): void {
+    try {
+      localStorage.removeItem(STORAGE_KEYS.PRAYERS);
+    } catch (e) {
+      console.error(e);
+    }
+  },
+  updateJoinedMemberRole(idOrEmail: string, newRole: UserRole): UserProfile[] {
+    try {
+      const target = (idOrEmail || "").toLowerCase().trim();
+      const members = this.getJoinedMembers();
+      const updated = members.map((m) => {
+        if (m.id === idOrEmail || m.email.toLowerCase().trim() === target) {
+          return { ...m, role: newRole };
+        }
+        return m;
+      });
+      localStorage.setItem("gtc_crm_users", JSON.stringify(updated));
+      return updated;
+    } catch (e) {
+      console.error("Could not update member role in CRM:", e);
+      return [];
     }
   },
   clearUser(): void {

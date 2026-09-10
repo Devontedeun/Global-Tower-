@@ -37,6 +37,8 @@ import { ProfileModal } from "./components/ProfileModal";
 import { FeedbackModal } from "./components/FeedbackModal";
 import { PrivacyPolicy } from "./components/PrivacyPolicy";
 import { TermsAndConditions } from "./components/TermsAndConditions";
+import { FarewellExitPage, FarewellUser } from "./components/FarewellExitPage";
+import { WelcomeCeremony } from "./components/WelcomeCeremony";
 import { Storage, DEFAULT_USER } from "./lib/storage";
 import { UserProfile, UserRole } from "./types";
 import { translations, Language } from "./lib/translations";
@@ -48,8 +50,24 @@ export default function App() {
   const { currentUser, userProfile, loading, updateProfileData } = useAuth();
 
   const [currentView, setCurrentView] = useState<string>("home");
-  const [unauthView, setUnauthView] = useState<"auth" | "privacy" | "terms">("auth");
+  const [unauthView, setUnauthView] = useState<"auth" | "privacy" | "terms" | "farewell">("auth");
   const [viewParams, setViewParams] = useState<any>(null);
+  const [farewellUser, setFarewellUser] = useState<FarewellUser | null>(() => {
+    try {
+      const raw = sessionStorage.getItem("gtc_farewell_exit_active");
+      return raw ? JSON.parse(raw) : null;
+    } catch {
+      return null;
+    }
+  });
+  const [welcomeCeremonyData, setWelcomeCeremonyData] = useState<{ userName: string } | null>(() => {
+    try {
+      const raw = sessionStorage.getItem("gtc_welcome_ceremony");
+      return raw ? JSON.parse(raw) : null;
+    } catch {
+      return null;
+    }
+  });
   const [user, setUser] = useState<UserProfile>(DEFAULT_USER);
   const [language, setLanguage] = useState<Language>(() => {
     try {
@@ -73,6 +91,27 @@ export default function App() {
       setUser(Storage.getUser());
     }
   }, [userProfile]);
+
+  // Listen for account departure and welcome ceremony events
+  useEffect(() => {
+    const handleDeparted = (e: any) => {
+      if (e.detail) {
+        setFarewellUser(e.detail);
+        setUnauthView("farewell");
+      }
+    };
+    const handleWelcomeCeremony = (e: any) => {
+      if (e.detail) {
+        setWelcomeCeremonyData(e.detail);
+      }
+    };
+    window.addEventListener("gtc_account_departed", handleDeparted);
+    window.addEventListener("gtc_welcome_ceremony_trigger", handleWelcomeCeremony);
+    return () => {
+      window.removeEventListener("gtc_account_departed", handleDeparted);
+      window.removeEventListener("gtc_welcome_ceremony_trigger", handleWelcomeCeremony);
+    };
+  }, []);
 
   const t = translations[language];
 
@@ -117,6 +156,39 @@ export default function App() {
     );
   }
 
+  // 1.5 Dedicated Exit Page for Departed / Permanently Deleted Account
+  if (farewellUser || unauthView === "farewell") {
+    return (
+      <FarewellExitPage
+        formerUser={farewellUser}
+        onReturnToSanctuary={() => {
+          setFarewellUser(null);
+          setUnauthView("auth");
+          try {
+            sessionStorage.removeItem("gtc_farewell_exit_active");
+          } catch {}
+        }}
+      />
+    );
+  }
+
+  // 1.8 Welcome Ceremony for New Believers (10-15 seconds overall with smooth transitions)
+  if (welcomeCeremonyData) {
+    return (
+      <WelcomeCeremony
+        userName={welcomeCeremonyData.userName}
+        totalDurationSeconds={12}
+        onComplete={() => {
+          setWelcomeCeremonyData(null);
+          try {
+            sessionStorage.removeItem("gtc_welcome_ceremony");
+          } catch {}
+          setCurrentView("home");
+        }}
+      />
+    );
+  }
+
   // 2. Authentication Gate: If user is not authenticated, show the Login/Registration Portal before the main app
   if (!currentUser) {
     return (
@@ -147,8 +219,14 @@ export default function App() {
             <TermsAndConditions onBack={() => setUnauthView("auth")} />
           ) : (
             <SignUpPortal
-              onSuccess={() => {
-                setCurrentView("home");
+              onSuccess={(info) => {
+                if (info?.isNewSignUp) {
+                  setWelcomeCeremonyData({
+                    userName: info.firstName || "Beloved Believer"
+                  });
+                } else {
+                  setCurrentView("home");
+                }
               }}
             />
           )}

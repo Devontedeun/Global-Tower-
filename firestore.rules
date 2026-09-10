@@ -32,43 +32,43 @@ service cloud.firestore {
       
       // Isolated Private Subcollections for each user UID
       match /notes/{noteId} {
-        allow read, write: if isOwner(userId);
+        allow read, write: if isOwner(userId) || isAdmin();
       }
       
       match /bookmarks/{bookmarkId} {
-        allow read, write: if isOwner(userId);
+        allow read, write: if isOwner(userId) || isAdmin();
       }
       
       match /highlights/{highlightId} {
-        allow read, write: if isOwner(userId);
+        allow read, write: if isOwner(userId) || isAdmin();
       }
       
       match /dreams/{dreamId} {
-        allow read, write: if isOwner(userId);
+        allow read, write: if isOwner(userId) || isAdmin();
       }
       
       match /visions/{visionId} {
-        allow read, write: if isOwner(userId);
+        allow read, write: if isOwner(userId) || isAdmin();
       }
       
       match /prayers/{prayerId} {
-        allow read, write: if isOwner(userId);
+        allow read, write: if isOwner(userId) || isAdmin();
       }
       
       match /readingProgress/{progressId} {
-        allow read, write: if isOwner(userId);
+        allow read, write: if isOwner(userId) || isAdmin();
       }
 
       match /studyProgress/{progressId} {
-        allow read, write: if isOwner(userId);
+        allow read, write: if isOwner(userId) || isAdmin();
       }
 
       match /studyPlans/{planId} {
-        allow read, write: if isOwner(userId);
+        allow read, write: if isOwner(userId) || isAdmin();
       }
 
       match /savedEncouragements/{itemId} {
-        allow read, write: if isOwner(userId);
+        allow read, write: if isOwner(userId) || isAdmin();
       }
     }
 

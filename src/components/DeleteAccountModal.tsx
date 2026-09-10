@@ -11,10 +11,15 @@ import {
   Volume2,
   VolumeX,
   RotateCcw,
-  CheckCircle2
+  CheckCircle2,
+  RefreshCw,
+  Sliders,
+  CheckSquare,
+  Square
 } from "lucide-react";
 import { UserProfile } from "../types";
 import { useAuth } from "../lib/AuthContext";
+import { UserDataService } from "../lib/userDataService";
 
 interface DeleteAccountModalProps {
   isOpen: boolean;
@@ -101,11 +106,31 @@ export const DeleteAccountModal: React.FC<DeleteAccountModalProps> = ({
 
   // Modal Flow Step: 'confirm' -> 'deleting' -> 'benediction'
   const [modalStep, setModalStep] = useState<"confirm" | "deleting" | "benediction">("confirm");
+  const [deleteMode, setDeleteMode] = useState<"selective" | "permanent">("selective");
 
+  // Selective Data Purge State
+  const [selectedCategories, setSelectedCategories] = useState<{
+    notes: boolean;
+    dreams: boolean;
+    reading: boolean;
+    bookmarks: boolean;
+    prayers: boolean;
+  }>({
+    notes: true,
+    dreams: true,
+    reading: true,
+    bookmarks: true,
+    prayers: false
+  });
+  const [isPurgingSelective, setIsPurgingSelective] = useState(false);
+  const [selectiveSuccessNotice, setSelectiveSuccessNotice] = useState<string | null>(null);
+
+  // Permanent Account Deletion State
   const [confirmInput, setConfirmInput] = useState("");
   const [understoodCheckbox, setUnderstoodCheckbox] = useState(false);
   const [reason, setReason] = useState("fresh_start");
   const [customReason, setCustomReason] = useState("");
+  const [adminOverride, setAdminOverride] = useState(false);
   const [deletionProgress, setDeletionProgress] = useState<string>("");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -144,7 +169,47 @@ export const DeleteAccountModal: React.FC<DeleteAccountModalProps> = ({
     confirmInput.trim().toUpperCase() === "DELETE" ||
     confirmInput.trim().toLowerCase() === userEmail;
 
-  const canSubmit = isConfirmationMatch && understoodCheckbox && modalStep === "confirm" && !isSuperAdmin;
+  const canSubmit =
+    isConfirmationMatch &&
+    understoodCheckbox &&
+    modalStep === "confirm" &&
+    (!isSuperAdmin || adminOverride);
+
+  // Handle selective records purge (allows user to reset data without destroying account)
+  const handlePurgeSelective = async () => {
+    setIsPurgingSelective(true);
+    setSelectiveSuccessNotice(null);
+    setErrorMessage(null);
+    try {
+      const res = await UserDataService.purgeSelectiveData(user.id, selectedCategories);
+      if (res.success) {
+        setSelectiveSuccessNotice(
+          "Selected records have been cleared from your sanctuary! Your changes have taken effect immediately."
+        );
+        setTimeout(() => setSelectiveSuccessNotice(null), 5000);
+      } else {
+        setErrorMessage(res.message || "Could not clear records.");
+      }
+    } catch (err: any) {
+      setErrorMessage(err?.message || "Failed to purge selected records.");
+    } finally {
+      setIsPurgingSelective(false);
+    }
+  };
+
+  const handleToggleCategory = (key: keyof typeof selectedCategories) => {
+    setSelectedCategories((prev) => ({ ...prev, [key]: !prev[key] }));
+  };
+
+  const handleSelectAllCategories = (select: boolean) => {
+    setSelectedCategories({
+      notes: select,
+      dreams: select,
+      reading: select,
+      bookmarks: select,
+      prayers: select
+    });
+  };
 
   // Speak the closing scripture aloud
   const speakClosingScripture = (scriptureToSpeak: PartingScripture, muted = false) => {
@@ -268,14 +333,22 @@ export const DeleteAccountModal: React.FC<DeleteAccountModalProps> = ({
       // Permanently purges user documents and records from database
       await deleteAccount(fullReason);
 
-      // Successfully purged! Now transition into the Sacred Closing Benediction
-      setModalStep("benediction");
+      const farewellPayload = {
+        name: user.name,
+        email: user.email,
+        deletedAt: new Date().toISOString(),
+        reason: fullReason
+      };
+      try {
+        sessionStorage.setItem("gtc_farewell_exit_active", JSON.stringify(farewellPayload));
+      } catch {}
+      window.dispatchEvent(new CustomEvent("gtc_account_departed", { detail: farewellPayload }));
 
-      // Play chime and read the scripture aloud to let them go
-      playSanctuaryChime();
-      setTimeout(() => {
-        speakClosingScripture(activeScripture, false);
-      }, 500);
+      // Clear local session and credentials
+      await finalizeAccountDeparture();
+
+      // Successfully purged! Smoothly close modal to land on the full-page Exit Sanctuary Page
+      onClose();
     } catch (err: any) {
       console.error("Account deletion failed:", err);
       setErrorMessage(
@@ -293,6 +366,15 @@ export const DeleteAccountModal: React.FC<DeleteAccountModalProps> = ({
       window.speechSynthesis.cancel();
     }
     try {
+      const farewellPayload = {
+        name: user.name,
+        email: user.email,
+        deletedAt: new Date().toISOString()
+      };
+      try {
+        sessionStorage.setItem("gtc_farewell_exit_active", JSON.stringify(farewellPayload));
+      } catch {}
+      window.dispatchEvent(new CustomEvent("gtc_account_departed", { detail: farewellPayload }));
       await finalizeAccountDeparture();
     } catch (err) {
       console.warn("Notice during final session clearing:", err);
@@ -483,7 +565,7 @@ export const DeleteAccountModal: React.FC<DeleteAccountModalProps> = ({
                 </div>
                 <div>
                   <h2 className="text-lg font-bold font-serif text-rose-950">
-                    Permanently Delete Account
+                    Sanctuary Deletion & Record Management
                   </h2>
                   <p className="text-xs text-rose-700 font-sans">
                     Sacred Privacy Trust & Right to Complete Erasure
@@ -492,6 +574,7 @@ export const DeleteAccountModal: React.FC<DeleteAccountModalProps> = ({
               </div>
               <button
                 type="button"
+                id="btn-close-delete-modal"
                 onClick={onClose}
                 className="p-2 text-rose-400 hover:text-rose-700 rounded-full hover:bg-rose-100/50 transition-colors cursor-pointer"
                 aria-label="Close modal"
@@ -500,31 +583,228 @@ export const DeleteAccountModal: React.FC<DeleteAccountModalProps> = ({
               </button>
             </div>
 
-            <div className="p-6 space-y-5 max-h-[75vh] overflow-y-auto">
-              {/* Apostolic Founder Protection Notice */}
-              {isSuperAdmin ? (
-                <div className="p-4 bg-amber-50 border border-amber-200 rounded-2xl space-y-2">
-                  <div className="flex items-center gap-2 text-amber-800 font-bold font-serif text-sm">
-                    <ShieldAlert className="w-4 h-4 text-amber-600" />
-                    <span>Apostolic Oversight Protection</span>
+            {/* Mode Switcher Tabs */}
+            <div className="flex border-b border-[#E5E0D5] bg-[#FAF8F5] px-6 pt-3 gap-2">
+              <button
+                type="button"
+                id="btn-tab-selective-reset"
+                onClick={() => setDeleteMode("selective")}
+                className={`pb-3 px-3 text-xs font-bold font-serif transition-colors border-b-2 flex items-center gap-2 cursor-pointer ${
+                  deleteMode === "selective"
+                    ? "border-[#C5A059] text-[#8F702E]"
+                    : "border-transparent text-stone-500 hover:text-stone-800"
+                }`}
+              >
+                <Sliders className="w-3.5 h-3.5" />
+                <span>Reset Specific Records</span>
+              </button>
+              <button
+                type="button"
+                id="btn-tab-permanent-delete"
+                onClick={() => setDeleteMode("permanent")}
+                className={`pb-3 px-3 text-xs font-bold font-serif transition-colors border-b-2 flex items-center gap-2 cursor-pointer ${
+                  deleteMode === "permanent"
+                    ? "border-rose-600 text-rose-700"
+                    : "border-transparent text-stone-500 hover:text-stone-800"
+                }`}
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Permanent Account Erasure</span>
+              </button>
+            </div>
+
+            <div className="p-6 space-y-5 max-h-[72vh] overflow-y-auto">
+              {/* =========================================================================
+                  TAB A: SELECTIVE RECORDS RESET (Allows changing data without deleting account)
+                 ========================================================================= */}
+              {deleteMode === "selective" && (
+                <div className="space-y-4 animate-in fade-in duration-200">
+                  <div className="p-3.5 bg-[#FDFCF9] border border-[#E5E0D5] rounded-2xl space-y-1">
+                    <span className="text-xs font-bold uppercase tracking-wider text-[#7A7468] block font-serif">
+                      Selective Sanctuary Reset
+                    </span>
+                    <p className="text-xs text-[#524E48] font-sans leading-relaxed">
+                      Choose which categories of your spiritual records you wish to erase or reset.
+                      Your account credentials and login will remain intact.
+                    </p>
                   </div>
-                  <p className="text-xs text-amber-900/90 leading-relaxed font-sans">
-                    This account anchors the apostolic leadership and ministry administration for{" "}
-                    <strong>Global Tower of Christ</strong>. As the overseer account, it is protected
-                    against deletion to ensure sanctuary continuity and platform stewardship.
-                  </p>
-                  <div className="pt-2">
+
+                  {/* Quick Select / Deselect Buttons */}
+                  <div className="flex items-center justify-between text-xs pt-1">
+                    <span className="font-semibold text-stone-700">Select items to erase:</span>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        id="btn-select-all-categories"
+                        onClick={() => handleSelectAllCategories(true)}
+                        className="text-[11px] font-bold text-[#8F702E] hover:underline cursor-pointer"
+                      >
+                        Select All
+                      </button>
+                      <span className="text-stone-300">•</span>
+                      <button
+                        type="button"
+                        id="btn-deselect-all-categories"
+                        onClick={() => handleSelectAllCategories(false)}
+                        className="text-[11px] font-bold text-stone-500 hover:underline cursor-pointer"
+                      >
+                        Clear All
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Category Checkboxes */}
+                  <div className="space-y-2.5">
+                    <label className="flex items-start gap-3 p-3 bg-stone-50 hover:bg-stone-100/70 border border-stone-200 rounded-xl cursor-pointer transition-colors">
+                      <input
+                        type="checkbox"
+                        id="checkbox-selective-notes"
+                        checked={selectedCategories.notes}
+                        onChange={() => handleToggleCategory("notes")}
+                        className="w-4 h-4 mt-0.5 text-[#C5A059] accent-[#C5A059] rounded cursor-pointer"
+                      />
+                      <div className="text-xs space-y-0.5">
+                        <span className="font-bold text-stone-800 block">Personal Study Notes & Sermon Highlights</span>
+                        <span className="text-stone-500 text-[11px]">Expunges private notes, theological reflections, and highlighted verses.</span>
+                      </div>
+                    </label>
+
+                    <label className="flex items-start gap-3 p-3 bg-stone-50 hover:bg-stone-100/70 border border-stone-200 rounded-xl cursor-pointer transition-colors">
+                      <input
+                        type="checkbox"
+                        id="checkbox-selective-dreams"
+                        checked={selectedCategories.dreams}
+                        onChange={() => handleToggleCategory("dreams")}
+                        className="w-4 h-4 mt-0.5 text-[#C5A059] accent-[#C5A059] rounded cursor-pointer"
+                      />
+                      <div className="text-xs space-y-0.5">
+                        <span className="font-bold text-stone-800 block">Dreams & Vision Journal Entries</span>
+                        <span className="text-stone-500 text-[11px]">Purges private dream inquiries, symbols, and spiritual insight records.</span>
+                      </div>
+                    </label>
+
+                    <label className="flex items-start gap-3 p-3 bg-stone-50 hover:bg-stone-100/70 border border-stone-200 rounded-xl cursor-pointer transition-colors">
+                      <input
+                        type="checkbox"
+                        id="checkbox-selective-reading"
+                        checked={selectedCategories.reading}
+                        onChange={() => handleToggleCategory("reading")}
+                        className="w-4 h-4 mt-0.5 text-[#C5A059] accent-[#C5A059] rounded cursor-pointer"
+                      />
+                      <div className="text-xs space-y-0.5">
+                        <span className="font-bold text-stone-800 block">Bible Reading Streaks & Study Plans</span>
+                        <span className="text-stone-500 text-[11px]">Resets completed chapters, active plans, and daily streak counters.</span>
+                      </div>
+                    </label>
+
+                    <label className="flex items-start gap-3 p-3 bg-stone-50 hover:bg-stone-100/70 border border-stone-200 rounded-xl cursor-pointer transition-colors">
+                      <input
+                        type="checkbox"
+                        id="checkbox-selective-bookmarks"
+                        checked={selectedCategories.bookmarks}
+                        onChange={() => handleToggleCategory("bookmarks")}
+                        className="w-4 h-4 mt-0.5 text-[#C5A059] accent-[#C5A059] rounded cursor-pointer"
+                      />
+                      <div className="text-xs space-y-0.5">
+                        <span className="font-bold text-stone-800 block">Saved Bookmarks & Passages</span>
+                        <span className="text-stone-500 text-[11px]">Clears your saved scripture bookmarks across all translations.</span>
+                      </div>
+                    </label>
+
+                    <label className="flex items-start gap-3 p-3 bg-stone-50 hover:bg-stone-100/70 border border-stone-200 rounded-xl cursor-pointer transition-colors">
+                      <input
+                        type="checkbox"
+                        id="checkbox-selective-prayers"
+                        checked={selectedCategories.prayers}
+                        onChange={() => handleToggleCategory("prayers")}
+                        className="w-4 h-4 mt-0.5 text-[#C5A059] accent-[#C5A059] rounded cursor-pointer"
+                      />
+                      <div className="text-xs space-y-0.5">
+                        <span className="font-bold text-stone-800 block">Personal Prayer Requests</span>
+                        <span className="text-stone-500 text-[11px]">Removes your private and submitted prayer items.</span>
+                      </div>
+                    </label>
+                  </div>
+
+                  {/* Selective Success Notice */}
+                  {selectiveSuccessNotice && (
+                    <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-900 font-sans flex items-center gap-2 animate-in fade-in">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                      <span>{selectiveSuccessNotice}</span>
+                    </div>
+                  )}
+
+                  {/* Error Notice */}
+                  {errorMessage && (
+                    <div className="p-3 bg-rose-100 border border-rose-300 rounded-xl text-xs text-rose-900 font-sans">
+                      {errorMessage}
+                    </div>
+                  )}
+
+                  {/* Action Buttons for Selective Mode */}
+                  <div className="flex items-center justify-between pt-3 border-t border-[#E5E0D5]">
                     <button
                       type="button"
+                      id="btn-cancel-selective"
                       onClick={onClose}
-                      className="w-full py-2.5 bg-amber-700 hover:bg-amber-800 text-white rounded-xl text-xs font-bold uppercase tracking-wider transition-colors cursor-pointer"
+                      className="px-5 py-2.5 text-xs font-bold uppercase tracking-wider text-[#7A7468] hover:bg-stone-100 rounded-full cursor-pointer transition-colors"
                     >
-                      Return to Sanctuary
+                      Keep Everything
+                    </button>
+                    <button
+                      type="button"
+                      id="btn-execute-selective-reset"
+                      onClick={handlePurgeSelective}
+                      disabled={isPurgingSelective || (!selectedCategories.notes && !selectedCategories.dreams && !selectedCategories.reading && !selectedCategories.bookmarks && !selectedCategories.prayers)}
+                      className="px-6 py-2.5 bg-[#C5A059] hover:bg-[#B48F48] disabled:bg-stone-300 text-white text-xs font-bold uppercase tracking-wider rounded-full shadow-xs inline-flex items-center gap-2 cursor-pointer transition-colors disabled:cursor-not-allowed"
+                    >
+                      {isPurgingSelective ? (
+                        <>
+                          <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                          <span>Purging Selected...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Trash2 className="w-3.5 h-3.5" />
+                          <span>Reset Selected Records</span>
+                        </>
+                      )}
                     </button>
                   </div>
                 </div>
-              ) : (
-                <>
+              )}
+
+              {/* =========================================================================
+                  TAB B: PERMANENT ACCOUNT ERASURE
+                 ========================================================================= */}
+              {deleteMode === "permanent" && (
+                <div className="space-y-5 animate-in fade-in duration-200">
+                  {/* Apostolic Founder Protection Notice with Override Option */}
+                  {isSuperAdmin && (
+                    <div className="p-4 bg-amber-50 border border-amber-200 rounded-2xl space-y-3">
+                      <div className="flex items-center gap-2 text-amber-800 font-bold font-serif text-sm">
+                        <ShieldAlert className="w-4 h-4 text-amber-600" />
+                        <span>Apostolic Oversight Protection</span>
+                      </div>
+                      <p className="text-xs text-amber-900/90 leading-relaxed font-sans">
+                        This account anchors apostolic leadership for <strong>Global Tower of Christ</strong>.
+                        To prevent accidental lockouts, account deletion requires enabling the administrator override.
+                      </p>
+                      <label className="flex items-center gap-2.5 p-2.5 bg-amber-100/80 border border-amber-300 rounded-xl cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          id="checkbox-admin-override"
+                          checked={adminOverride}
+                          onChange={(e) => setAdminOverride(e.target.checked)}
+                          className="w-4 h-4 text-amber-700 accent-amber-700 rounded cursor-pointer"
+                        />
+                        <span className="text-xs font-bold text-amber-950 font-sans">
+                          Enable Admin Override to allow account deletion
+                        </span>
+                      </label>
+                    </div>
+                  )}
+
                   {/* Deletion Scope Explanation */}
                   <div className="p-4 bg-[#FDFCF9] border border-[#E5E0D5] rounded-2xl space-y-3">
                     <span className="text-xs font-bold uppercase tracking-wider text-[#7A7468] block">
@@ -564,6 +844,7 @@ export const DeleteAccountModal: React.FC<DeleteAccountModalProps> = ({
                       Reason for Leaving (Optional)
                     </label>
                     <select
+                      id="select-delete-reason"
                       value={reason}
                       onChange={(e) => setReason(e.target.value)}
                       className="w-full px-3.5 py-2.5 text-xs bg-[#FDFCF9] border border-[#E5E0D5] rounded-xl text-[#2D2D2D] focus:outline-none focus:border-rose-400 cursor-pointer"
@@ -577,6 +858,7 @@ export const DeleteAccountModal: React.FC<DeleteAccountModalProps> = ({
                     {reason === "other" && (
                       <input
                         type="text"
+                        id="input-custom-reason"
                         value={customReason}
                         onChange={(e) => setCustomReason(e.target.value)}
                         placeholder="Briefly describe your reason..."
@@ -590,6 +872,7 @@ export const DeleteAccountModal: React.FC<DeleteAccountModalProps> = ({
                   <label className="flex items-start gap-3 p-3.5 bg-rose-50/70 border border-rose-100 rounded-xl cursor-pointer select-none">
                     <input
                       type="checkbox"
+                      id="checkbox-confirm-deletion"
                       checked={understoodCheckbox}
                       onChange={(e) => setUnderstoodCheckbox(e.target.checked)}
                       className="w-4 h-4 mt-0.5 text-rose-600 accent-rose-600 rounded cursor-pointer"
@@ -607,6 +890,7 @@ export const DeleteAccountModal: React.FC<DeleteAccountModalProps> = ({
                     </label>
                     <input
                       type="text"
+                      id="input-confirm-delete"
                       value={confirmInput}
                       onChange={(e) => setConfirmInput(e.target.value)}
                       placeholder="Type DELETE or your email"
@@ -638,10 +922,11 @@ export const DeleteAccountModal: React.FC<DeleteAccountModalProps> = ({
                     </span>
                   </div>
 
-                  {/* Action Buttons */}
+                  {/* Action Buttons for Permanent Deletion */}
                   <div className="flex items-center justify-between pt-2 border-t border-[#E5E0D5]">
                     <button
                       type="button"
+                      id="btn-cancel-permanent"
                       onClick={onClose}
                       className="px-5 py-2.5 text-xs font-bold uppercase tracking-wider text-[#7A7468] hover:bg-stone-100 rounded-full cursor-pointer transition-colors"
                     >
@@ -649,6 +934,7 @@ export const DeleteAccountModal: React.FC<DeleteAccountModalProps> = ({
                     </button>
                     <button
                       type="button"
+                      id="btn-permanently-delete"
                       onClick={handleDelete}
                       disabled={!canSubmit}
                       className="px-6 py-2.5 bg-rose-600 hover:bg-rose-700 disabled:bg-rose-300 text-white text-xs font-bold uppercase tracking-wider rounded-full shadow-xs inline-flex items-center gap-2 cursor-pointer transition-colors disabled:cursor-not-allowed"
@@ -657,7 +943,7 @@ export const DeleteAccountModal: React.FC<DeleteAccountModalProps> = ({
                       <span>Permanently Delete</span>
                     </button>
                   </div>
-                </>
+                </div>
               )}
             </div>
           </div>
