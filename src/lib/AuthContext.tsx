@@ -184,9 +184,42 @@ function isFirebaseAuthUnavailable(err: any): boolean {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [currentUser, setCurrentUser] = useState<FirebaseUser | AppUser | null>(null);
-  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
-  const [loading, setLoading] = useState(true);
+  // Synchronously restore active session or stored user on mount to eliminate initial loading delays
+  const [currentUser, setCurrentUser] = useState<FirebaseUser | AppUser | null>(() => {
+    try {
+      const active = getSavedSession();
+      if (active?.user && !Storage.isUserRevoked(active.user.uid, active.user.email)) {
+        return active.user;
+      }
+      const existingUser = Storage.getUser();
+      if (existingUser && existingUser.id !== DEFAULT_USER.id && !Storage.isUserRevoked(existingUser.id, existingUser.email)) {
+        return {
+          uid: existingUser.id,
+          email: existingUser.email,
+          displayName: existingUser.name,
+          photoURL: existingUser.avatarUrl
+        };
+      }
+    } catch {}
+    return null;
+  });
+
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(() => {
+    try {
+      const active = getSavedSession();
+      if (active?.profile && !Storage.isUserRevoked(active.profile.id, active.profile.email)) {
+        return active.profile;
+      }
+      const existingUser = Storage.getUser();
+      if (existingUser && existingUser.id !== DEFAULT_USER.id && !Storage.isUserRevoked(existingUser.id, existingUser.email)) {
+        return existingUser;
+      }
+    } catch {}
+    return null;
+  });
+
+  // Zero-delay initial entry: no blocking screen on app start
+  const [loading, setLoading] = useState(false);
   const [kickedNotice, setKickedNotice] = useState<string | null>(null);
 
   const clearKickedNotice = () => setKickedNotice(null);
@@ -280,20 +313,26 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setLoading(false);
         return;
       }
-      if (
-        active.profile &&
-        (active.profile.name === "Deyvin Richard Jnr Sango" ||
-          active.profile.name === "Richard Sango" ||
-          active.profile.email === "sangodeyvin@gmail.com" ||
-          active.profile.email === "sangorichard@gmail.com" ||
-          active.profile.email === "info@globaltowerofchrist.com")
-      ) {
-        active.profile.name = "Apostle R.Sango";
-        active.profile.firstName = "Apostle";
-        active.profile.lastName = "R.Sango";
-        active.profile.role = "super_admin";
-        if (active.user) {
-          active.user.displayName = "Apostle R.Sango";
+      if (active.profile) {
+        const founderEmails = [
+          "info@globaltowerofchrist.com",
+          "sangorichard@gmail.com",
+          "sangodeyvin@gmail.com"
+        ];
+        const isFounder = founderEmails.includes(active.profile.email?.toLowerCase().trim() || "");
+        if (isFounder) {
+          active.profile.role = "super_admin";
+          if (!active.profile.name || active.profile.name === "Richard Sango" || active.profile.name === "Deyvin Richard Jnr Sango") {
+            active.profile.name = "Apostle R.Sango";
+            active.profile.firstName = "Apostle";
+            active.profile.lastName = "R.Sango";
+          }
+          if (active.user && (!active.user.displayName || active.user.displayName === "Richard Sango")) {
+            active.user.displayName = active.profile.name;
+          }
+        } else {
+          // Anyone else who enters is strictly beloved brethren
+          active.profile.role = "user";
         }
         saveActiveSession(active);
       }
@@ -338,63 +377,74 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               return;
             }
             setCurrentUser(firebaseUser);
-            try {
-              const userDocRef = doc(db, "users", firebaseUser.uid);
-              const userDoc = await getDoc(userDocRef);
+            setLoading(false);
 
-              if (userDoc.exists()) {
-                const data = userDoc.data() as UserProfile;
-                setUserProfile(data);
-                Storage.setUser(data);
-                saveActiveSession({ user: firebaseUser, profile: data });
-              } else {
+            // Fetch and sync Firestore in background without delaying UI load
+            (async () => {
+              try {
+                const userDocRef = doc(db, "users", firebaseUser.uid);
+                const userDoc = await getDoc(userDocRef);
+
                 const founderEmails = [
                   "info@globaltowerofchrist.com",
                   "sangorichard@gmail.com",
                   "sangodeyvin@gmail.com"
                 ];
                 const isFounder = founderEmails.includes(firebaseUser.email?.toLowerCase().trim() || "");
-                
-                const initialProfile: UserProfile = {
-                  id: firebaseUser.uid,
-                  name: isFounder ? "Apostle R.Sango" : (firebaseUser.displayName || firebaseUser.email?.split("@")[0] || "Beloved Member"),
-                  firstName: isFounder ? "Apostle" : (firebaseUser.displayName?.split(" ")[0] || "Beloved"),
-                  lastName: isFounder ? "R.Sango" : (firebaseUser.displayName?.split(" ").slice(1).join(" ") || "Member"),
-                  email: firebaseUser.email || "",
-                  role: isFounder ? "super_admin" : "user",
-                  avatarUrl: firebaseUser.photoURL || `https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400&auto=format&fit=crop&q=80`,
-                  interests: ["Bible Study", "Prayer", "Sermons", "Worship", "Dominion", "Victory", "Dreams & Visions Interpretation"],
-                  favoriteTeachers: ["Apostle R.Sango"],
-                  notificationPrefs: {
-                    dailyScripture: true,
-                    newSermons: true,
-                    bibleStudyReminders: true,
-                    liveEvents: true,
-                    prayerReminders: true,
-                    announcements: true,
-                  },
-                  privacyPrefs: {
-                    profilePublic: false,
-                    shareActivity: false,
-                    allowDirectMessages: true,
-                  },
-                  createdAt: new Date().toISOString(),
-                  isEarlyAccess: true,
-                };
 
-                await setDoc(userDocRef, initialProfile);
-                Storage.saveJoinedMember(initialProfile);
-                setUserProfile(initialProfile);
-                Storage.setUser(initialProfile);
-                saveActiveSession({ user: firebaseUser, profile: initialProfile });
+                if (userDoc.exists()) {
+                  const data = userDoc.data() as UserProfile;
+                  if (isFounder) {
+                    data.role = "super_admin";
+                  } else {
+                    data.role = "user";
+                  }
+                  setUserProfile(data);
+                  Storage.setUser(data);
+                  saveActiveSession({ user: firebaseUser, profile: data });
+                } else {
+                  const initialProfile: UserProfile = {
+                    id: firebaseUser.uid,
+                    name: isFounder ? "Apostle R.Sango" : (firebaseUser.displayName || firebaseUser.email?.split("@")[0] || "Beloved Brethren"),
+                    firstName: isFounder ? "Apostle" : (firebaseUser.displayName?.split(" ")[0] || "Beloved"),
+                    lastName: isFounder ? "R.Sango" : (firebaseUser.displayName?.split(" ").slice(1).join(" ") || "Brethren"),
+                    email: firebaseUser.email || "",
+                    role: isFounder ? "super_admin" : "user",
+                    avatarUrl: firebaseUser.photoURL || `https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400&auto=format&fit=crop&q=80`,
+                    interests: ["Bible Study", "Prayer", "Sermons", "Worship", "Dominion", "Victory", "Dreams & Visions Interpretation"],
+                    favoriteTeachers: ["Apostle R.Sango"],
+                    notificationPrefs: {
+                      dailyScripture: true,
+                      newSermons: true,
+                      bibleStudyReminders: true,
+                      liveEvents: true,
+                      prayerReminders: true,
+                      announcements: true,
+                    },
+                    privacyPrefs: {
+                      profilePublic: false,
+                      shareActivity: false,
+                      allowDirectMessages: true,
+                    },
+                    createdAt: new Date().toISOString(),
+                    isEarlyAccess: true,
+                  };
+
+                  setDoc(userDocRef, initialProfile).catch(() => {});
+                  Storage.saveJoinedMember(initialProfile);
+                  setUserProfile(initialProfile);
+                  Storage.setUser(initialProfile);
+                  saveActiveSession({ user: firebaseUser, profile: initialProfile });
+                }
+
+                await UserDataService.syncUserDataFromFirestore(firebaseUser.uid);
+              } catch (err) {
+                console.warn("Could not sync profile from Firestore:", err);
               }
-
-              await UserDataService.syncUserDataFromFirestore(firebaseUser.uid);
-            } catch (err) {
-              console.warn("Could not sync profile from Firestore:", err);
-            }
+            })();
+          } else {
+            setLoading(false);
           }
-          setLoading(false);
         },
         (authError) => {
           console.warn("Firebase Auth listener encountered error, retaining active session:", authError);
@@ -438,30 +488,31 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
       }
 
-      const uid = fbUser?.uid || APOSTLE_SANGO_ADMIN.id;
+      const accounts = getStoredAccounts();
+      const existingStored = accounts[cleanEmail];
+      const uid = fbUser?.uid || existingStored?.user?.uid || APOSTLE_SANGO_ADMIN.id;
       const adminUser: AppUser = {
         uid,
         email: cleanEmail,
-        displayName: "Apostle R.Sango",
-        photoURL: APOSTLE_SANGO_ADMIN.avatarUrl || null,
+        displayName: existingStored?.user?.displayName || existingStored?.profile?.name || "Apostle R.Sango",
+        photoURL: existingStored?.user?.photoURL || existingStored?.profile?.avatarUrl || APOSTLE_SANGO_ADMIN.avatarUrl || null,
         emailVerified: true
       };
       const adminProfile: UserProfile = {
-        ...APOSTLE_SANGO_ADMIN,
+        ...(existingStored?.profile || APOSTLE_SANGO_ADMIN),
         id: uid,
-        name: "Apostle R.Sango",
-        firstName: "Apostle",
-        lastName: "R.Sango",
+        name: existingStored?.profile?.name || "Apostle R.Sango",
+        firstName: existingStored?.profile?.firstName || "Apostle",
+        lastName: existingStored?.profile?.lastName || "R.Sango",
         email: cleanEmail,
         role: "super_admin",
         favoriteTeachers: ["Apostle R.Sango"]
       };
 
-      try {
-        await setDoc(doc(db, "users", uid), adminProfile, { merge: true });
-      } catch (err) {
+      // Non-blocking Firestore sync for immediate entry
+      setDoc(doc(db, "users", uid), adminProfile, { merge: true }).catch((err) => {
         console.warn("Could not sync admin to Firestore:", err);
-      }
+      });
 
       saveStoredAccount(cleanEmail, adminUser, adminProfile, pass);
       Storage.saveJoinedMember(adminProfile);
@@ -475,20 +526,41 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       const cred = await signInWithEmailAndPassword(auth, cleanEmail, pass);
       if (cred.user) {
+        // Immediate local resolution: check if we have stored profile
+        const accounts = getStoredAccounts();
+        const stored = accounts[cleanEmail];
+        const initialProfile: UserProfile = stored?.profile || {
+          ...DEFAULT_USER,
+          id: cred.user.uid,
+          name: cred.user.displayName || cleanEmail.split("@")[0] || "Beloved Brethren",
+          firstName: cred.user.displayName?.split(" ")[0] || "Beloved",
+          lastName: cred.user.displayName?.split(" ").slice(1).join(" ") || "Brethren",
+          email: cleanEmail,
+          role: isFounder ? "super_admin" : "user",
+          avatarUrl: cred.user.photoURL || `https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400&auto=format&fit=crop&q=80`
+        };
+
         setCurrentUser(cred.user);
-        try {
-          const userDocRef = doc(db, "users", cred.user.uid);
-          const userDoc = await getDoc(userDocRef);
-          if (userDoc.exists()) {
-            const data = userDoc.data() as UserProfile;
-            setUserProfile(data);
-            Storage.setUser(data);
-            saveActiveSession({ user: cred.user, profile: data });
-          }
-        } catch {
-          // ignore firestore fetch error
-        }
-        await UserDataService.syncUserDataFromFirestore(cred.user.uid);
+        setUserProfile(initialProfile);
+        Storage.setUser(initialProfile);
+        saveActiveSession({ user: cred.user, profile: initialProfile });
+        saveStoredAccount(cleanEmail, cred.user, initialProfile, pass);
+
+        // Run full database synchronization in parallel background without blocking the user
+        (async () => {
+          try {
+            const userDocRef = doc(db, "users", cred.user.uid);
+            const userDoc = await getDoc(userDocRef);
+            if (userDoc.exists()) {
+              const data = userDoc.data() as UserProfile;
+              setUserProfile(data);
+              Storage.setUser(data);
+              saveActiveSession({ user: cred.user, profile: data });
+            }
+          } catch {}
+          UserDataService.syncUserDataFromFirestore(cred.user.uid).catch(() => {});
+        })();
+
         return;
       }
     } catch (fbErr: any) {
@@ -511,17 +583,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           return;
         }
 
-        const displayName = isFounder ? "Richard Sango" : (cleanEmail.split("@")[0] || "Beloved Member");
+        const displayName = isFounder ? "Apostle R.Sango" : (cleanEmail.split("@")[0] || "Beloved Brethren");
 
         const profile: UserProfile = {
           ...DEFAULT_USER,
           id: isFounder ? APOSTLE_SANGO_ADMIN.id : `u-local-${cleanEmail.replace(/[^a-zA-Z0-9]/g, "-")}`,
           name: displayName,
-          firstName: isFounder ? "Richard" : (displayName.split(" ")[0] || "Beloved"),
-          lastName: isFounder ? "Sango" : (displayName.split(" ").slice(1).join(" ") || "Member"),
+          firstName: isFounder ? "Apostle" : (displayName.split(" ")[0] || "Beloved"),
+          lastName: isFounder ? "R.Sango" : (displayName.split(" ").slice(1).join(" ") || "Brethren"),
           email: cleanEmail,
           role: isFounder ? "super_admin" : "user",
-          favoriteTeachers: ["Richard Sango"]
+          favoriteTeachers: ["Apostle R.Sango"]
         };
         const user: AppUser = {
           uid: profile.id,
@@ -617,12 +689,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       isEarlyAccess: true,
     };
 
-    // 3. Automatically create user profile document in Firebase Firestore
-    try {
-      await setDoc(doc(db, "users", uid), newProfile);
-    } catch (fsErr) {
+    // 3. Automatically create user profile document in Firebase Firestore (non-blocking background sync)
+    setDoc(doc(db, "users", uid), newProfile).catch((fsErr) => {
       console.warn("Could not write profile to Firestore, safely stored in local registry:", fsErr);
-    }
+    });
 
     // 4. Save account to local CRM registry & active session
     saveStoredAccount(cleanEmail, authUser, newProfile, data.password);
@@ -694,11 +764,44 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const updateProfileData = async (updates: Partial<UserProfile>) => {
     if (!userProfile) return;
     const updated = { ...userProfile, ...updates };
+
+    const founderEmails = [
+      "info@globaltowerofchrist.com",
+      "sangorichard@gmail.com",
+      "sangodeyvin@gmail.com"
+    ];
+    const isFounder = founderEmails.includes((updated.email || userProfile.email || "").toLowerCase().trim());
+    if (!isFounder) {
+      updated.role = "user";
+    } else {
+      updated.role = "super_admin";
+    }
+
     setUserProfile(updated);
     Storage.setUser(updated);
 
+    // Also update stored accounts in local registry if present
+    const cleanEmail = (updated.email || userProfile.email || "").toLowerCase().trim();
+    try {
+      const accounts = getStoredAccounts();
+      if (accounts[cleanEmail]) {
+        accounts[cleanEmail].profile = updated;
+        if (accounts[cleanEmail].user) {
+          accounts[cleanEmail].user.displayName = updated.name;
+          accounts[cleanEmail].user.photoURL = updated.avatarUrl || null;
+        }
+        localStorage.setItem(REGISTRY_KEY, JSON.stringify(accounts));
+      }
+    } catch {}
+
     if (currentUser) {
-      saveActiveSession({ user: currentUser, profile: updated });
+      const updatedUser = {
+        ...currentUser,
+        displayName: updates.name || currentUser.displayName,
+        photoURL: updates.avatarUrl || currentUser.photoURL
+      };
+      setCurrentUser(updatedUser);
+      saveActiveSession({ user: updatedUser, profile: updated });
 
       try {
         const userRef = doc(db, "users", currentUser.uid);

@@ -228,44 +228,133 @@ export class UserDataService {
   }
 
   // ==========================================
-  // SYNC USER DATA ON LOGIN
-  // When a user logs in, retrieve all their private subcollections from Firestore
+  // ISOLATED USER DATA: STUDY PROGRESS (users/{uid}/studyProgress)
+  // ==========================================
+  static async saveStudyProgress(
+    planId: string,
+    progress: {
+      isEnrolled: boolean;
+      currentDay: number;
+      completedDays: number;
+      completedDayNumbers: number[];
+    }
+  ): Promise<void> {
+    const activeUid = auth.currentUser?.uid;
+    if (activeUid) {
+      try {
+        const progRef = doc(db, `users/${activeUid}/studyProgress`, planId);
+        await setDoc(progRef, {
+          ...progress,
+          planId,
+          updatedAt: new Date().toISOString()
+        }, { merge: true });
+      } catch (err) {
+        console.warn("Firestore saveStudyProgress error:", err);
+      }
+    }
+  }
+
+  static async fetchStudyProgress(
+    uid: string
+  ): Promise<Record<string, { isEnrolled: boolean; currentDay: number; completedDays: number; completedDayNumbers: number[] }>> {
+    const result: Record<string, any> = {};
+    try {
+      const snap = await getDocs(collection(db, `users/${uid}/studyProgress`));
+      if (!snap.empty) {
+        snap.docs.forEach((d) => {
+          result[d.id] = d.data();
+        });
+      }
+    } catch (err) {
+      console.warn("Could not fetch user studyProgress from Firestore:", err);
+    }
+    return result;
+  }
+
+  // ==========================================
+  // SYNC USER DATA ON LOGIN (Blazing Fast Parallel Queries)
+  // When a user logs in, retrieve all their private subcollections from Firestore concurrently
   // ==========================================
   static async syncUserDataFromFirestore(uid: string): Promise<void> {
     try {
-      // 1. Sync Bookmarks
-      const bmSnap = await getDocs(collection(db, `users/${uid}/bookmarks`));
-      if (!bmSnap.empty) {
-        const items = bmSnap.docs.map(d => d.data() as VerseBookmark);
+      // Execute all 6 subcollection fetches in parallel with Promise.allSettled
+      // This reduces sync time from multiple seconds down to a single network flight!
+      const [bmRes, notesRes, dreamsRes, visionsRes, savedRes, studyRes] = await Promise.allSettled([
+        getDocs(collection(db, `users/${uid}/bookmarks`)),
+        getDocs(collection(db, `users/${uid}/notes`)),
+        getDocs(collection(db, `users/${uid}/dreams`)),
+        getDocs(collection(db, `users/${uid}/visions`)),
+        getDocs(collection(db, `users/${uid}/savedSermons`)),
+        getDocs(collection(db, `users/${uid}/studyProgress`))
+      ]);
+
+      // 1. Bookmarks
+      if (bmRes.status === "fulfilled" && !bmRes.value.empty) {
+        const items = bmRes.value.docs.map(d => d.data() as VerseBookmark);
         localStorage.setItem("gtc_verse_bookmarks", JSON.stringify(items));
       }
 
-      // 2. Sync Notes
-      const notesSnap = await getDocs(collection(db, `users/${uid}/notes`));
-      if (!notesSnap.empty) {
-        const items = notesSnap.docs.map(d => d.data() as StudyNote);
+      // 2. Notes
+      if (notesRes.status === "fulfilled" && !notesRes.value.empty) {
+        const items = notesRes.value.docs.map(d => d.data() as StudyNote);
         localStorage.setItem("gtc_study_notes", JSON.stringify(items));
       }
 
-      // 3. Sync Dreams
-      const dreamsSnap = await getDocs(collection(db, `users/${uid}/dreams`));
-      if (!dreamsSnap.empty) {
-        const items = dreamsSnap.docs.map(d => d.data() as DreamEntry);
+      // 3. Dreams
+      if (dreamsRes.status === "fulfilled" && !dreamsRes.value.empty) {
+        const items = dreamsRes.value.docs.map(d => d.data() as DreamEntry);
         localStorage.setItem("gtc_dream_journal", JSON.stringify(items));
       }
 
-      // 4. Sync Visions
-      const visionsSnap = await getDocs(collection(db, `users/${uid}/visions`));
-      if (!visionsSnap.empty) {
-        const items = visionsSnap.docs.map(d => d.data() as VisionEntry);
+      // 4. Visions
+      if (visionsRes.status === "fulfilled" && !visionsRes.value.empty) {
+        const items = visionsRes.value.docs.map(d => d.data() as VisionEntry);
         localStorage.setItem("gtc_vision_journal", JSON.stringify(items));
       }
 
-      // 5. Sync Saved Sermons
-      const savedSnap = await getDocs(collection(db, `users/${uid}/savedSermons`));
-      if (!savedSnap.empty) {
-        const items = savedSnap.docs.map(d => d.id);
+      // 5. Saved Sermons
+      if (savedRes.status === "fulfilled" && !savedRes.value.empty) {
+        const items = savedRes.value.docs.map(d => d.id);
         localStorage.setItem("gtc_saved_sermon_ids", JSON.stringify(items));
+      }
+
+      // 6. Study Progress (Sync & Reconcile)
+      if (studyRes.status === "fulfilled" && !studyRes.value.empty) {
+        const progressMap: Record<string, any> = {};
+        studyRes.value.docs.forEach((d) => {
+          progressMap[d.id] = d.data();
+        });
+
+        const currentPlans = Storage.getStudyPlans();
+        const updatedPlans = currentPlans.map((plan) => {
+          const userProg = progressMap[plan.id];
+          if (!userProg) return plan;
+
+          const completedNums = new Set<number>(
+            Array.isArray(userProg.completedDayNumbers) ? userProg.completedDayNumbers : []
+          );
+
+          const days = (plan.days || []).map((d, index) => {
+            const num = d.dayNumber ?? d.day ?? index + 1;
+            return {
+              ...d,
+              isCompleted: completedNums.has(num) || !!d.isCompleted
+            };
+          });
+
+          const completedCount = days.filter((d) => d.isCompleted).length;
+
+          return {
+            ...plan,
+            isEnrolled: userProg.isEnrolled !== undefined ? userProg.isEnrolled : plan.isEnrolled,
+            currentDay: userProg.currentDay || plan.currentDay || 1,
+            completedDays: completedCount,
+            days
+          };
+        });
+
+        Storage.saveStudyPlans(updatedPlans);
+        window.dispatchEvent(new CustomEvent("gtc_study_plans_updated"));
       }
     } catch (err) {
       console.warn("Could not synchronize user subcollections from Firestore:", err);
@@ -280,6 +369,8 @@ export class UserDataService {
     localStorage.removeItem("gtc_vision_journal");
     localStorage.removeItem("gtc_saved_sermon_ids");
     localStorage.removeItem("gtc_user_profile");
+    localStorage.removeItem("gtc_study_plans");
+    window.dispatchEvent(new CustomEvent("gtc_study_plans_updated"));
   }
 
   /**

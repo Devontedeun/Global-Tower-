@@ -17,6 +17,9 @@ import {
 import confetti from "canvas-confetti";
 import { BibleStudyPlan } from "../types";
 import { Storage } from "../lib/storage";
+import { StudyPlanProgressBar } from "./StudyPlanProgressBar";
+import { UserDataService } from "../lib/userDataService";
+import { useAuth } from "../lib/AuthContext";
 
 interface StudyPlansHubProps {
   initialPlanId?: string;
@@ -29,28 +32,100 @@ export const StudyPlansHub: React.FC<StudyPlansHubProps> = ({
   onNavigateToBible,
   onAskAI,
 }) => {
+  const { currentUser } = useAuth();
   const [plans, setPlans] = useState<BibleStudyPlan[]>([]);
   const [activePlan, setActivePlan] = useState<BibleStudyPlan | null>(null);
   const [activeDayNum, setActiveDayNum] = useState<number>(1);
   const [quizSelection, setQuizSelection] = useState<Record<string, number>>({});
   const [quizSubmitted, setQuizSubmitted] = useState(false);
 
+  // Load and subscribe to plan changes
   useEffect(() => {
-    const loadedPlans = Storage.getStudyPlans();
-    setPlans(loadedPlans);
-    const defaultPlan = initialPlanId
-      ? loadedPlans.find((p) => p.id === initialPlanId) || loadedPlans[0]
-      : loadedPlans[0];
-    setActivePlan(defaultPlan);
-  }, [initialPlanId]);
+    const refreshPlans = () => {
+      const loadedPlans = Storage.getStudyPlans();
+      setPlans(loadedPlans);
+      setActivePlan((prev) => {
+        if (!prev) {
+          const defaultPlan = initialPlanId
+            ? loadedPlans.find((p) => p.id === initialPlanId) || loadedPlans[0]
+            : loadedPlans[0];
+          return defaultPlan || null;
+        }
+        return loadedPlans.find((p) => p.id === prev.id) || loadedPlans[0] || null;
+      });
+    };
+
+    refreshPlans();
+
+    // Reconcile user progress from Firestore whenever user changes or database updates
+    if (currentUser?.uid) {
+      UserDataService.fetchStudyProgress(currentUser.uid).then((progressMap) => {
+        if (progressMap && Object.keys(progressMap).length > 0) {
+          const currentPlans = Storage.getStudyPlans();
+          const updatedPlans = currentPlans.map((plan) => {
+            const userProg = progressMap[plan.id];
+            if (!userProg) return plan;
+
+            const completedNums = new Set<number>(
+              Array.isArray(userProg.completedDayNumbers) ? userProg.completedDayNumbers : []
+            );
+
+            const days = (plan.days || []).map((d, index) => {
+              const num = d.dayNumber ?? d.day ?? index + 1;
+              return {
+                ...d,
+                isCompleted: completedNums.has(num) || !!d.isCompleted
+              };
+            });
+
+            const completedCount = days.filter((d) => d.isCompleted).length;
+
+            return {
+              ...plan,
+              isEnrolled: userProg.isEnrolled !== undefined ? userProg.isEnrolled : plan.isEnrolled,
+              currentDay: userProg.currentDay || plan.currentDay || 1,
+              completedDays: completedCount,
+              days
+            };
+          });
+
+          Storage.saveStudyPlans(updatedPlans);
+          refreshPlans();
+        }
+      }).catch((err) => console.warn("Could not load study plans from Firestore:", err));
+    }
+
+    const handlePlansUpdated = () => {
+      refreshPlans();
+    };
+
+    window.addEventListener("gtc_study_plans_updated", handlePlansUpdated);
+    return () => {
+      window.removeEventListener("gtc_study_plans_updated", handlePlansUpdated);
+    };
+  }, [initialPlanId, currentUser?.uid]);
 
   const handleToggleEnrollment = (planId: string) => {
     const updated = plans.map((p) => {
       if (p.id === planId) {
-        return { ...p, isEnrolled: !p.isEnrolled };
+        const nextEnrolled = !p.isEnrolled;
+        const completedNums = (p.days || [])
+          .filter((d) => d.isCompleted)
+          .map((d, i) => d.dayNumber ?? d.day ?? i + 1);
+
+        // Instantly sync to user's database record
+        UserDataService.saveStudyProgress(planId, {
+          isEnrolled: nextEnrolled,
+          currentDay: p.currentDay || 1,
+          completedDays: p.completedDays || 0,
+          completedDayNumbers: completedNums
+        }).catch(() => {});
+
+        return { ...p, isEnrolled: nextEnrolled };
       }
       return p;
     });
+
     setPlans(updated);
     Storage.saveStudyPlans(updated);
     if (activePlan?.id === planId) {
@@ -59,35 +134,54 @@ export const StudyPlansHub: React.FC<StudyPlansHubProps> = ({
   };
 
   const handleToggleDayComplete = (planId: string, dayNum: number) => {
+    let newlyCompletedPlan: BibleStudyPlan | null = null;
+
     const updated = plans.map((p) => {
       if (p.id === planId) {
-        const days = (p.days || []).map((d) => {
-          const num = d.dayNumber ?? d.day;
+        const days = (p.days || []).map((d, index) => {
+          const num = d.dayNumber ?? d.day ?? index + 1;
           return num === dayNum ? { ...d, isCompleted: !d.isCompleted } : d;
         });
         const completedCount = days.filter((d) => d.isCompleted).length;
-        const nextCurrentDay = Math.min(p.totalDays || 1, completedCount + 1);
-        return {
+        const nextCurrentDay = Math.min(p.totalDays || days.length || 1, completedCount + 1);
+
+        const completedNums = days
+          .filter((d) => d.isCompleted)
+          .map((d, i) => d.dayNumber ?? d.day ?? i + 1);
+
+        // Instantly persist to user's Firestore record
+        UserDataService.saveStudyProgress(planId, {
+          isEnrolled: true,
+          currentDay: nextCurrentDay,
+          completedDays: completedCount,
+          completedDayNumbers: completedNums
+        }).catch(() => {});
+
+        const updatedItem: BibleStudyPlan = {
           ...p,
+          isEnrolled: true,
           days,
           completedDays: completedCount,
           currentDay: nextCurrentDay
         };
+
+        newlyCompletedPlan = updatedItem;
+        return updatedItem;
       }
       return p;
     });
+
     setPlans(updated);
     Storage.saveStudyPlans(updated);
 
-    const targetPlan = updated.find((p) => p.id === planId);
-    if (targetPlan) {
-      setActivePlan(targetPlan);
-      // Confetti if completed
+    if (newlyCompletedPlan) {
+      setActivePlan(newlyCompletedPlan);
+      // Confetti celebration
       confetti({
-        particleCount: 40,
-        spread: 70,
-        origin: { y: 0.7 },
-        colors: ["#D4AF37", "#10B981"]
+        particleCount: 50,
+        spread: 80,
+        origin: { y: 0.65 },
+        colors: ["#C5A059", "#10B981", "#E0C078"]
       });
     }
   };
@@ -160,13 +254,8 @@ export const StudyPlansHub: React.FC<StudyPlansHubProps> = ({
                     <h3 className="font-serif font-bold text-[#2D2D2D] text-base mt-1">{plan.title}</h3>
                     <p className="text-[11px] text-[#7A7468] line-clamp-2 mt-1 font-sans">{plan.description}</p>
 
-                    {/* Progress bar */}
-                    <div className="w-full bg-[#E5E0D5]/70 h-1.5 rounded-full overflow-hidden mt-3.5">
-                      <div
-                        className="bg-[#C5A059] h-full rounded-full transition-all"
-                        style={{ width: `${progressPct}%` }}
-                      />
-                    </div>
+                    {/* Visual Progress Bar Card Variant */}
+                    <StudyPlanProgressBar plan={plan} variant="card" className="mt-3.5" />
                   </div>
                 );
               })}
@@ -200,38 +289,12 @@ export const StudyPlansHub: React.FC<StudyPlansHubProps> = ({
                 </button>
               </div>
 
-              {/* Day Selector Chips */}
-              <div className="space-y-2.5">
-                <div className="flex items-center justify-between">
-                  <div className="text-xs font-bold text-[#2D2D2D] uppercase tracking-wider font-serif">
-                    Select Day ({activePlan.days?.length || activePlan.totalDays} Total Days):
-                  </div>
-                  <div className="text-xs font-serif text-[#C5A059] font-bold">
-                    Day {currentDayNumber} of {activePlan.totalDays}
-                  </div>
-                </div>
-                <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-thin">
-                  {(activePlan.days || []).map((d, dIdx) => {
-                    const dayNum = d.dayNumber ?? d.day ?? dIdx + 1;
-                    return (
-                      <button
-                        key={`plan-day-${activePlan.id}-${dayNum}-${dIdx}`}
-                        onClick={() => setActiveDayNum(dayNum)}
-                        className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-all cursor-pointer ${
-                          activeDayNum === dayNum
-                            ? "bg-[#C5A059] text-white shadow-2xs"
-                            : d.isCompleted
-                            ? "bg-emerald-50 text-emerald-900 border border-emerald-200"
-                            : "bg-[#F9F7F2] text-[#7A7468] border border-[#E5E0D5] hover:bg-white hover:text-[#C5A059]"
-                        }`}
-                      >
-                        {d.isCompleted ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> : <Circle className="w-3.5 h-3.5" />}
-                        <span>Day {dayNum}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
+              {/* Prominent Visual Progress Tracker Component */}
+              <StudyPlanProgressBar
+                plan={activePlan}
+                activeDayNumber={activeDayNum}
+                onSelectDay={(dayNum) => setActiveDayNum(dayNum)}
+              />
 
               {/* Active Day Content */}
               <div className="p-6 bg-[#FDFCF9] border border-[#E5E0D5] rounded-3xl space-y-4">

@@ -59,6 +59,14 @@ service cloud.firestore {
         allow read, write: if isOwner(userId);
       }
 
+      match /studyProgress/{progressId} {
+        allow read, write: if isOwner(userId);
+      }
+
+      match /studyPlans/{planId} {
+        allow read, write: if isOwner(userId);
+      }
+
       match /savedEncouragements/{itemId} {
         allow read, write: if isOwner(userId);
       }

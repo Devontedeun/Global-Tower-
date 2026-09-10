@@ -50,7 +50,34 @@ export const APOSTLE_SANGO_ADMIN: UserProfile = {
   isEarlyAccess: true,
 };
 
-export const DEFAULT_USER: UserProfile = APOSTLE_SANGO_ADMIN;
+export const BELOVED_BRETHREN_USER: UserProfile = {
+  id: "u-beloved-brethren",
+  name: "Beloved Brethren",
+  firstName: "Beloved",
+  lastName: "Brethren",
+  email: "brethren@globaltowerofchrist.org",
+  role: "user",
+  avatarUrl: "bg-[#C5A059]",
+  interests: ["Bible Study", "Sermons", "Prayer", "Worship", "Dominion", "Victory"],
+  favoriteTeachers: ["Apostle R.Sango"],
+  notificationPrefs: {
+    dailyScripture: true,
+    newSermons: true,
+    bibleStudyReminders: true,
+    liveEvents: true,
+    prayerReminders: true,
+    announcements: true,
+  },
+  privacyPrefs: {
+    profilePublic: false,
+    shareActivity: false,
+    allowDirectMessages: true,
+  },
+  createdAt: "2026-08-01T00:00:00Z",
+  isEarlyAccess: true,
+};
+
+export const DEFAULT_USER: UserProfile = BELOVED_BRETHREN_USER;
 
 const STORAGE_KEYS = {
   USER: "gtc_user_profile",
@@ -222,18 +249,20 @@ export const Storage = {
       const data = localStorage.getItem(STORAGE_KEYS.USER);
       if (!data) return DEFAULT_USER;
       const parsed = JSON.parse(data);
-      if (
-        parsed &&
-        (parsed.name === "Deyvin Richard Jnr Sango" ||
-          parsed.name === "Richard Sango" ||
-          parsed.email === "sangodeyvin@gmail.com" ||
+      if (parsed) {
+        const isFounder =
           parsed.email === "sangorichard@gmail.com" ||
-          parsed.email === "info@globaltowerofchrist.com")
-      ) {
-        parsed.name = "Apostle R.Sango";
-        parsed.firstName = "Apostle";
-        parsed.lastName = "R.Sango";
-        parsed.role = "super_admin";
+          parsed.email === "info@globaltowerofchrist.com";
+        if (isFounder) {
+          parsed.role = "super_admin";
+          if (!parsed.name || parsed.name === "Richard Sango" || parsed.name === "Deyvin Richard Jnr Sango") {
+            parsed.name = "Apostle R.Sango";
+            parsed.firstName = "Apostle";
+            parsed.lastName = "R.Sango";
+          }
+        } else {
+          parsed.role = "user";
+        }
         localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(parsed));
       }
       return parsed;

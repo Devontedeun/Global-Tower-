@@ -919,7 +919,7 @@ Format strictly as JSON with this exact structure:
   if (ai) {
     try {
       const response = await ai.models.generateContent({
-        model: "gemini-3.7-flash",
+        model: "gemini-3.8-flash",
         contents: prompt,
         config: {
           responseMimeType: "application/json",

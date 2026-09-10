@@ -67,12 +67,30 @@
         "createdAt": { "type": "string" }
       },
       "required": ["id", "title", "authorId", "postType", "createdAt"]
+    },
+    "UserStudyProgress": {
+      "title": "UserStudyProgress",
+      "description": "User completion progress and active day for a Bible study plan",
+      "type": "object",
+      "properties": {
+        "planId": { "type": "string" },
+        "isEnrolled": { "type": "boolean" },
+        "currentDay": { "type": "number" },
+        "completedDays": { "type": "number" },
+        "completedDayNumbers": { "type": "array", "items": { "type": "number" } },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["planId", "isEnrolled", "currentDay", "completedDays", "completedDayNumbers"]
     }
   },
   "firestore": {
     "/users/{userId}": {
       "schema": "UserProfile",
       "description": "Stores individual user account profile and settings"
+    },
+    "/users/{userId}/studyProgress/{progressId}": {
+      "schema": "UserStudyProgress",
+      "description": "Tracks believer's completion percentage and completed days in a study plan"
     },
     "/encouragements/{encouragementId}": {
       "schema": "DailyEncouragement",

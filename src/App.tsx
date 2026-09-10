@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { motion, AnimatePresence } from "motion/react";
 import {
   Home,
   BookOpen,
@@ -39,6 +40,7 @@ import { UserProfile, UserRole } from "./types";
 import { translations, Language } from "./lib/translations";
 import { useAuth } from "./lib/AuthContext";
 import { UserAvatar } from "./components/UserAvatar";
+import { LanguageSelector } from "./components/LanguageSelector";
 
 export default function App() {
   const { currentUser, userProfile, loading, updateProfileData } = useAuth();
@@ -46,7 +48,13 @@ export default function App() {
   const [currentView, setCurrentView] = useState<string>("home");
   const [viewParams, setViewParams] = useState<any>(null);
   const [user, setUser] = useState<UserProfile>(DEFAULT_USER);
-  const [language, setLanguage] = useState<Language>("en");
+  const [language, setLanguage] = useState<Language>(() => {
+    try {
+      const saved = localStorage.getItem("gtc_selected_language") as Language;
+      if (saved && translations[saved]) return saved;
+    } catch {}
+    return "en";
+  });
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [isFeedbackOpen, setIsFeedbackOpen] = useState(false);
@@ -116,13 +124,10 @@ export default function App() {
               <span className="opacity-40">•</span>
               <span>Victory</span>
             </div>
-            <button
-              onClick={() => setLanguage(language === "en" ? "fr" : "en")}
-              className="px-3 py-1.5 text-xs font-semibold text-[#7A7468] hover:text-[#C5A059] bg-white border border-[#E5E0D5] rounded-full flex items-center gap-1.5 transition-all shadow-2xs cursor-pointer"
-            >
-              <Globe className="w-3.5 h-3.5 text-[#C5A059]" />
-              <span>{language.toUpperCase()}</span>
-            </button>
+            <LanguageSelector
+              currentLanguage={language}
+              onLanguageChange={setLanguage}
+            />
           </div>
         </header>
 
@@ -144,6 +149,8 @@ export default function App() {
   }
 
   // 3. Authenticated App Flow
+  const isSuperAdmin = user.role === "super_admin";
+
   const navItems = [
     { id: "home", label: t.home, icon: Home },
     { id: "journal", label: "Interpret Your Dreams & Visions", icon: Moon, badge: "Biblical AI" },
@@ -154,11 +161,13 @@ export default function App() {
     { id: "study-plans", label: t.studyPlans, icon: BookMarked },
     { id: "youth", label: t.youth, icon: Award, badge: "20 Quizzes" },
     { id: "library", label: t.myLibrary, icon: Bookmark },
-    { id: "admin", label: "Apostle R.Sango CRM & Governance", icon: ShieldCheck, badge: "CRM" },
+    ...(isSuperAdmin
+      ? [{ id: "admin", label: "Apostle R.Sango CRM & Governance", icon: ShieldCheck, badge: "CRM" }]
+      : []),
   ];
 
   return (
-    <div className="w-full min-h-screen min-h-[100dvh] bg-[#F9F7F2] text-[#2D2D2D] font-sans flex flex-col selection:bg-[#C5A059] selection:text-white">
+    <div className="w-full min-h-screen min-h-[100dvh] bg-[#F9F7F2] text-[#2D2D2D] font-sans flex flex-col selection:bg-[#C5A059] selection:text-white overflow-x-hidden">
       {/* Top Full-Width Header */}
       <header className="sticky top-0 z-40 w-full bg-white/85 backdrop-blur-md border-b border-[#E5E0D5] shadow-xs">
         <div className="w-full px-3 sm:px-6 lg:px-8 h-16 sm:h-20 flex items-center justify-between gap-2 sm:gap-4">
@@ -182,18 +191,6 @@ export default function App() {
 
           {/* Right Header Navigation */}
           <div className="flex items-center gap-1.5 sm:gap-3">
-            {/* Interpret Your Dreams & Visions Header Action */}
-            <button
-              id="header-interpret-dreams-btn"
-              onClick={() => handleNavigate("journal")}
-              className="inline-flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-1.5 sm:py-2 bg-gradient-to-r from-[#C5A059] to-[#9E7B35] hover:from-[#B48F48] hover:to-[#8C6B2D] text-white rounded-full text-xs font-bold uppercase tracking-wider transition-all cursor-pointer shadow-xs shadow-[#C5A059]/25 hover:shadow-md hover:scale-102 shrink-0"
-              title="Interpret Your Dreams & Visions with Biblical AI"
-            >
-              <Sparkles className="w-3.5 h-3.5 text-amber-200 shrink-0" />
-              <span className="hidden md:inline">Interpret Dreams & Visions</span>
-              <span className="md:hidden">Dreams AI</span>
-            </button>
-
             {/* Universal Search Button */}
             <button
               onClick={() => setIsSearchOpen(true)}
@@ -205,14 +202,10 @@ export default function App() {
             </button>
 
             {/* Language Switcher */}
-            <button
-              onClick={() => setLanguage(language === "en" ? "fr" : "en")}
-              className="px-2.5 sm:px-3 py-1.5 text-xs font-semibold text-[#7A7468] hover:text-[#C5A059] bg-white border border-[#E5E0D5] hover:border-[#C5A059] rounded-full flex items-center gap-1.5 transition-all shadow-2xs cursor-pointer"
-              title="Toggle English / Français"
-            >
-              <Globe className="w-3.5 h-3.5 text-[#C5A059]" />
-              <span>{language.toUpperCase()}</span>
-            </button>
+            <LanguageSelector
+              currentLanguage={language}
+              onLanguageChange={setLanguage}
+            />
 
             {/* Profile Avatar Button */}
             <button
@@ -326,8 +319,8 @@ export default function App() {
                     />
                     <div className="overflow-hidden">
                       <p className="text-[11px] font-bold text-[#2D2D2D] truncate font-serif">{user.name}</p>
-                      <p className="text-[10px] text-[#8A8478] capitalize truncate font-sans">
-                        {user.role.replace("_", " ")}
+                      <p className="text-[10px] text-[#8A8478] truncate font-sans font-medium">
+                        {user.role === "super_admin" ? "Apostle / Super Admin" : "Beloved Brethren"}
                       </p>
                     </div>
                   </div>
@@ -347,7 +340,7 @@ export default function App() {
                 <div
                   onClick={() => setIsProfileOpen(true)}
                   className="flex justify-center p-2 bg-[#FDFCF9] rounded-2xl border border-[#E5E0D5] cursor-pointer"
-                  title={`${user.name} (${user.role})`}
+                  title={`${user.name} (${user.role === "super_admin" ? "Apostle / Super Admin" : "Beloved Brethren"})`}
                 >
                   <UserAvatar
                     name={user.name}
@@ -428,74 +421,103 @@ export default function App() {
           </div>
         )}
 
-        {/* Dynamic Primary Workspace Canvas (Full Viewport Width) */}
+        {/* Dynamic Primary Workspace Canvas (Full Viewport Width) with Polished Motion Transitions */}
         <main className="flex-1 w-full min-w-0 px-3 sm:px-6 lg:px-8 py-4 sm:py-6 pb-28 lg:pb-12 overflow-y-auto">
-          <div className="w-full h-full">
-            {currentView === "home" && (
-              <HomeDashboard
-                user={user}
-                onNavigate={handleNavigate}
-                onPlayAudio={(track) => setCurrentAudioTrack(track)}
-                onAskAI={(query) => handleSpiritualInsightQuery(query)}
-              />
-            )}
+          <AnimatePresence mode="wait" initial={false}>
+            <motion.div
+              key={currentView}
+              id={`view-content-${currentView}`}
+              initial={{ opacity: 0, y: 14 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+              transition={{
+                duration: 0.22,
+                ease: [0.16, 1, 0.3, 1]
+              }}
+              className="w-full h-full"
+            >
+              {currentView === "home" && (
+                <HomeDashboard
+                  user={user}
+                  onNavigate={handleNavigate}
+                  onPlayAudio={(track) => setCurrentAudioTrack(track)}
+                  onAskAI={(query) => handleSpiritualInsightQuery(query)}
+                />
+              )}
 
-            {currentView === "bible" && (
-              <BibleHub
-                initialBook={viewParams?.book || "Romans"}
-                initialChapter={viewParams?.chapter || 8}
-                initialVerse={viewParams?.verse}
-                onPlayAudio={(track) => setCurrentAudioTrack(track)}
-                onAskAI={(verseText) => handleSpiritualInsightQuery(verseText)}
-              />
-            )}
+              {currentView === "bible" && (
+                <BibleHub
+                  initialBook={viewParams?.book || "Romans"}
+                  initialChapter={viewParams?.chapter || 8}
+                  initialVerse={viewParams?.verse}
+                  onPlayAudio={(track) => setCurrentAudioTrack(track)}
+                  onAskAI={(verseText) => handleSpiritualInsightQuery(verseText)}
+                />
+              )}
 
-            {currentView === "encouragements" && (
-              <EncouragementHub
-                user={user}
-                onPlayAudio={(track) => setCurrentAudioTrack(track)}
-                onNavigateToBible={(book, ch, v) => handleNavigate("bible", { book, chapter: ch, verse: v })}
-                onAskAI={(prompt) => handleSpiritualInsightQuery(prompt)}
-              />
-            )}
+              {currentView === "encouragements" && (
+                <EncouragementHub
+                  user={user}
+                  onPlayAudio={(track) => setCurrentAudioTrack(track)}
+                  onNavigateToBible={(book, ch, v) => handleNavigate("bible", { book, chapter: ch, verse: v })}
+                  onAskAI={(prompt) => handleSpiritualInsightQuery(prompt)}
+                />
+              )}
 
-            {currentView === "spiritual-insight" && (
-              <SpiritualInsightEngine
-                initialQuery={viewParams?.initialQuery || ""}
-                onNavigateToBible={(book, ch) => handleNavigate("bible", { book, chapter: ch })}
-              />
-            )}
+              {currentView === "spiritual-insight" && (
+                <SpiritualInsightEngine
+                  initialQuery={viewParams?.initialQuery || ""}
+                  onNavigateToBible={(book, ch) => handleNavigate("bible", { book, chapter: ch })}
+                />
+              )}
 
-            {currentView === "journal" && (
-              <DreamVisionJournal
-                onAnalyzeWithAI={(text) => handleSpiritualInsightQuery(text)}
-                onNavigateToBible={(book, ch) => handleNavigate("bible", { book, chapter: ch })}
-              />
-            )}
+              {currentView === "journal" && (
+                <DreamVisionJournal
+                  onAnalyzeWithAI={(text) => handleSpiritualInsightQuery(text)}
+                  onNavigateToBible={(book, ch) => handleNavigate("bible", { book, chapter: ch })}
+                />
+              )}
 
-            {currentView === "prayers" && <PrayerHub user={user} />}
+              {currentView === "prayers" && <PrayerHub user={user} />}
 
-            {currentView === "study-plans" && (
-              <StudyPlansHub
-                initialPlanId={viewParams?.planId}
-                onNavigateToBible={(book, ch) => handleNavigate("bible", { book, chapter: ch })}
-                onAskAI={(prompt) => handleSpiritualInsightQuery(prompt)}
-              />
-            )}
+              {currentView === "study-plans" && (
+                <StudyPlansHub
+                  initialPlanId={viewParams?.planId}
+                  onNavigateToBible={(book, ch) => handleNavigate("bible", { book, chapter: ch })}
+                  onAskAI={(prompt) => handleSpiritualInsightQuery(prompt)}
+                />
+              )}
 
-            {currentView === "youth" && <YouthAndQuizzes />}
+              {currentView === "youth" && <YouthAndQuizzes />}
 
-            {currentView === "library" && (
-              <MyLibrary
-                onNavigateToBible={(book, ch) => handleNavigate("bible", { book, chapter: ch })}
-                onNavigateToEncouragement={() => handleNavigate("encouragements")}
-              />
-            )}
+              {currentView === "library" && (
+                <MyLibrary
+                  onNavigateToBible={(book, ch) => handleNavigate("bible", { book, chapter: ch })}
+                  onNavigateToEncouragement={() => handleNavigate("encouragements")}
+                />
+              )}
 
-            {currentView === "admin" && (
-              <AdminPortal currentRole={user.role} onSwitchRole={handleSwitchRole} />
-            )}
-          </div>
+              {currentView === "admin" && (
+                isSuperAdmin ? (
+                  <AdminPortal currentRole={user.role} onSwitchRole={handleSwitchRole} />
+                ) : (
+                  <div className="bg-white rounded-[32px] p-8 sm:p-12 border border-[#E5E0D5] text-center space-y-4 max-w-lg mx-auto mt-10 shadow-xs">
+                    <ShieldCheck className="w-12 h-12 text-[#C5A059] mx-auto opacity-80" />
+                    <h2 className="font-serif text-2xl font-bold text-[#2D2D2D]">Apostolic Governance Protected</h2>
+                    <p className="text-sm text-[#7A7468]">
+                      This leadership portal is reserved exclusively for Apostle R.Sango. Beloved brethren have full access to Scripture, Dreams, Prayers, and all Sanctuary fellowship.
+                    </p>
+                    <button
+                      onClick={() => handleNavigate("home")}
+                      className="px-6 py-2.5 bg-[#C5A059] text-white rounded-full text-xs font-bold uppercase tracking-wider hover:bg-[#B48F48] transition-colors cursor-pointer"
+                    >
+                      Return to Sanctuary Home
+                    </button>
+                  </div>
+                )
+              )}
+            </motion.div>
+          </AnimatePresence>
         </main>
       </div>
 
@@ -530,7 +552,12 @@ export default function App() {
         isOpen={isProfileOpen}
         onClose={() => setIsProfileOpen(false)}
         user={user}
-        onUpdateUser={(updated) => setUser(updated)}
+        language={language}
+        onLanguageChange={setLanguage}
+        onUpdateUser={(updated) => {
+          setUser(updated);
+          updateProfileData(updated);
+        }}
       />
 
       {/* Feedback Modal */}
@@ -541,7 +568,7 @@ export default function App() {
         {[
           { id: "home", label: "Home", icon: Home },
           { id: "bible", label: "Bible", icon: BookOpen },
-          { id: "journal", label: "Dreams AI", icon: Moon },
+          { id: "journal", label: "Dreams", icon: Moon },
           { id: "spiritual-insight", label: "Doctrine", icon: Sparkles },
           { id: "encouragements", label: "Encourage", icon: MessageCircle },
           { id: "prayers", label: "Prayer", icon: Heart }

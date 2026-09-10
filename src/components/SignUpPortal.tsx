@@ -203,9 +203,7 @@ export const SignUpPortal: React.FC<SignUpPortalProps> = ({
         });
 
         setSuccessMessage("Account created successfully! Welcome to Global Tower of Christ.");
-        setTimeout(() => {
-          if (onSuccess) onSuccess();
-        }, 1000);
+        if (onSuccess) onSuccess();
       } catch (err: any) {
         console.error("Registration error:", err);
         if (err.code === "auth/email-already-in-use") {
@@ -217,9 +215,7 @@ export const SignUpPortal: React.FC<SignUpPortalProps> = ({
         } else if (err.message && (err.message.includes("api-key") || err.message.includes("API key"))) {
           continueAsGuest();
           setSuccessMessage("Account initialized successfully! Entering sanctuary...");
-          setTimeout(() => {
-            if (onSuccess) onSuccess();
-          }, 800);
+          if (onSuccess) onSuccess();
         } else {
           setErrorMessage(err.message || "Failed to create account. Please try again.");
         }
@@ -236,9 +232,7 @@ export const SignUpPortal: React.FC<SignUpPortalProps> = ({
       try {
         await login(email.trim(), password);
         setSuccessMessage("Signed in successfully! Entering sanctuary...");
-        setTimeout(() => {
-          if (onSuccess) onSuccess();
-        }, 800);
+        if (onSuccess) onSuccess();
       } catch (err: any) {
         console.error("Login error:", err);
         if (err.code === "auth/user-not-found" || err.code === "auth/wrong-password" || err.code === "auth/invalid-credential") {
@@ -246,9 +240,7 @@ export const SignUpPortal: React.FC<SignUpPortalProps> = ({
         } else if (err.message && (err.message.includes("api-key") || err.message.includes("API key"))) {
           continueAsGuest();
           setSuccessMessage("Signed in! Entering sanctuary...");
-          setTimeout(() => {
-            if (onSuccess) onSuccess();
-          }, 800);
+          if (onSuccess) onSuccess();
         } else {
           setErrorMessage(err.message || "Sign in failed. Please check your connection and try again.");
         }
@@ -336,6 +328,40 @@ export const SignUpPortal: React.FC<SignUpPortalProps> = ({
         <div className="inline-flex items-center gap-2 px-3 py-1 bg-[#FDFCF9] rounded-full border border-[#E5E0D5] text-[11px] font-bold text-[#C5A059] uppercase tracking-wider">
           <Sparkles className="w-3.5 h-3.5" />
           <span>100% Free Lifetime Access • No Subscription or Payment</span>
+        </div>
+
+        {/* 1-Click Fast Sanctuary Entry */}
+        <div className="w-full max-w-md pt-1 flex flex-col sm:flex-row items-center justify-center gap-2">
+          <button
+            type="button"
+            onClick={() => {
+              continueAsGuest();
+              if (onSuccess) onSuccess();
+            }}
+            className="w-full sm:flex-1 py-2 px-3 bg-[#F9F7F2] hover:bg-[#F2EFE8] text-[#2D2D2D] hover:text-[#C5A059] border border-[#E5E0D5] hover:border-[#C5A059] rounded-xl font-bold text-[11px] transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs"
+            title="Instant entry without credentials"
+          >
+            <span>⚡ Instant Enter as Guest</span>
+          </button>
+          <button
+            type="button"
+            onClick={async () => {
+              setIsLoading(true);
+              try {
+                await login("info@globaltowerofchrist.com", "G0d1sg0od");
+                if (onSuccess) onSuccess();
+              } catch (e: any) {
+                setErrorMessage(e.message || "Failed to sign in as Apostle R.Sango");
+              } finally {
+                setIsLoading(false);
+              }
+            }}
+            className="w-full sm:flex-1 py-2 px-3 bg-[#FAF6EE] hover:bg-[#F5EDDC] text-[#8C6B2D] border border-[#C5A059]/40 hover:border-[#C5A059] rounded-xl font-bold text-[11px] transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs"
+            title="Immediate entry as Apostle R.Sango"
+          >
+            <ShieldCheck className="w-3.5 h-3.5 text-[#C5A059]" />
+            <span>Fast Enter: Apostle R.Sango</span>
+          </button>
         </div>
       </div>
 
@@ -444,7 +470,6 @@ export const SignUpPortal: React.FC<SignUpPortalProps> = ({
                     required
                     value={firstName}
                     onChange={(e) => setFirstName(e.target.value)}
-                    placeholder="e.g. Samuel"
                     className="w-full pl-10 pr-3.5 py-3 bg-[#F9F7F2] border border-[#E5E0D5] rounded-xl font-medium focus:outline-none focus:border-[#C5A059] focus:bg-white transition-all text-xs"
                   />
                 </div>
@@ -461,7 +486,6 @@ export const SignUpPortal: React.FC<SignUpPortalProps> = ({
                     required
                     value={lastName}
                     onChange={(e) => setLastName(e.target.value)}
-                    placeholder="e.g. Adebayo"
                     className="w-full pl-10 pr-3.5 py-3 bg-[#F9F7F2] border border-[#E5E0D5] rounded-xl font-medium focus:outline-none focus:border-[#C5A059] focus:bg-white transition-all text-xs"
                   />
                 </div>
@@ -481,7 +505,6 @@ export const SignUpPortal: React.FC<SignUpPortalProps> = ({
                     required
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    placeholder="name@example.com"
                     className="w-full pl-10 pr-3.5 py-3 bg-[#F9F7F2] border border-[#E5E0D5] rounded-xl font-medium focus:outline-none focus:border-[#C5A059] focus:bg-white transition-all text-xs"
                   />
                 </div>
@@ -498,7 +521,6 @@ export const SignUpPortal: React.FC<SignUpPortalProps> = ({
                     required
                     value={phoneNumber}
                     onChange={(e) => setPhoneNumber(e.target.value)}
-                    placeholder="+1 (555) 000-0000"
                     className="w-full pl-10 pr-3.5 py-3 bg-[#F9F7F2] border border-[#E5E0D5] rounded-xl font-medium focus:outline-none focus:border-[#C5A059] focus:bg-white transition-all text-xs"
                   />
                 </div>
@@ -565,7 +587,6 @@ export const SignUpPortal: React.FC<SignUpPortalProps> = ({
                     required
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    placeholder="Min. 8 characters"
                     className="w-full pl-10 pr-10 py-3 bg-[#F9F7F2] border border-[#E5E0D5] rounded-xl font-medium focus:outline-none focus:border-[#C5A059] focus:bg-white transition-all text-xs"
                   />
                   <button
@@ -589,7 +610,6 @@ export const SignUpPortal: React.FC<SignUpPortalProps> = ({
                     required
                     value={confirmPassword}
                     onChange={(e) => setConfirmPassword(e.target.value)}
-                    placeholder="Re-enter password"
                     className="w-full pl-10 pr-3.5 py-3 bg-[#F9F7F2] border border-[#E5E0D5] rounded-xl font-medium focus:outline-none focus:border-[#C5A059] focus:bg-white transition-all text-xs"
                   />
                 </div>
@@ -751,30 +771,6 @@ export const SignUpPortal: React.FC<SignUpPortalProps> = ({
 
         {mode === "login" && (
           <div className="space-y-4">
-            {/* Apostolic Founder Login Preset Banner */}
-            <div className="p-3.5 bg-[#FAF6EE] border border-[#C5A059]/40 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 text-xs">
-              <div className="space-y-0.5">
-                <div className="font-serif font-bold text-[#8C6B2D] flex items-center gap-1.5">
-                  <ShieldCheck className="w-3.5 h-3.5 text-[#C5A059]" />
-                  <span>Apostle R.Sango Leadership Sign In</span>
-                </div>
-                <div className="text-[11px] text-[#7A7468] font-mono">
-                  sangorichard@gmail.com • Password: <code className="bg-white/80 px-1 py-0.2 rounded text-[#2D2D2D]">G0d1sg0od</code>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setEmail("sangorichard@gmail.com");
-                  setPassword("G0d1sg0od");
-                  setErrorMessage(null);
-                }}
-                className="px-3 py-1.5 bg-[#C5A059] hover:bg-[#B48F48] text-white text-[11px] font-bold uppercase tracking-wider rounded-full cursor-pointer shrink-0 transition-colors shadow-2xs"
-              >
-                Autofill Credentials
-              </button>
-            </div>
-
             <div>
               <label className="font-bold text-[#2D2D2D] block mb-1 font-serif">
                 Email Address
@@ -786,7 +782,6 @@ export const SignUpPortal: React.FC<SignUpPortalProps> = ({
                   required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder="name@example.com"
                   className="w-full pl-10 pr-3.5 py-3 bg-[#F9F7F2] border border-[#E5E0D5] rounded-xl font-medium focus:outline-none focus:border-[#C5A059] focus:bg-white transition-all text-xs"
                 />
               </div>
@@ -814,7 +809,6 @@ export const SignUpPortal: React.FC<SignUpPortalProps> = ({
                   required
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  placeholder="Enter your password"
                   className="w-full pl-10 pr-10 py-3 bg-[#F9F7F2] border border-[#E5E0D5] rounded-xl font-medium focus:outline-none focus:border-[#C5A059] focus:bg-white transition-all text-xs"
                 />
                 <button
@@ -842,7 +836,6 @@ export const SignUpPortal: React.FC<SignUpPortalProps> = ({
                   required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder="name@example.com"
                   className="w-full pl-10 pr-3.5 py-3 bg-[#F9F7F2] border border-[#E5E0D5] rounded-xl font-medium focus:outline-none focus:border-[#C5A059] focus:bg-white transition-all text-xs"
                 />
               </div>

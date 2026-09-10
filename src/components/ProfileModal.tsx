@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   User,
   X,
@@ -21,6 +21,7 @@ import { UserProfile, UserRole } from "../types";
 import { Storage } from "../lib/storage";
 import { useAuth } from "../lib/AuthContext";
 import { UserAvatar, getInitials } from "./UserAvatar";
+import { Language, SUPPORTED_LANGUAGES } from "../lib/translations";
 
 interface ProfileModalProps {
   isOpen: boolean;
@@ -28,6 +29,8 @@ interface ProfileModalProps {
   user: UserProfile;
   onUpdateUser: (user: UserProfile) => void;
   onOpenAuthPortal?: () => void;
+  language?: Language;
+  onLanguageChange?: (lang: Language) => void;
 }
 
 const COLOR_BLOCK_OPTIONS = [
@@ -46,20 +49,13 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
   user,
   onUpdateUser,
   onOpenAuthPortal,
+  language = "en",
+  onLanguageChange
 }) => {
   const { currentUser, logout, updateProfileData } = useAuth();
 
-  const initialName =
-    user.name === "Deyvin Richard Jnr Sango" || user.name === "Richard Sango"
-      ? "Apostle R.Sango"
-      : user.name;
-  const initialEmail =
-    user.email === "sangodeyvin@gmail.com"
-      ? "info@globaltowerofchrist.com"
-      : user.email;
-
-  const [name, setName] = useState(initialName);
-  const [email, setEmail] = useState(initialEmail);
+  const [name, setName] = useState(user.name);
+  const [email, setEmail] = useState(user.email);
   const [phoneNumber, setPhoneNumber] = useState(user.phoneNumber || "");
   const [country, setCountry] = useState(user.country || "Global");
   const [role, setRole] = useState<UserRole>(user.role);
@@ -71,16 +67,34 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
   const [liveEvents, setLiveEvents] = useState(user.notificationPrefs?.liveEvents ?? true);
   const [savedMsg, setSavedMsg] = useState(false);
 
+  useEffect(() => {
+    setName(user.name || "");
+    setEmail(user.email || "");
+    setPhoneNumber(user.phoneNumber || "");
+    setCountry(user.country || "Global");
+    setRole(user.role);
+    if (user.avatarUrl && user.avatarUrl.startsWith("bg-")) {
+      setSelectedColorBg(user.avatarUrl);
+    }
+  }, [user]);
+
   if (!isOpen) return null;
 
+  const isSuperAdmin =
+    user.role === "super_admin" ||
+    user.email === "sangorichard@gmail.com" ||
+    user.email === "info@globaltowerofchrist.com";
+
   const handleSave = async () => {
+    const finalRole: UserRole = isSuperAdmin ? "super_admin" : "user";
+
     const updated: UserProfile = {
       ...user,
-      name,
-      email,
-      phoneNumber,
-      country,
-      role,
+      name: name.trim() || user.name,
+      email: email.trim() || user.email,
+      phoneNumber: phoneNumber.trim(),
+      country: country.trim() || "Global",
+      role: finalRole,
       avatarUrl: selectedColorBg,
       notificationPrefs: {
         ...user.notificationPrefs,
@@ -101,7 +115,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
     setTimeout(() => {
       setSavedMsg(false);
       onClose();
-    }, 1000);
+    }, 900);
   };
 
   const handleLogout = async () => {
@@ -131,12 +145,12 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
               <h3 className="font-serif font-bold text-[#2D2D2D] text-xl">{name}</h3>
               <div className="flex items-center gap-2 mt-0.5">
                 <span className="text-[11px] font-bold text-[#C5A059] bg-[#FDFCF9] px-2.5 py-0.5 rounded-full border border-[#E5E0D5] uppercase tracking-wider font-serif">
-                  {role.replace("_", " ")}
+                  {isSuperAdmin ? "Apostle / Super Admin" : "Beloved Brethren"}
                 </span>
                 {currentUser && (
                   <span className="text-[10px] text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full font-medium flex items-center gap-1">
                     <UserCheck className="w-3 h-3" />
-                    <span>Free SaaS Member</span>
+                    <span>Active Member</span>
                   </span>
                 )}
               </div>
@@ -183,7 +197,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
             </div>
           </div>
 
-          {/* SaaS Session Status */}
+          {/* Session Status */}
           {currentUser && (
             <div className="p-3 bg-emerald-50 rounded-2xl border border-emerald-200 flex items-center justify-between text-xs text-emerald-900">
               <span className="font-medium truncate">Logged in as: <strong className="font-semibold">{currentUser.email}</strong></span>
@@ -229,7 +243,6 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
                 type="tel"
                 value={phoneNumber}
                 onChange={(e) => setPhoneNumber(e.target.value)}
-                placeholder="+1 (555) 000-0000"
                 className="w-full p-3 bg-[#F9F7F2] border border-[#E5E0D5] rounded-xl font-medium focus:outline-none focus:border-[#C5A059] focus:bg-white transition-all font-sans"
               />
             </div>
@@ -241,30 +254,66 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
               type="text"
               value={country}
               onChange={(e) => setCountry(e.target.value)}
-              placeholder="e.g. United States, Nigeria, Canada..."
               className="w-full p-3 bg-[#F9F7F2] border border-[#E5E0D5] rounded-xl font-medium focus:outline-none focus:border-[#C5A059] focus:bg-white transition-all font-sans"
             />
           </div>
 
           {/* Account Role Display */}
           <div>
-            {user.role === "super_admin" ? (
+            {isSuperAdmin ? (
               <div>
                 <label className="font-bold text-[#2D2D2D] block mb-1 font-serif">Ministry Leadership Role</label>
                 <div className="w-full p-3 bg-[#FAF6EE] border border-[#C5A059]/40 rounded-xl font-bold text-[#8C6B2D] font-serif flex items-center justify-between">
-                  <span>Apostolic Founder (Super Admin)</span>
+                  <div className="flex items-center gap-2">
+                    <ShieldCheck className="w-4 h-4 text-[#C5A059]" />
+                    <span>Apostolic Founder (Super Admin)</span>
+                  </div>
                   <span className="text-[10px] bg-[#C5A059] text-white px-2 py-0.5 rounded-full uppercase tracking-wider font-sans font-bold">Admin</span>
                 </div>
               </div>
             ) : (
               <div>
-                <label className="font-bold text-[#2D2D2D] block mb-1 font-serif">Account Type</label>
+                <label className="font-bold text-[#2D2D2D] block mb-1 font-serif">Sanctuary Fellowship Role</label>
                 <div className="w-full p-3 bg-[#F9F7F2] border border-[#E5E0D5] rounded-xl font-medium text-[#7A7468] font-sans flex items-center justify-between">
-                  <span>Member (Sanctuary Access)</span>
-                  <span className="text-xs bg-emerald-50 text-emerald-700 px-2.5 py-0.5 rounded-full border border-emerald-200 font-bold">Active User</span>
+                  <div className="flex items-center gap-2">
+                    <Heart className="w-4 h-4 text-[#C5A059]" />
+                    <span className="font-serif font-bold text-[#2D2D2D]">Beloved Brethren</span>
+                  </div>
+                  <span className="text-xs bg-[#FAF6EE] text-[#8C6B2D] px-2.5 py-0.5 rounded-full border border-[#C5A059]/30 font-bold">Fellowship Member</span>
                 </div>
               </div>
             )}
+          </div>
+
+          {/* Language Selection */}
+          <div className="pt-4 border-t border-[#E5E0D5] space-y-2">
+            <div className="flex items-center justify-between">
+              <label className="font-bold text-[#2D2D2D] block font-serif">Sanctuary Language</label>
+              <span className="text-[11px] text-[#C5A059] font-semibold">{SUPPORTED_LANGUAGES.length} Languages</span>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+              {SUPPORTED_LANGUAGES.map((l) => {
+                const isSelected = (language || "en") === l.code;
+                return (
+                  <button
+                    key={l.code}
+                    type="button"
+                    onClick={() => onLanguageChange && onLanguageChange(l.code)}
+                    className={`p-2.5 rounded-xl border text-left flex items-center gap-2 transition-all cursor-pointer ${
+                      isSelected
+                        ? "bg-[#FAF6EE] border-[#C5A059] text-[#2D2D2D] shadow-2xs font-bold"
+                        : "bg-[#F9F7F2] border-[#E5E0D5] text-[#7A7468] hover:border-[#C5A059] hover:bg-white"
+                    }`}
+                  >
+                    <span className="text-base leading-none shrink-0">{l.flag}</span>
+                    <div className="min-w-0">
+                      <div className="text-xs truncate">{l.nativeName}</div>
+                      <div className="text-[10px] text-[#8A8478] truncate">{l.code.toUpperCase()}</div>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
           </div>
 
           {/* Notifications */}
