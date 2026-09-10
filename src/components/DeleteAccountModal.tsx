@@ -106,7 +106,7 @@ export const DeleteAccountModal: React.FC<DeleteAccountModalProps> = ({
 
   // Modal Flow Step: 'confirm' -> 'deleting' -> 'benediction'
   const [modalStep, setModalStep] = useState<"confirm" | "deleting" | "benediction">("confirm");
-  const [deleteMode, setDeleteMode] = useState<"selective" | "permanent">("selective");
+  const [deleteMode, setDeleteMode] = useState<"selective" | "permanent">("permanent");
 
   // Selective Data Purge State
   const [selectedCategories, setSelectedCategories] = useState<{
@@ -127,6 +127,8 @@ export const DeleteAccountModal: React.FC<DeleteAccountModalProps> = ({
 
   // Permanent Account Deletion State
   const [confirmInput, setConfirmInput] = useState("");
+  const [passwordInput, setPasswordInput] = useState("");
+  const [needsPassword, setNeedsPassword] = useState(false);
   const [understoodCheckbox, setUnderstoodCheckbox] = useState(false);
   const [reason, setReason] = useState("fresh_start");
   const [customReason, setCustomReason] = useState("");
@@ -172,8 +174,7 @@ export const DeleteAccountModal: React.FC<DeleteAccountModalProps> = ({
   const canSubmit =
     isConfirmationMatch &&
     understoodCheckbox &&
-    modalStep === "confirm" &&
-    (!isSuperAdmin || adminOverride);
+    modalStep === "confirm";
 
   // Handle selective records purge (allows user to reset data without destroying account)
   const handlePurgeSelective = async () => {
@@ -320,21 +321,12 @@ export const DeleteAccountModal: React.FC<DeleteAccountModalProps> = ({
         : "Technical or personal preference";
 
     try {
-      setDeletionProgress("Expunging personal study notes and scripture highlights...");
-      await new Promise((r) => setTimeout(r, 450));
-
-      setDeletionProgress("Erasing private dream and vision journal records...");
-      await new Promise((r) => setTimeout(r, 450));
-
-      setDeletionProgress("Clearing cloud profile and resetting reading streaks...");
-      await new Promise((r) => setTimeout(r, 450));
-
-      setDeletionProgress("Revoking authentication credentials and active sessions...");
-      // Permanently purges user documents and records from database
-      await deleteAccount(fullReason);
+      setDeletionProgress("Expunging personal records and revoking credentials...");
+      // Permanently purges user documents and deletes Firebase Auth credentials immediately
+      await deleteAccount(fullReason, passwordInput.trim() || undefined);
 
       const farewellPayload = {
-        name: user.name,
+        name: user.name || "Beloved Believer",
         email: user.email,
         deletedAt: new Date().toISOString(),
         reason: fullReason
@@ -342,18 +334,21 @@ export const DeleteAccountModal: React.FC<DeleteAccountModalProps> = ({
       try {
         sessionStorage.setItem("gtc_farewell_exit_active", JSON.stringify(farewellPayload));
       } catch {}
-      window.dispatchEvent(new CustomEvent("gtc_account_departed", { detail: farewellPayload }));
 
-      // Clear local session and credentials
-      await finalizeAccountDeparture();
-
-      // Successfully purged! Smoothly close modal to land on the full-page Exit Sanctuary Page
-      onClose();
+      // Transition immediately into Stage 3: Departure Benediction Ceremony
+      setModalStep("benediction");
+      playSanctuaryChime();
+      speakClosingScripture(activeScripture, false);
     } catch (err: any) {
       console.error("Account deletion failed:", err);
-      setErrorMessage(
-        err?.message || "An unexpected error occurred while deleting your account. Please check your connection and try again."
-      );
+      if (err?.code === "auth/requires-recent-login" || (err?.message && err.message.includes("password"))) {
+        setNeedsPassword(true);
+        setErrorMessage("Firebase requires your account password to verify your identity before permanent deletion. Please enter your password below and click Permanently Delete.");
+      } else {
+        setErrorMessage(
+          err?.message || "An unexpected error occurred while deleting your account. Please check your connection and try again."
+        );
+      }
       setModalStep("confirm");
       setDeletionProgress("");
     }
@@ -367,9 +362,10 @@ export const DeleteAccountModal: React.FC<DeleteAccountModalProps> = ({
     }
     try {
       const farewellPayload = {
-        name: user.name,
+        name: user.name || "Beloved Believer",
         email: user.email,
-        deletedAt: new Date().toISOString()
+        deletedAt: new Date().toISOString(),
+        reason: reason
       };
       try {
         sessionStorage.setItem("gtc_farewell_exit_active", JSON.stringify(farewellPayload));
@@ -385,8 +381,23 @@ export const DeleteAccountModal: React.FC<DeleteAccountModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#2D2D2D]/80 backdrop-blur-xs animate-in fade-in">
-      <div className="relative w-full max-w-lg bg-white rounded-3xl shadow-2xl border border-[#E5E0D5] overflow-hidden text-[#2D2D2D]">
+    <div
+      className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-[#2D2D2D]/80 backdrop-blur-xs animate-in fade-in"
+      onClick={(e) => {
+        e.stopPropagation();
+        if (e.target === e.currentTarget) {
+          if (modalStep === "benediction") {
+            handleFinalDeparture();
+          } else {
+            onClose();
+          }
+        }
+      }}
+    >
+      <div
+        className="relative w-full max-w-lg bg-white rounded-3xl shadow-2xl border border-[#E5E0D5] overflow-hidden text-[#2D2D2D]"
+        onClick={(e) => e.stopPropagation()}
+      >
         {/* =========================================================================
             STAGE 3: BENEDICTION - CLOSING SCRIPTURE READING ("LET THEM GO IN PEACE")
            ========================================================================= */}
@@ -905,6 +916,35 @@ export const DeleteAccountModal: React.FC<DeleteAccountModalProps> = ({
                         Input does not match "DELETE" or your email ({user.email}).
                       </p>
                     )}
+                  </div>
+
+                  {/* Account Password for Firebase Auth Re-authentication */}
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-bold text-[#2D2D2D] block font-sans">
+                        Account Password (for Firebase Auth verification):
+                      </label>
+                      {needsPassword && (
+                        <span className="text-[10px] font-bold uppercase text-rose-600">
+                          Required by Firebase
+                        </span>
+                      )}
+                    </div>
+                    <input
+                      type="password"
+                      id="input-delete-password"
+                      value={passwordInput}
+                      onChange={(e) => setPasswordInput(e.target.value)}
+                      placeholder="Enter password to verify"
+                      className={`w-full px-3.5 py-2.5 text-xs bg-[#FDFCF9] border rounded-xl focus:outline-none transition-colors ${
+                        needsPassword
+                          ? "border-rose-400 focus:border-rose-500 bg-rose-50/20"
+                          : "border-[#E5E0D5] text-[#2D2D2D] focus:border-rose-400"
+                      }`}
+                    />
+                    <p className="text-[11px] text-[#7A7468]">
+                      Verifies your identity with Firebase Authentication before permanently deleting credentials.
+                    </p>
                   </div>
 
                   {/* Error Notice */}

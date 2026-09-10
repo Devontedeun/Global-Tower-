@@ -229,7 +229,7 @@ export const SignUpPortal: React.FC<SignUpPortalProps> = ({
         if (clearMockOnSubmit || mockDataDeleted) {
           Storage.clearAllMockData();
         }
-        const regResult = await register({
+        await register({
           firstName,
           lastName,
           email,
@@ -242,13 +242,6 @@ export const SignUpPortal: React.FC<SignUpPortalProps> = ({
         if (clearMockOnSubmit || mockDataDeleted) {
           Storage.clearAllMockData();
         }
-
-        if (regResult && (regResult as any).isNewAccount === false) {
-          setSuccessMessage("Welcome back! Signed in to your registered account. Entering sanctuary...");
-          if (onSuccess) onSuccess({ isNewSignUp: false, firstName: firstName.trim() });
-          return;
-        }
-
         const ceremonyPayload = {
           userName: firstName.trim() ? `${firstName.trim()} ${lastName.trim()}`.trim() : "Beloved Believer"
         };
@@ -259,9 +252,9 @@ export const SignUpPortal: React.FC<SignUpPortalProps> = ({
         setSuccessMessage("Account created successfully! Welcome to Global Tower of Christ.");
         if (onSuccess) onSuccess({ isNewSignUp: true, firstName: firstName.trim() });
       } catch (err: any) {
-        console.warn("Registration notice:", err?.code || err?.message || err);
+        console.error("Registration error:", err);
         if (err.code === "auth/email-already-in-use") {
-          setErrorMessage("This email address is already registered. Please sign in or reset your password.");
+          setErrorMessage("This email address is already registered. Please log in instead.");
         } else if (err.code === "auth/weak-password") {
           setErrorMessage("The password is too weak. Please use at least 8 characters with numbers and uppercase letters.");
         } else if (err.code === "auth/invalid-email") {
@@ -288,7 +281,7 @@ export const SignUpPortal: React.FC<SignUpPortalProps> = ({
         setSuccessMessage("Signed in successfully! Entering sanctuary...");
         if (onSuccess) onSuccess();
       } catch (err: any) {
-        console.warn("Login notice:", err?.code || err?.message || err);
+        console.error("Login error:", err);
         if (err.code === "auth/user-not-found" || err.code === "auth/wrong-password" || err.code === "auth/invalid-credential") {
           setErrorMessage("Invalid email or password. Please check your credentials.");
         } else if (err.message && (err.message.includes("api-key") || err.message.includes("API key"))) {
@@ -312,7 +305,7 @@ export const SignUpPortal: React.FC<SignUpPortalProps> = ({
         await resetPassword(email.trim());
         setSuccessMessage("Password reset email sent! Check your inbox for instructions.");
       } catch (err: any) {
-        console.warn("Reset password notice:", err?.code || err?.message || err);
+        console.error("Reset password error:", err);
         setErrorMessage(err.message || "Could not send reset email. Please verify the email address.");
       } finally {
         setIsLoading(false);
@@ -419,58 +412,7 @@ export const SignUpPortal: React.FC<SignUpPortalProps> = ({
       {errorMessage && (
         <div className="mt-5 p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-start gap-2.5">
           <AlertCircle className="w-4 h-4 shrink-0 text-rose-600 mt-0.5" />
-          <div className="flex-1 space-y-2">
-            <div className="font-medium leading-relaxed">{errorMessage}</div>
-            {(errorMessage.includes("already registered") || errorMessage.includes("already exists") || errorMessage.includes("email-already-in-use")) && (
-              <div className="flex flex-wrap items-center gap-2 pt-1">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setErrorMessage(null);
-                    setMode("login");
-                  }}
-                  className="px-3 py-1.5 bg-[#C5A059] hover:bg-[#B48F48] text-white rounded-xl text-[11px] font-bold font-serif transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs"
-                >
-                  <LogIn className="w-3.5 h-3.5" />
-                  <span>Sign In With This Email</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setErrorMessage(null);
-                    setMode("forgot_password");
-                  }}
-                  className="px-3 py-1.5 bg-white border border-rose-200 hover:bg-rose-100/60 text-rose-800 rounded-xl text-[11px] font-medium transition-all cursor-pointer"
-                >
-                  Reset Password
-                </button>
-              </div>
-            )}
-            {errorMessage.includes("Invalid email or password") && mode === "login" && (
-              <div className="flex flex-wrap items-center gap-2 pt-1">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setErrorMessage(null);
-                    setMode("forgot_password");
-                  }}
-                  className="px-3 py-1.5 bg-[#C5A059] hover:bg-[#B48F48] text-white rounded-xl text-[11px] font-bold font-serif transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs"
-                >
-                  <span>Reset Password</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setErrorMessage(null);
-                    setMode("signup");
-                  }}
-                  className="px-3 py-1.5 bg-white border border-rose-200 hover:bg-rose-100/60 text-rose-800 rounded-xl text-[11px] font-medium transition-all cursor-pointer"
-                >
-                  Create New Account
-                </button>
-              </div>
-            )}
-          </div>
+          <div className="font-medium">{errorMessage}</div>
         </div>
       )}
 

@@ -892,6 +892,20 @@ export const Storage = {
       console.error("Error revoking user:", e);
     }
   },
+  unrevokeUser(id?: string, email?: string): void {
+    try {
+      const revokedRaw = localStorage.getItem("gtc_revoked_users");
+      if (!revokedRaw) return;
+      const list: { id: string; email: string; revokedAt?: string }[] = JSON.parse(revokedRaw);
+      const cleanEmail = (email || "").toLowerCase().trim();
+      const filtered = list.filter(
+        (r) => !(id && r.id === id) && !(cleanEmail && r.email?.toLowerCase().trim() === cleanEmail)
+      );
+      localStorage.setItem("gtc_revoked_users", JSON.stringify(filtered));
+    } catch (e) {
+      console.error("Error unrevoking user:", e);
+    }
+  },
   isUserRevoked(id?: string, email?: string): boolean {
     try {
       const revokedRaw = localStorage.getItem("gtc_revoked_users");

@@ -16,7 +16,10 @@ import {
   onSnapshot,
   addDoc,
   deleteDoc,
-  orderBy
+  orderBy,
+  deleteUser,
+  EmailAuthProvider,
+  reauthenticateWithCredential
 } from "./firebase";
 import {
   UserProfile,
@@ -415,46 +418,78 @@ export class UserDataService {
       "savedEncouragements"
     ];
 
-    for (const subcol of subcollectionNames) {
-      try {
-        const snap = await getDocs(collection(db, `users/${userId}/${subcol}`));
-        if (!snap.empty) {
-          const deletePromises = snap.docs.map((d) => deleteDoc(d.ref));
-          await Promise.allSettled(deletePromises);
+    await Promise.allSettled(
+      subcollectionNames.map(async (subcol) => {
+        try {
+          const snap = await getDocs(collection(db, `users/${userId}/${subcol}`));
+          if (!snap.empty) {
+            const deletePromises = snap.docs.map((d) => deleteDoc(d.ref));
+            await Promise.allSettled(deletePromises);
+          }
+        } catch (e) {
+          console.warn(`Could not purge subcollection ${subcol} for user ${userId}:`, e);
         }
-      } catch (e) {
-        console.warn(`Could not purge subcollection ${subcol} for user ${userId}:`, e);
-      }
-    }
+      })
+    );
   }
 
   /**
    * Delete current authenticated user's own account (Self-Service)
    * GDPR / Sacred Privacy Trust complete erasure of all personal spiritual data.
    */
-  static async deleteOwnAccount(userId: string, email: string, reason?: string): Promise<boolean> {
+  static async deleteOwnAccount(userId: string, email: string, reason?: string, password?: string): Promise<boolean> {
     const cleanEmail = (email || "").toLowerCase().trim();
 
     try {
-      // 1. Purge all private Firestore subcollections (notes, bookmarks, dreams, visions, etc.)
-      await this.purgeUserFirestoreSubcollections(userId);
+      // 1. Purge subcollections and parent user doc in parallel for rapid execution
+      const purgeSubcolsPromise = this.purgeUserFirestoreSubcollections(userId);
+      const deleteUserDocPromise = (async () => {
+        try {
+          const userRef = doc(db, "users", userId);
+          await deleteDoc(userRef);
+        } catch (fsErr) {
+          console.warn("Could not delete user doc from Firestore:", fsErr);
+        }
+      })();
 
-      // 2. Delete parent user profile document in Firestore
-      try {
-        const userRef = doc(db, "users", userId);
-        await deleteDoc(userRef);
-      } catch (fsErr) {
-        console.warn("Could not delete user doc from Firestore:", fsErr);
+      await Promise.allSettled([purgeSubcolsPromise, deleteUserDocPromise]);
+
+      // Check for cached password in local accounts registry if not explicitly passed
+      let authPassword = password;
+      if (!authPassword && cleanEmail) {
+        try {
+          const raw = localStorage.getItem("gtc_local_user_accounts");
+          if (raw) {
+            const accs = JSON.parse(raw);
+            if (accs[cleanEmail]?.rawPass) {
+              authPassword = accs[cleanEmail].rawPass;
+            }
+          }
+        } catch {}
       }
 
       // 3. Delete Firebase Auth user if authenticated
-      if (auth.currentUser && auth.currentUser.uid === userId) {
+      if (auth.currentUser && (auth.currentUser.uid === userId || auth.currentUser.email?.toLowerCase().trim() === cleanEmail)) {
         try {
-          if (typeof (auth.currentUser as any).delete === "function") {
-            await (auth.currentUser as any).delete();
+          if (authPassword && auth.currentUser.email) {
+            try {
+              const credential = EmailAuthProvider.credential(auth.currentUser.email, authPassword);
+              await reauthenticateWithCredential(auth.currentUser, credential);
+              console.log("[Sacred Privacy] User re-authenticated before permanent deletion.");
+            } catch (reauthErr) {
+              console.warn("Re-auth before delete warning:", reauthErr);
+            }
           }
+          await deleteUser(auth.currentUser);
+          console.log("[Sacred Privacy] Firebase Auth user deleted successfully.");
         } catch (authErr: any) {
-          console.warn("Direct Firebase Auth user delete warning (proceeding with revocation):", authErr);
+          console.error("Firebase Auth user delete error:", authErr);
+          if (authErr?.code === "auth/requires-recent-login") {
+            const reqErr = new Error("For your security, please enter your password to confirm account deletion with Firebase Authentication.") as any;
+            reqErr.code = "auth/requires-recent-login";
+            throw reqErr;
+          }
+          console.warn("Direct Firebase Auth user delete warning:", authErr);
         }
       }
 
@@ -481,10 +516,10 @@ export class UserDataService {
         }
       } catch {}
 
-      // 6. Revoke in local storage and delete from CRM
-      Storage.revokeUser(userId, cleanEmail);
+      // 6. Remove from CRM and unrevoke so user can register anew in future if desired
       Storage.deleteJoinedMember(userId);
       if (cleanEmail) Storage.deleteJoinedMember(cleanEmail);
+      Storage.unrevokeUser(userId, cleanEmail);
 
       // 7. Clear all user data from storage
       this.clearUserData();
@@ -690,6 +725,16 @@ export class UserDataService {
         await deleteDoc(userRef);
       } catch (err) {
         console.warn("Could not delete user doc from Firestore:", err);
+      }
+
+      // If target matches current auth user, delete from Firebase Auth directly
+      if (auth.currentUser && (auth.currentUser.uid === userId || auth.currentUser.email?.toLowerCase().trim() === cleanEmail)) {
+        try {
+          await deleteUser(auth.currentUser);
+          console.log("[CRM Admin] Current auth user deleted directly from Firebase Auth.");
+        } catch (authErr) {
+          console.warn("[CRM Admin] Firebase Auth direct delete warning:", authErr);
+        }
       }
 
       // 4. Request server-side Firebase Auth user deletion

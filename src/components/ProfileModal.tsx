@@ -130,14 +130,19 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
   };
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#1C1B18]/60 backdrop-blur-xs animate-fadeIn"
-      onClick={onClose}
-    >
+    <>
       <div
-        className="relative w-full max-w-lg bg-white rounded-[32px] p-6 sm:p-8 shadow-2xl border border-[#E5E0D5] max-h-[90vh] overflow-y-auto"
-        onClick={(e) => e.stopPropagation()}
+        className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#1C1B18]/60 backdrop-blur-xs animate-fadeIn"
+        onClick={(e) => {
+          if (e.target === e.currentTarget) {
+            onClose();
+          }
+        }}
       >
+        <div
+          className="relative w-full max-w-lg bg-white rounded-[32px] p-6 sm:p-8 shadow-2xl border border-[#E5E0D5] max-h-[90vh] overflow-y-auto"
+          onClick={(e) => e.stopPropagation()}
+        >
         {/* Header */}
         <div className="flex items-center justify-between pb-4 border-b border-[#E5E0D5]">
           <div className="flex items-center gap-3.5">
@@ -431,20 +436,18 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
           </div>
         </div>
       </div>
-
-      {/* Account Deletion Confirmation Modal */}
-      {showDeleteModal && (
-        <DeleteAccountModal
-          isOpen={showDeleteModal}
-          onClose={() => {
-            setShowDeleteModal(false);
-            onClose();
-          }}
-          user={user}
-          onNavigate={onNavigate}
-        />
-      )}
     </div>
-  );
+
+    {/* Account Deletion Confirmation Modal */}
+    {showDeleteModal && (
+      <DeleteAccountModal
+        isOpen={showDeleteModal}
+        onClose={() => setShowDeleteModal(false)}
+        user={user}
+        onNavigate={onNavigate}
+      />
+    )}
+  </>
+);
 };
 

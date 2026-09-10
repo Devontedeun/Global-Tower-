@@ -95,10 +95,14 @@ export default function App() {
   // Listen for account departure and welcome ceremony events
   useEffect(() => {
     const handleDeparted = (e: any) => {
-      if (e.detail) {
-        setFarewellUser(e.detail);
-        setUnauthView("farewell");
-      }
+      const detail = e?.detail || {
+        name: user.name || "Beloved Believer",
+        email: user.email,
+        deletedAt: new Date().toISOString()
+      };
+      setFarewellUser(detail);
+      setUnauthView("farewell");
+      setIsProfileOpen(false);
     };
     const handleWelcomeCeremony = (e: any) => {
       if (e.detail) {
@@ -106,12 +110,14 @@ export default function App() {
       }
     };
     window.addEventListener("gtc_account_departed", handleDeparted);
+    window.addEventListener("gtc_account_deleted", handleDeparted);
     window.addEventListener("gtc_welcome_ceremony_trigger", handleWelcomeCeremony);
     return () => {
       window.removeEventListener("gtc_account_departed", handleDeparted);
+      window.removeEventListener("gtc_account_deleted", handleDeparted);
       window.removeEventListener("gtc_welcome_ceremony_trigger", handleWelcomeCeremony);
     };
-  }, []);
+  }, [user]);
 
   const t = translations[language];
 

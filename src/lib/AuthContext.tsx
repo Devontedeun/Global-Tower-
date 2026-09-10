@@ -8,6 +8,7 @@ import {
   signOut as fbSignOut,
   sendPasswordResetEmail,
   updateProfile,
+  deleteUser,
   doc,
   getDoc,
   setDoc,
@@ -51,7 +52,7 @@ interface AuthContextType {
   logout: () => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
   updateProfileData: (updates: Partial<UserProfile>) => Promise<void>;
-  deleteAccount: (reason?: string) => Promise<void>;
+  deleteAccount: (reason?: string, password?: string) => Promise<void>;
   finalizeAccountDeparture: () => Promise<void>;
   isRegistered: boolean;
 }
@@ -623,6 +624,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
     
     const cleanEmail = data.email.toLowerCase().trim();
+    // Ensure clean state if previously deleted or revoked
+    Storage.unrevokeUser(undefined, cleanEmail);
     const fullName = `${data.firstName.trim()} ${data.lastName.trim()}`.trim() || cleanEmail.split("@")[0];
     const chosenAvatar = data.avatarUrl || `https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400&auto=format&fit=crop&q=80`;
 
@@ -840,13 +843,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const deleteAccount = async (reason?: string) => {
+  const deleteAccount = async (reason?: string, password?: string) => {
     if (!currentUser) return;
     const uid = currentUser.uid;
     const email = currentUser.email || userProfile?.email || "";
 
     try {
-      await UserDataService.deleteOwnAccount(uid, email, reason);
+      await UserDataService.deleteOwnAccount(uid, email, reason, password);
     } catch (err: any) {
       console.error("deleteAccount error:", err);
       throw err;
@@ -857,21 +860,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       if (auth.currentUser) {
         try {
-          if (typeof (auth.currentUser as any).delete === "function") {
-            await (auth.currentUser as any).delete();
-          }
+          await deleteUser(auth.currentUser);
         } catch {}
         try {
           await fbSignOut(auth);
         } catch {}
       }
-    } finally {
-      clearActiveSession();
-      UserDataService.clearUserData();
-      Storage.clearUser();
-      setUserProfile(null);
-      setCurrentUser(null);
-    }
+    } catch {}
+    clearActiveSession();
+    UserDataService.clearUserData();
+    Storage.clearUser();
+    setUserProfile(null);
+    setCurrentUser(null);
   };
 
   return (

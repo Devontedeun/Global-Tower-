@@ -8,6 +8,9 @@ import {
   signOut,
   sendPasswordResetEmail,
   updateProfile,
+  deleteUser,
+  EmailAuthProvider,
+  reauthenticateWithCredential,
   User as FirebaseUser
 } from "firebase/auth";
 import { 
@@ -50,6 +53,9 @@ export {
   signOut,
   sendPasswordResetEmail,
   updateProfile,
+  deleteUser,
+  EmailAuthProvider,
+  reauthenticateWithCredential,
   doc,
   getDoc,
   setDoc,
