@@ -54,6 +54,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
 
   // Account Deletion & Kick State
   const [accountToDelete, setAccountToDelete] = useState<UserProfile | null>(null);
+  const [adminReason, setAdminReason] = useState("");
   const [isDeletingAccount, setIsDeletingAccount] = useState(false);
   const [adminNotice, setAdminNotice] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
@@ -192,9 +193,10 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
     try {
       // 1. Call UserDataService which deletes from Firestore, calls backend /api/admin/delete-user,
       // marks local user revoked, and dispatches gtc_user_kicked so active sessions terminate immediately
-      const ok = await UserDataService.deleteUserAccount(target.id, target.email);
+      const ok = await UserDataService.deleteUserAccount(target.id, target.email, adminReason.trim() || undefined);
 
       if (ok) {
+        setAdminReason("");
         // 2. Remove member from local state
         setMembersList((prev) => prev.filter((m) => m.id !== target.id && m.email !== target.email));
 
@@ -1162,6 +1164,20 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                 <li>User is kicked out of the application in real-time</li>
                 <li>Account is removed from the CRM directory</li>
               </ul>
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-xs font-bold text-[#2D2D2D] block font-serif">
+                Pastoral Reason / Audit Note (Optional)
+              </label>
+              <input
+                type="text"
+                value={adminReason}
+                onChange={(e) => setAdminReason(e.target.value)}
+                placeholder="e.g. Member requested removal, discipline, duplicate record..."
+                disabled={isDeletingAccount}
+                className="w-full px-3.5 py-2 text-xs bg-[#FDFCF9] border border-[#E5E0D5] rounded-xl text-[#2D2D2D] focus:outline-none focus:border-rose-400"
+              />
             </div>
 
             <div className="flex items-center justify-end gap-3 pt-2">

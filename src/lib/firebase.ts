@@ -26,7 +26,13 @@ import {
   orderBy,
   serverTimestamp
 } from "firebase/firestore";
-import firebaseConfig from "../../firebase-applet-config.json";
+import rawFirebaseConfig from "../../firebase-applet-config.json";
+
+// Firebase configuration with valid API key guarantee
+const firebaseConfig = {
+  ...rawFirebaseConfig,
+  apiKey: ((import.meta as any).env?.VITE_FIREBASE_API_KEY as string | undefined) || rawFirebaseConfig.apiKey || "AIzaSyCO23KxuJNVFP2qnCkHFbpHRVYrvQz0Vog"
+};
 
 // Initialize Firebase App
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();

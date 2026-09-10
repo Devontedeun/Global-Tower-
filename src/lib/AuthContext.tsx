@@ -51,6 +51,8 @@ interface AuthContextType {
   logout: () => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
   updateProfileData: (updates: Partial<UserProfile>) => Promise<void>;
+  deleteAccount: (reason?: string) => Promise<void>;
+  finalizeAccountDeparture: () => Promise<void>;
   isRegistered: boolean;
 }
 
@@ -824,6 +826,40 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  const deleteAccount = async (reason?: string) => {
+    if (!currentUser) return;
+    const uid = currentUser.uid;
+    const email = currentUser.email || userProfile?.email || "";
+
+    try {
+      await UserDataService.deleteOwnAccount(uid, email, reason);
+    } catch (err: any) {
+      console.error("deleteAccount error:", err);
+      throw err;
+    }
+  };
+
+  const finalizeAccountDeparture = async () => {
+    try {
+      if (auth.currentUser) {
+        try {
+          if (typeof (auth.currentUser as any).delete === "function") {
+            await (auth.currentUser as any).delete();
+          }
+        } catch {}
+        try {
+          await fbSignOut(auth);
+        } catch {}
+      }
+    } finally {
+      clearActiveSession();
+      UserDataService.clearUserData();
+      Storage.clearUser();
+      setUserProfile(null);
+      setCurrentUser(null);
+    }
+  };
+
   return (
     <AuthContext.Provider
       value={{
@@ -838,6 +874,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         logout,
         resetPassword,
         updateProfileData,
+        deleteAccount,
+        finalizeAccountDeparture,
         isRegistered: !!currentUser
       }}
     >

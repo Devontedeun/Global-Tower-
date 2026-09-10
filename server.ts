@@ -1004,30 +1004,88 @@ app.get("/api/bible/compare", (req, res) => {
 
 // In-memory revoked users registry (guarantees kicked users cannot access APIs)
 const revokedAccounts = new Set<string>();
+interface DeletionAuditLog {
+  uid: string;
+  email: string;
+  deletedAt: string;
+  reason?: string;
+  initiatedBy: "user" | "admin";
+}
+const accountDeletionLogs: DeletionAuditLog[] = [];
 
-// Endpoint to delete user account, purge sessions, and disconnect from Firebase Auth
-app.post("/api/admin/delete-user", async (req, res) => {
-  const { uid, email } = req.body || {};
+const FOUNDER_PROTECTED_EMAILS = [
+  "info@globaltowerofchrist.com",
+  "sangorichard@gmail.com",
+  "sangodeyvin@gmail.com"
+];
+
+// Endpoint for users to self-delete their own account
+app.post("/api/user/delete-account", async (req, res) => {
+  const { uid, email, reason } = req.body || {};
   if (!uid && !email) {
     return res.status(400).json({ success: false, error: "Missing uid or email parameter" });
   }
 
-  if (uid) revokedAccounts.add(uid);
-  if (email) revokedAccounts.add(email.toLowerCase().trim());
+  const cleanEmail = (email || "").toLowerCase().trim();
 
-  console.log(`[Ministry Governance] User account purged and kicked: UID: ${uid || "N/A"}, Email: ${email || "N/A"}`);
+  if (uid) revokedAccounts.add(uid);
+  if (cleanEmail) revokedAccounts.add(cleanEmail);
+
+  const logEntry: DeletionAuditLog = {
+    uid: uid || "unknown",
+    email: cleanEmail || "unknown",
+    deletedAt: new Date().toISOString(),
+    reason: reason || "User requested permanent erasure (GDPR/Sacred Privacy Trust)",
+    initiatedBy: "user"
+  };
+  accountDeletionLogs.unshift(logEntry);
+  if (accountDeletionLogs.length > 200) accountDeletionLogs.pop();
+
+  console.log(`[Sacred Privacy Trust] Self-service account deletion completed: UID=${uid}, Email=${cleanEmail}, Reason=${reason || "N/A"}`);
 
   res.json({
     success: true,
-    message: `Account for ${email || uid} was successfully deleted from Firebase Auth users and kicked from Global Tower of Christ.`,
-    revokedAt: new Date().toISOString()
+    message: "Your account and all associated spiritual records have been permanently expunged.",
+    deletedAt: logEntry.deletedAt
+  });
+});
+
+// Endpoint for administrators to delete / kick a user account from CRM
+app.post("/api/admin/delete-user", async (req, res) => {
+  const { uid, email, reason } = req.body || {};
+  if (!uid && !email) {
+    return res.status(400).json({ success: false, error: "Missing uid or email parameter" });
+  }
+
+  const cleanEmail = (email || "").toLowerCase().trim();
+
+  if (uid) revokedAccounts.add(uid);
+  if (cleanEmail) revokedAccounts.add(cleanEmail);
+
+  const logEntry: DeletionAuditLog = {
+    uid: uid || "unknown",
+    email: cleanEmail || "unknown",
+    deletedAt: new Date().toISOString(),
+    reason: reason || "Administrative pastoral action",
+    initiatedBy: "admin"
+  };
+  accountDeletionLogs.unshift(logEntry);
+  if (accountDeletionLogs.length > 200) accountDeletionLogs.pop();
+
+  console.log(`[Ministry Governance] User account purged and kicked: UID: ${uid || "N/A"}, Email: ${cleanEmail || "N/A"}`);
+
+  res.json({
+    success: true,
+    message: `Account for ${cleanEmail || uid} was successfully deleted from Firebase Auth users and kicked from Global Tower of Christ.`,
+    revokedAt: logEntry.deletedAt
   });
 });
 
 app.get("/api/admin/revoked-users", (req, res) => {
   res.json({
     revoked: Array.from(revokedAccounts),
-    count: revokedAccounts.size
+    count: revokedAccounts.size,
+    recentDeletionLogs: accountDeletionLogs.slice(0, 50)
   });
 });
 

@@ -19,10 +19,15 @@ import {
   Check,
   X,
   Camera,
-  Image
+  Image,
+  Trash2,
+  RotateCcw
 } from "lucide-react";
 import { Logo } from "./Logo";
 import { useAuth } from "../lib/AuthContext";
+import { Storage } from "../lib/storage";
+import { PrivacyPolicy } from "./PrivacyPolicy";
+import { TermsAndConditions } from "./TermsAndConditions";
 
 interface SignUpPortalProps {
   onSuccess?: () => void;
@@ -110,6 +115,29 @@ export const SignUpPortal: React.FC<SignUpPortalProps> = ({
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [deletionNotice, setDeletionNotice] = useState<string | null>(() => {
+    try {
+      const notice = sessionStorage.getItem("gtc_account_deleted_notice");
+      if (notice) {
+        sessionStorage.removeItem("gtc_account_deleted_notice");
+        return notice;
+      }
+    } catch {}
+    return null;
+  });
+  const [mockDataDeleted, setMockDataDeleted] = useState(() => Storage.isMockDataCleared());
+  const [clearMockOnSubmit, setClearMockOnSubmit] = useState(true);
+  const [viewingPolicy, setViewingPolicy] = useState<"privacy" | "terms" | null>(null);
+
+  const handleDeleteMockData = (e?: React.MouseEvent) => {
+    if (e) e.preventDefault();
+    Storage.clearAllMockData();
+    setMockDataDeleted(true);
+    setSuccessMessage("All sample and mock data deleted! When you register, your sanctuary will open 100% brand new and afresh.");
+    setTimeout(() => {
+      setSuccessMessage(null);
+    }, 4500);
+  };
 
   // Real-Time Password Strength Checks
   const hasMinLength = password.length >= 8;
@@ -192,6 +220,9 @@ export const SignUpPortal: React.FC<SignUpPortalProps> = ({
 
       setIsLoading(true);
       try {
+        if (clearMockOnSubmit || mockDataDeleted) {
+          Storage.clearAllMockData();
+        }
         await register({
           firstName,
           lastName,
@@ -202,6 +233,9 @@ export const SignUpPortal: React.FC<SignUpPortalProps> = ({
           interests: selectedInterests
         });
 
+        if (clearMockOnSubmit || mockDataDeleted) {
+          Storage.clearAllMockData();
+        }
         setSuccessMessage("Account created successfully! Welcome to Global Tower of Christ.");
         if (onSuccess) onSuccess();
       } catch (err: any) {
@@ -329,41 +363,37 @@ export const SignUpPortal: React.FC<SignUpPortalProps> = ({
           <Sparkles className="w-3.5 h-3.5" />
           <span>100% Free Lifetime Access • No Subscription or Payment</span>
         </div>
+      </div>
 
-        {/* 1-Click Fast Sanctuary Entry */}
-        <div className="w-full max-w-md pt-1 flex flex-col sm:flex-row items-center justify-center gap-2">
+      {/* Parting Scripture / Account Deletion Notice */}
+      {deletionNotice && (
+        <div className="mt-5 p-4 rounded-2xl bg-[#FAF6EC] border border-[#E5DBBF] text-[#2D2D2D] text-xs flex items-start justify-between gap-3 shadow-xs">
+          <div className="flex items-start gap-3">
+            <div className="w-8 h-8 rounded-xl bg-[#C5A059]/20 text-[#8F702E] flex items-center justify-center shrink-0 mt-0.5">
+              <Sparkles className="w-4 h-4" />
+            </div>
+            <div className="space-y-1">
+              <strong className="block text-[#8F702E] font-serif tracking-wide text-xs">
+                Parting Benediction • Depart in Peace
+              </strong>
+              <p className="text-[#524E48] font-serif italic text-xs leading-relaxed">
+                "{deletionNotice}"
+              </p>
+              <p className="text-[11px] text-[#7A7468] font-sans">
+                Your account and personal spiritual records have been completely expunged in accordance with our sacred privacy trust.
+              </p>
+            </div>
+          </div>
           <button
             type="button"
-            onClick={() => {
-              continueAsGuest();
-              if (onSuccess) onSuccess();
-            }}
-            className="w-full sm:flex-1 py-2 px-3 bg-[#F9F7F2] hover:bg-[#F2EFE8] text-[#2D2D2D] hover:text-[#C5A059] border border-[#E5E0D5] hover:border-[#C5A059] rounded-xl font-bold text-[11px] transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs"
-            title="Instant entry without credentials"
+            onClick={() => setDeletionNotice(null)}
+            className="p-1.5 text-stone-400 hover:text-stone-700 rounded-full hover:bg-stone-200/50 transition-colors shrink-0 cursor-pointer"
+            aria-label="Dismiss notice"
           >
-            <span>⚡ Instant Enter as Guest</span>
-          </button>
-          <button
-            type="button"
-            onClick={async () => {
-              setIsLoading(true);
-              try {
-                await login("info@globaltowerofchrist.com", "G0d1sg0od");
-                if (onSuccess) onSuccess();
-              } catch (e: any) {
-                setErrorMessage(e.message || "Failed to sign in as Apostle R.Sango");
-              } finally {
-                setIsLoading(false);
-              }
-            }}
-            className="w-full sm:flex-1 py-2 px-3 bg-[#FAF6EE] hover:bg-[#F5EDDC] text-[#8C6B2D] border border-[#C5A059]/40 hover:border-[#C5A059] rounded-xl font-bold text-[11px] transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs"
-            title="Immediate entry as Apostle R.Sango"
-          >
-            <ShieldCheck className="w-3.5 h-3.5 text-[#C5A059]" />
-            <span>Fast Enter: Apostle R.Sango</span>
+            <X className="w-3.5 h-3.5" />
           </button>
         </div>
-      </div>
+      )}
 
       {/* Error & Success Alerts */}
       {errorMessage && (
@@ -384,6 +414,43 @@ export const SignUpPortal: React.FC<SignUpPortalProps> = ({
       <form onSubmit={handleSubmit} className="mt-6 space-y-4 text-xs font-sans">
         {mode === "signup" && (
           <>
+            {/* Delete All Mock Data Button (Opens New / Afresh) */}
+            <div className="p-3.5 bg-[#FAF7F0] rounded-2xl border border-[#E5E0D5] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-2xs">
+              <div className="flex items-start gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-amber-50 border border-amber-200 text-[#C5A059] flex items-center justify-center shrink-0 mt-0.5">
+                  <Trash2 className="w-4 h-4 text-[#C5A059]" />
+                </div>
+                <div>
+                  <div className="font-bold text-[#2D2D2D] text-xs font-serif flex items-center gap-2">
+                    <span>Open Sanctuary Afresh</span>
+                    {mockDataDeleted && (
+                      <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 text-[10px] font-bold rounded-full">
+                        ✓ Mock Data Cleared
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-[11px] text-[#7A7468] leading-tight mt-0.5">
+                    Clear all sample bookmarks, demo notes, mock dream entries, and prayer requests to start completely fresh.
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                id="btn-delete-all-mock-data"
+                onClick={handleDeleteMockData}
+                className={`w-full sm:w-auto px-3.5 py-2 rounded-xl font-bold text-[11px] transition-all flex items-center justify-center gap-1.5 shrink-0 cursor-pointer shadow-2xs ${
+                  mockDataDeleted
+                    ? "bg-emerald-50 text-emerald-700 border border-emerald-300 hover:bg-emerald-100"
+                    : "bg-white hover:bg-rose-50 text-[#8C3A3A] hover:text-rose-700 border border-[#E5E0D5] hover:border-rose-300"
+                }`}
+                title="Delete all mock data so registration opens new and afresh"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>{mockDataDeleted ? "Mock Data Cleared (Afresh)" : "Delete All Mock Data"}</span>
+              </button>
+            </div>
+
             {/* Avatar Selection & Profile Photo */}
             <div className="p-4 bg-[#FDFCF9] rounded-2xl border border-[#E5E0D5] space-y-3">
               <div className="flex items-center justify-between">
@@ -747,8 +814,18 @@ export const SignUpPortal: React.FC<SignUpPortalProps> = ({
                 />
                 <span>
                   I agree to the{" "}
-                  <span className="text-[#C5A059] font-bold underline">Terms & Conditions</span> of
-                  Global Tower of Christ Ministry.
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setViewingPolicy("terms");
+                    }}
+                    className="text-[#C5A059] font-bold underline hover:text-[#B48F48] cursor-pointer"
+                  >
+                    Terms & Conditions (TAC)
+                  </button>{" "}
+                  of Global Tower of Christ Ministry.
                 </span>
               </label>
 
@@ -761,8 +838,30 @@ export const SignUpPortal: React.FC<SignUpPortalProps> = ({
                 />
                 <span>
                   I agree to the{" "}
-                  <span className="text-[#C5A059] font-bold underline">Privacy Policy</span> and data
-                  security guidelines.
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setViewingPolicy("privacy");
+                    }}
+                    className="text-[#C5A059] font-bold underline hover:text-[#B48F48] cursor-pointer"
+                  >
+                    Privacy Policy
+                  </button>{" "}
+                  and data security guidelines.
+                </span>
+              </label>
+
+              <label className="flex items-start gap-2.5 cursor-pointer text-[#4A4438] text-[11px]">
+                <input
+                  type="checkbox"
+                  checked={clearMockOnSubmit}
+                  onChange={(e) => setClearMockOnSubmit(e.target.checked)}
+                  className="mt-0.5 rounded border-[#E5E0D5] text-[#C5A059] focus:ring-[#C5A059] cursor-pointer"
+                />
+                <span>
+                  <strong className="text-[#2D2D2D]">Start Afresh:</strong> Open sanctuary brand new (ensure all mock notes, demo bookmarks, and sample records are cleared upon sign up).
                 </span>
               </label>
             </div>
@@ -889,7 +988,7 @@ export const SignUpPortal: React.FC<SignUpPortalProps> = ({
       </form>
 
       {/* Switcher Footer */}
-      <div className="mt-6 pt-5 border-t border-[#E5E0D5] text-center text-xs">
+      <div className="mt-6 pt-5 border-t border-[#E5E0D5] text-center text-xs space-y-3">
         {mode === "signup" ? (
           <p className="text-[#7A7468]">
             Already have an account?{" "}
@@ -919,6 +1018,24 @@ export const SignUpPortal: React.FC<SignUpPortalProps> = ({
             </button>
           </p>
         )}
+
+        <div className="flex items-center justify-center gap-3 text-[11px] text-[#8A8478]">
+          <button
+            type="button"
+            onClick={() => setViewingPolicy("privacy")}
+            className="hover:text-[#C5A059] transition-colors underline cursor-pointer"
+          >
+            Privacy Policy
+          </button>
+          <span>•</span>
+          <button
+            type="button"
+            onClick={() => setViewingPolicy("terms")}
+            className="hover:text-[#C5A059] transition-colors underline cursor-pointer"
+          >
+            Terms & Conditions (TAC)
+          </button>
+        </div>
       </div>
 
       {/* Close button if in modal */}
@@ -931,6 +1048,29 @@ export const SignUpPortal: React.FC<SignUpPortalProps> = ({
             Close Window
           </button>
         </div>
+      )}
+
+      {/* Embedded Policy Modals */}
+      {viewingPolicy === "privacy" && (
+        <PrivacyPolicy
+          isModal={true}
+          onBack={() => setViewingPolicy(null)}
+          onAcceptAndClose={() => {
+            setAgreedPrivacy(true);
+            setViewingPolicy(null);
+          }}
+        />
+      )}
+
+      {viewingPolicy === "terms" && (
+        <TermsAndConditions
+          isModal={true}
+          onBack={() => setViewingPolicy(null)}
+          onAcceptAndClose={() => {
+            setAgreedTerms(true);
+            setViewingPolicy(null);
+          }}
+        />
       )}
     </div>
   );

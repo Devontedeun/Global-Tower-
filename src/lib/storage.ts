@@ -293,14 +293,62 @@ export const Storage = {
     }
   },
 
+  isMockDataCleared(): boolean {
+    try {
+      return localStorage.getItem("gtc_mock_data_cleared") === "true";
+    } catch {
+      return false;
+    }
+  },
+
+  clearAllMockData(): void {
+    try {
+      localStorage.setItem("gtc_mock_data_cleared", "true");
+      localStorage.setItem(STORAGE_KEYS.BOOKMARKS, JSON.stringify([]));
+      localStorage.setItem(STORAGE_KEYS.HIGHLIGHTS, JSON.stringify([]));
+      localStorage.setItem(STORAGE_KEYS.NOTES, JSON.stringify([]));
+      localStorage.setItem(STORAGE_KEYS.DREAMS, JSON.stringify([]));
+      localStorage.setItem(STORAGE_KEYS.VISIONS, JSON.stringify([]));
+      localStorage.setItem(STORAGE_KEYS.PRAYERS, JSON.stringify([]));
+      localStorage.setItem(STORAGE_KEYS.FEEDBACK, JSON.stringify([]));
+      localStorage.setItem(STORAGE_KEYS.SAVED_SERMONS, JSON.stringify([]));
+      localStorage.setItem(STORAGE_KEYS.WATCH_PROGRESS, JSON.stringify({}));
+
+      // Reset study plans to pristine 0% progress
+      const pristinePlans = BIBLE_STUDY_PLANS.map((plan) => ({
+        ...plan,
+        isEnrolled: false,
+        completedDays: 0,
+        currentDay: 1,
+        days: (plan.days || []).map((d) => ({
+          ...d,
+          isCompleted: false,
+        })),
+      }));
+      localStorage.setItem(STORAGE_KEYS.STUDY_PLANS, JSON.stringify(pristinePlans));
+
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("gtc_data_cleared"));
+        window.dispatchEvent(new CustomEvent("gtc_study_plans_updated"));
+      }
+    } catch (e) {
+      console.error("Error clearing mock data:", e);
+    }
+  },
+
   getBookmarks(): VerseBookmark[] {
     try {
       const data = localStorage.getItem(STORAGE_KEYS.BOOKMARKS);
+      if (this.isMockDataCleared()) {
+        if (!data) return [];
+        const parsed = JSON.parse(data);
+        return Array.isArray(parsed) ? parsed : [];
+      }
       if (!data) return defaultBookmarks();
       const parsed = JSON.parse(data);
       return Array.isArray(parsed) ? parsed : defaultBookmarks();
     } catch {
-      return defaultBookmarks();
+      return this.isMockDataCleared() ? [] : defaultBookmarks();
     }
   },
   saveBookmark(bookmark: VerseBookmark) {
@@ -319,11 +367,16 @@ export const Storage = {
   getHighlights(): VerseHighlight[] {
     try {
       const data = localStorage.getItem(STORAGE_KEYS.HIGHLIGHTS);
+      if (this.isMockDataCleared()) {
+        if (!data) return [];
+        const parsed = JSON.parse(data);
+        return Array.isArray(parsed) ? parsed : [];
+      }
       if (!data) return defaultHighlights();
       const parsed = JSON.parse(data);
       return Array.isArray(parsed) ? parsed : defaultHighlights();
     } catch {
-      return defaultHighlights();
+      return this.isMockDataCleared() ? [] : defaultHighlights();
     }
   },
   saveHighlight(highlight: VerseHighlight) {
@@ -342,11 +395,16 @@ export const Storage = {
   getNotes(): StudyNote[] {
     try {
       const data = localStorage.getItem(STORAGE_KEYS.NOTES);
+      if (this.isMockDataCleared()) {
+        if (!data) return [];
+        const parsed = JSON.parse(data);
+        return Array.isArray(parsed) ? parsed : [];
+      }
       if (!data) return defaultNotes();
       const parsed = JSON.parse(data);
       return Array.isArray(parsed) ? parsed : defaultNotes();
     } catch {
-      return defaultNotes();
+      return this.isMockDataCleared() ? [] : defaultNotes();
     }
   },
   saveNote(note: StudyNote) {
@@ -366,7 +424,7 @@ export const Storage = {
     try {
       const data = localStorage.getItem(STORAGE_KEYS.DREAMS);
       const parsed = data ? JSON.parse(data) : null;
-      const list = Array.isArray(parsed) ? parsed : defaultDreams();
+      const list = Array.isArray(parsed) ? parsed : (this.isMockDataCleared() ? [] : defaultDreams());
       return list.map(d => ({
         ...d,
         symbols: Array.isArray(d.symbols) ? d.symbols : [],
@@ -374,7 +432,7 @@ export const Storage = {
         people: Array.isArray(d.people) ? d.people : []
       }));
     } catch {
-      return defaultDreams();
+      return this.isMockDataCleared() ? [] : defaultDreams();
     }
   },
   saveDream(dream: DreamEntry) {
@@ -394,13 +452,13 @@ export const Storage = {
     try {
       const data = localStorage.getItem(STORAGE_KEYS.VISIONS);
       const parsed = data ? JSON.parse(data) : null;
-      const list = Array.isArray(parsed) ? parsed : defaultVisions();
+      const list = Array.isArray(parsed) ? parsed : (this.isMockDataCleared() ? [] : defaultVisions());
       return list.map(v => ({
         ...v,
         scriptures: Array.isArray(v.scriptures) ? v.scriptures : []
       }));
     } catch {
-      return defaultVisions();
+      return this.isMockDataCleared() ? [] : defaultVisions();
     }
   },
   saveVision(vision: VisionEntry) {
@@ -420,9 +478,9 @@ export const Storage = {
     try {
       const data = localStorage.getItem(STORAGE_KEYS.PRAYERS);
       const parsed = data ? JSON.parse(data) : null;
-      return Array.isArray(parsed) ? parsed : PRAYER_ITEMS_INITIAL;
+      return Array.isArray(parsed) ? parsed : (this.isMockDataCleared() ? [] : PRAYER_ITEMS_INITIAL);
     } catch {
-      return PRAYER_ITEMS_INITIAL;
+      return this.isMockDataCleared() ? [] : PRAYER_ITEMS_INITIAL;
     }
   },
   savePrayer(item: PrayerItem) {

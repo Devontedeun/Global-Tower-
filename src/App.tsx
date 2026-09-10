@@ -35,6 +35,8 @@ import { AudioPlayerBar, AudioTrack } from "./components/AudioPlayerBar";
 import { GlobalSearchModal } from "./components/GlobalSearchModal";
 import { ProfileModal } from "./components/ProfileModal";
 import { FeedbackModal } from "./components/FeedbackModal";
+import { PrivacyPolicy } from "./components/PrivacyPolicy";
+import { TermsAndConditions } from "./components/TermsAndConditions";
 import { Storage, DEFAULT_USER } from "./lib/storage";
 import { UserProfile, UserRole } from "./types";
 import { translations, Language } from "./lib/translations";
@@ -46,6 +48,7 @@ export default function App() {
   const { currentUser, userProfile, loading, updateProfileData } = useAuth();
 
   const [currentView, setCurrentView] = useState<string>("home");
+  const [unauthView, setUnauthView] = useState<"auth" | "privacy" | "terms">("auth");
   const [viewParams, setViewParams] = useState<any>(null);
   const [user, setUser] = useState<UserProfile>(DEFAULT_USER);
   const [language, setLanguage] = useState<Language>(() => {
@@ -73,11 +76,16 @@ export default function App() {
 
   const t = translations[language];
 
+  const mainContentRef = React.useRef<HTMLElement | null>(null);
+
   const handleNavigate = (view: string, data?: any) => {
     setCurrentView(view);
     setViewParams(data || null);
     setIsMobileMenuOpen(false);
     window.scrollTo({ top: 0, behavior: "smooth" });
+    if (mainContentRef.current) {
+      mainContentRef.current.scrollTo({ top: 0, behavior: "smooth" });
+    }
   };
 
   const handleSpiritualInsightQuery = (query: string) => {
@@ -131,18 +139,50 @@ export default function App() {
           </div>
         </header>
 
-        {/* Centered Login / Sign-up Card */}
+        {/* Main Content: Login / Sign-up Card or Policy Page */}
         <main className="flex-1 flex items-center justify-center p-4 sm:p-8">
-          <SignUpPortal
-            onSuccess={() => {
-              setCurrentView("home");
-            }}
-          />
+          {unauthView === "privacy" ? (
+            <PrivacyPolicy onBack={() => setUnauthView("auth")} />
+          ) : unauthView === "terms" ? (
+            <TermsAndConditions onBack={() => setUnauthView("auth")} />
+          ) : (
+            <SignUpPortal
+              onSuccess={() => {
+                setCurrentView("home");
+              }}
+            />
+          )}
         </main>
 
-        {/* Minimal Footer */}
-        <footer className="w-full bg-white border-t border-[#E5E0D5] px-4 sm:px-8 py-3.5 text-center text-[11px] font-medium tracking-wider text-[#8A8478] uppercase">
-          &copy; {new Date().getFullYear()} Global Tower of Christ • Worship • Dominion • Victory
+        {/* Minimal Footer with Policy Links */}
+        <footer className="w-full bg-white border-t border-[#E5E0D5] px-4 sm:px-8 py-3.5 flex flex-col sm:flex-row items-center justify-between text-[11px] font-medium tracking-wider text-[#8A8478] uppercase gap-2">
+          <div>&copy; {new Date().getFullYear()} Global Tower of Christ • Worship • Dominion • Victory</div>
+          <div className="flex items-center gap-4 flex-wrap justify-center">
+            {unauthView !== "auth" && (
+              <button
+                onClick={() => setUnauthView("auth")}
+                className="hover:text-[#C5A059] transition-colors cursor-pointer text-[#C5A059] font-bold"
+              >
+                ← Return to Sign In
+              </button>
+            )}
+            <button
+              onClick={() => setUnauthView("privacy")}
+              className={`hover:text-[#C5A059] transition-colors cursor-pointer ${
+                unauthView === "privacy" ? "text-[#C5A059] font-bold" : ""
+              }`}
+            >
+              Privacy Policy
+            </button>
+            <button
+              onClick={() => setUnauthView("terms")}
+              className={`hover:text-[#C5A059] transition-colors cursor-pointer ${
+                unauthView === "terms" ? "text-[#C5A059] font-bold" : ""
+              }`}
+            >
+              Terms & Conditions (TAC)
+            </button>
+          </div>
         </footer>
       </div>
     );
@@ -397,7 +437,7 @@ export default function App() {
                 })}
               </div>
 
-              <div className="pt-4 border-t border-[#E5E0D5]">
+              <div className="pt-4 border-t border-[#E5E0D5] space-y-3">
                 <div
                   onClick={() => {
                     setIsMobileMenuOpen(false);
@@ -416,23 +456,48 @@ export default function App() {
                     <p className="text-[10px] text-[#8A8478] capitalize">{user.role.replace("_", " ")}</p>
                   </div>
                 </div>
+
+                <div className="flex items-center justify-between text-[11px] text-[#8A8478] px-1">
+                  <button
+                    onClick={() => {
+                      setIsMobileMenuOpen(false);
+                      handleNavigate("privacy");
+                    }}
+                    className="hover:text-[#C5A059] transition-colors underline cursor-pointer"
+                  >
+                    Privacy Policy
+                  </button>
+                  <span>•</span>
+                  <button
+                    onClick={() => {
+                      setIsMobileMenuOpen(false);
+                      handleNavigate("terms");
+                    }}
+                    className="hover:text-[#C5A059] transition-colors underline cursor-pointer"
+                  >
+                    Terms & Conditions (TAC)
+                  </button>
+                </div>
               </div>
             </div>
           </div>
         )}
 
         {/* Dynamic Primary Workspace Canvas (Full Viewport Width) with Polished Motion Transitions */}
-        <main className="flex-1 w-full min-w-0 px-3 sm:px-6 lg:px-8 py-4 sm:py-6 pb-28 lg:pb-12 overflow-y-auto">
+        <main
+          ref={mainContentRef}
+          className="flex-1 w-full min-w-0 px-3 sm:px-6 lg:px-8 py-4 sm:py-6 pb-28 lg:pb-12 overflow-y-auto"
+        >
           <AnimatePresence mode="wait" initial={false}>
             <motion.div
               key={currentView}
               id={`view-content-${currentView}`}
-              initial={{ opacity: 0, y: 14 }}
+              initial={{ opacity: 0, y: 16 }}
               animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -8 }}
+              exit={{ opacity: 0, y: -10 }}
               transition={{
-                duration: 0.22,
-                ease: [0.16, 1, 0.3, 1]
+                duration: 0.33,
+                ease: [0.22, 1, 0.36, 1],
               }}
               className="w-full h-full"
             >
@@ -516,6 +581,14 @@ export default function App() {
                   </div>
                 )
               )}
+
+              {currentView === "privacy" && (
+                <PrivacyPolicy onBack={() => handleNavigate("home")} />
+              )}
+
+              {currentView === "terms" && (
+                <TermsAndConditions onBack={() => handleNavigate("home")} />
+              )}
             </motion.div>
           </AnimatePresence>
         </main>
@@ -529,6 +602,8 @@ export default function App() {
           <button onClick={() => handleNavigate("encouragements")} className="hover:text-[#C5A059] transition-colors cursor-pointer">Words of Encouragement</button>
           <button onClick={() => handleNavigate("spiritual-insight")} className="hover:text-[#C5A059] transition-colors cursor-pointer">Spiritual Insight AI</button>
           <button onClick={() => setIsFeedbackOpen(true)} className="hover:text-[#C5A059] transition-colors cursor-pointer">Ministry Support</button>
+          <button onClick={() => handleNavigate("privacy")} className={`hover:text-[#C5A059] transition-colors cursor-pointer ${currentView === "privacy" ? "text-[#C5A059] font-bold" : ""}`}>Privacy Policy</button>
+          <button onClick={() => handleNavigate("terms")} className={`hover:text-[#C5A059] transition-colors cursor-pointer ${currentView === "terms" ? "text-[#C5A059] font-bold" : ""}`}>Terms & Conditions (TAC)</button>
         </div>
       </footer>
 
@@ -554,6 +629,7 @@ export default function App() {
         user={user}
         language={language}
         onLanguageChange={setLanguage}
+        onNavigate={handleNavigate}
         onUpdateUser={(updated) => {
           setUser(updated);
           updateProfileData(updated);

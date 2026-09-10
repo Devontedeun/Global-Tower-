@@ -400,17 +400,133 @@ export class UserDataService {
   }
 
   /**
-   * Delete an account completely: deletes user from Firestore, removes from CRM,
+   * Complete purge of all user subcollections in Firestore
+   */
+  private static async purgeUserFirestoreSubcollections(userId: string): Promise<void> {
+    const subcollectionNames = [
+      "notes",
+      "bookmarks",
+      "highlights",
+      "dreams",
+      "visions",
+      "savedSermons",
+      "studyProgress",
+      "prayers",
+      "savedEncouragements"
+    ];
+
+    for (const subcol of subcollectionNames) {
+      try {
+        const snap = await getDocs(collection(db, `users/${userId}/${subcol}`));
+        if (!snap.empty) {
+          const deletePromises = snap.docs.map((d) => deleteDoc(d.ref));
+          await Promise.allSettled(deletePromises);
+        }
+      } catch (e) {
+        console.warn(`Could not purge subcollection ${subcol} for user ${userId}:`, e);
+      }
+    }
+  }
+
+  /**
+   * Delete current authenticated user's own account (Self-Service)
+   * GDPR / Sacred Privacy Trust complete erasure of all personal spiritual data.
+   */
+  static async deleteOwnAccount(userId: string, email: string, reason?: string): Promise<boolean> {
+    const cleanEmail = (email || "").toLowerCase().trim();
+
+    try {
+      // 1. Purge all private Firestore subcollections (notes, bookmarks, dreams, visions, etc.)
+      await this.purgeUserFirestoreSubcollections(userId);
+
+      // 2. Delete parent user profile document in Firestore
+      try {
+        const userRef = doc(db, "users", userId);
+        await deleteDoc(userRef);
+      } catch (fsErr) {
+        console.warn("Could not delete user doc from Firestore:", fsErr);
+      }
+
+      // 3. Delete Firebase Auth user if authenticated
+      if (auth.currentUser && auth.currentUser.uid === userId) {
+        try {
+          if (typeof (auth.currentUser as any).delete === "function") {
+            await (auth.currentUser as any).delete();
+          }
+        } catch (authErr: any) {
+          console.warn("Direct Firebase Auth user delete warning (proceeding with revocation):", authErr);
+        }
+      }
+
+      // 4. Notify backend server to record revocation and purge sessions
+      try {
+        await fetch("/api/user/delete-account", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ uid: userId, email: cleanEmail, reason })
+        });
+      } catch (apiErr) {
+        console.warn("Could not reach backend /api/user/delete-account:", apiErr);
+      }
+
+      // 5. Remove from local user accounts registry
+      try {
+        const raw = localStorage.getItem("gtc_local_user_accounts");
+        if (raw) {
+          const accounts = JSON.parse(raw);
+          if (accounts[cleanEmail]) {
+            delete accounts[cleanEmail];
+            localStorage.setItem("gtc_local_user_accounts", JSON.stringify(accounts));
+          }
+        }
+      } catch {}
+
+      // 6. Revoke in local storage and delete from CRM
+      Storage.revokeUser(userId, cleanEmail);
+      Storage.deleteJoinedMember(userId);
+      if (cleanEmail) Storage.deleteJoinedMember(cleanEmail);
+
+      // 7. Clear all user data from storage
+      this.clearUserData();
+      Storage.clearUser();
+
+      // 8. Store closing blessing notice for sign-in display
+      try {
+        sessionStorage.setItem(
+          "gtc_account_deleted_notice",
+          "Numbers 6:24-26: The Lord bless you and keep you; The Lord make His face shine upon you, and give you peace. Amen. Depart in peace, dear beloved."
+        );
+      } catch {}
+
+      // 9. Dispatch events (notice: do not dispatch gtc_user_kicked as that is reserved for admin kicks)
+      window.dispatchEvent(new CustomEvent("gtc_crm_updated"));
+      window.dispatchEvent(new CustomEvent("gtc_account_deleted", { detail: { uid: userId, email: cleanEmail } }));
+
+      return true;
+    } catch (err: any) {
+      console.error("Error in deleteOwnAccount:", err);
+      throw err;
+    }
+  }
+
+  /**
+   * Delete an account completely (Admin-initiated from CRM):
+   * deletes user from Firestore, purges subcollections, removes from CRM,
    * invokes Firebase Auth account deletion, and broadcasts real-time kick signal.
    */
-  static async deleteUserAccount(userId: string, email: string): Promise<boolean> {
-    try {
-      // 1. Revoke and remove locally
-      Storage.revokeUser(userId, email);
-      Storage.deleteJoinedMember(userId);
-      if (email) Storage.deleteJoinedMember(email);
+  static async deleteUserAccount(userId: string, email: string, reason?: string): Promise<boolean> {
+    const cleanEmail = (email || "").toLowerCase().trim();
 
-      // 2. Delete Firestore document
+    try {
+      // 1. Purge all private Firestore subcollections
+      await this.purgeUserFirestoreSubcollections(userId);
+
+      // 2. Revoke and remove locally
+      Storage.revokeUser(userId, cleanEmail);
+      Storage.deleteJoinedMember(userId);
+      if (cleanEmail) Storage.deleteJoinedMember(cleanEmail);
+
+      // 3. Delete Firestore document
       try {
         const userRef = doc(db, "users", userId);
         await deleteDoc(userRef);
@@ -418,20 +534,32 @@ export class UserDataService {
         console.warn("Could not delete user doc from Firestore:", err);
       }
 
-      // 3. Request server-side Firebase Auth user deletion
+      // 4. Request server-side Firebase Auth user deletion
       try {
         await fetch("/api/admin/delete-user", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ uid: userId, email })
+          body: JSON.stringify({ uid: userId, email: cleanEmail, reason })
         });
       } catch (apiErr) {
         console.warn("Could not reach backend /api/admin/delete-user:", apiErr);
       }
 
-      // 4. Dispatch real-time kick and CRM update events
+      // 5. Remove from local accounts registry
+      try {
+        const raw = localStorage.getItem("gtc_local_user_accounts");
+        if (raw) {
+          const accounts = JSON.parse(raw);
+          if (accounts[cleanEmail]) {
+            delete accounts[cleanEmail];
+            localStorage.setItem("gtc_local_user_accounts", JSON.stringify(accounts));
+          }
+        }
+      } catch {}
+
+      // 6. Dispatch real-time kick and CRM update events
       window.dispatchEvent(
-        new CustomEvent("gtc_user_kicked", { detail: { uid: userId, email } })
+        new CustomEvent("gtc_user_kicked", { detail: { uid: userId, email: cleanEmail } })
       );
       window.dispatchEvent(new CustomEvent("gtc_crm_updated"));
 

@@ -15,13 +15,16 @@ import {
   UserCheck,
   Sparkles,
   Phone,
-  Palette
+  Palette,
+  Trash2,
+  ShieldAlert
 } from "lucide-react";
 import { UserProfile, UserRole } from "../types";
 import { Storage } from "../lib/storage";
 import { useAuth } from "../lib/AuthContext";
 import { UserAvatar, getInitials } from "./UserAvatar";
 import { Language, SUPPORTED_LANGUAGES } from "../lib/translations";
+import { DeleteAccountModal } from "./DeleteAccountModal";
 
 interface ProfileModalProps {
   isOpen: boolean;
@@ -31,6 +34,7 @@ interface ProfileModalProps {
   onOpenAuthPortal?: () => void;
   language?: Language;
   onLanguageChange?: (lang: Language) => void;
+  onNavigate?: (view: string) => void;
 }
 
 const COLOR_BLOCK_OPTIONS = [
@@ -50,7 +54,8 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
   onUpdateUser,
   onOpenAuthPortal,
   language = "en",
-  onLanguageChange
+  onLanguageChange,
+  onNavigate
 }) => {
   const { currentUser, logout, updateProfileData } = useAuth();
 
@@ -66,6 +71,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
   const [newSermons, setNewSermons] = useState(user.notificationPrefs?.newSermons ?? true);
   const [liveEvents, setLiveEvents] = useState(user.notificationPrefs?.liveEvents ?? true);
   const [savedMsg, setSavedMsg] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
 
   useEffect(() => {
     setName(user.name || "");
@@ -349,6 +355,55 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
             <p className="text-[#7A7468] font-sans">
               Direct Inquiries: <a href="mailto:info@globaltowerofchrist.com" className="text-[#C5A059] font-semibold underline">info@globaltowerofchrist.com</a>
             </p>
+            {onNavigate && (
+              <div className="pt-2 flex items-center gap-3 text-[11px] text-[#8A8478] border-t border-[#E5E0D5]/60 mt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    onClose();
+                    onNavigate("privacy");
+                  }}
+                  className="text-[#C5A059] hover:underline cursor-pointer font-medium"
+                >
+                  Privacy Policy
+                </button>
+                <span>•</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    onClose();
+                    onNavigate("terms");
+                  }}
+                  className="text-[#C5A059] hover:underline cursor-pointer font-medium"
+                >
+                  Terms & Conditions (TAC)
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Account Management & Deletion (Right to Erasure) */}
+          <div className="pt-4 border-t border-[#E5E0D5] space-y-2">
+            <span className="font-bold text-[#2D2D2D] block font-serif text-sm">Account Management & Sacred Privacy</span>
+            <div className="p-4 bg-rose-50/60 border border-rose-200/80 rounded-[20px] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="space-y-0.5">
+                <div className="text-xs font-bold text-rose-950 font-serif flex items-center gap-1.5">
+                  <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                  <span>Permanent Account Deletion</span>
+                </div>
+                <p className="text-[11px] text-[#7A7468] font-sans leading-relaxed">
+                  Exercise your Right to Erasure. Permanently delete your account, spiritual reflections, dream journal, and study progress.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowDeleteModal(true)}
+                className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white text-[11px] font-bold uppercase tracking-wider rounded-full transition-colors shrink-0 inline-flex items-center justify-center gap-1.5 cursor-pointer shadow-xs"
+              >
+                <Trash2 className="w-3 h-3" />
+                <span>Delete Account</span>
+              </button>
+            </div>
           </div>
 
           <div className="flex items-center justify-between pt-4 border-t border-[#E5E0D5]">
@@ -376,6 +431,19 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Account Deletion Confirmation Modal */}
+      {showDeleteModal && (
+        <DeleteAccountModal
+          isOpen={showDeleteModal}
+          onClose={() => {
+            setShowDeleteModal(false);
+            onClose();
+          }}
+          user={user}
+          onNavigate={onNavigate}
+        />
+      )}
     </div>
   );
 };
