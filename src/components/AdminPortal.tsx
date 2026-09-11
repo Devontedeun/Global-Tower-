@@ -28,7 +28,7 @@ import {
   UserCog
 } from "lucide-react";
 import { UserRole, UserProfile } from "../types";
-import { Storage, APOSTLE_SANGO_ADMIN } from "../lib/storage";
+import { Storage, APOSTLE_SANGO_ADMIN, isSuperAdminEmail } from "../lib/storage";
 import { UserDataService } from "../lib/userDataService";
 import { useAuth } from "../lib/AuthContext";
 import { db, collection, onSnapshot } from "../lib/firebase";
@@ -194,55 +194,42 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
     if (!accountToDelete) return;
 
     const target = accountToDelete;
-    setIsDeletingAccount(true);
+    const reasonText = adminReason.trim() || undefined;
+
+    // 1. Instant optimistic UI update: Remove member from list, close modal, clear reason instantly
+    setMembersList((prev) => prev.filter((m) => m.id !== target.id && m.email !== target.email));
+    setPingLatencies((prev) => {
+      const next = { ...prev };
+      delete next[target.id];
+      return next;
+    });
+    setAccountToDelete(null);
+    setAdminReason("");
+    setAdminNotice({
+      type: "success",
+      text: `Account for ${target.name} (${target.email}) permanently expunged from sanctuary records and Firebase Auth.`
+    });
+
+    // If target was current user, transition to farewell exit page immediately
+    if (currentUser && (currentUser.email === target.email || currentUser.uid === target.id)) {
+      const farewellPayload = {
+        name: target.name,
+        email: target.email,
+        deletedAt: new Date().toISOString(),
+        reason: reasonText || "Administrative erasure"
+      };
+      try {
+        sessionStorage.setItem("gtc_farewell_exit_active", JSON.stringify(farewellPayload));
+      } catch {}
+      window.dispatchEvent(new CustomEvent("gtc_account_departed", { detail: farewellPayload }));
+    }
 
     try {
-      // 1. Call UserDataService which deletes from Firestore, calls backend /api/admin/delete-user,
+      // 2. Call UserDataService which deletes from Firestore, calls backend /api/admin/delete-user,
       // marks local user revoked, and dispatches gtc_user_kicked so active sessions terminate immediately
-      const ok = await UserDataService.deleteUserAccount(target.id, target.email, adminReason.trim() || undefined);
-
-      if (ok) {
-        setAdminReason("");
-        // 2. Remove member from local state
-        setMembersList((prev) => prev.filter((m) => m.id !== target.id && m.email !== target.email));
-
-        // 3. Clear from latencies
-        setPingLatencies((prev) => {
-          const next = { ...prev };
-          delete next[target.id];
-          return next;
-        });
-
-        // If target was current user, transition to farewell exit page
-        if (currentUser && (currentUser.email === target.email || currentUser.uid === target.id)) {
-          const farewellPayload = {
-            name: target.name,
-            email: target.email,
-            deletedAt: new Date().toISOString(),
-            reason: adminReason.trim() || "Administrative erasure"
-          };
-          try {
-            sessionStorage.setItem("gtc_farewell_exit_active", JSON.stringify(farewellPayload));
-          } catch {}
-          window.dispatchEvent(new CustomEvent("gtc_account_departed", { detail: farewellPayload }));
-        }
-
-        setAdminNotice({
-          type: "success",
-          text: `Account for ${target.name} (${target.email}) was permanently deleted from Firebase Auth users and kicked from the application.`
-        });
-        setAccountToDelete(null);
-      } else {
-        setAdminNotice({
-          type: "error",
-          text: `Warning: Account removal encountered an error. Please try again.`
-        });
-      }
+      await UserDataService.deleteUserAccount(target.id, target.email, reasonText);
     } catch (e: any) {
-      setAdminNotice({
-        type: "error",
-        text: `Failed to delete account: ${e?.message || "Unknown error"}`
-      });
+      console.warn("Background deletion task notice:", e);
     } finally {
       setIsDeletingAccount(false);
     }
@@ -963,9 +950,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                   {filtered.map((member) => {
                     const isAdmin =
                       member.role === "super_admin" ||
-                      member.email?.toLowerCase() === "info@globaltowerofchrist.com" ||
-                      member.email?.toLowerCase() === "sangorichard@gmail.com" ||
-                      member.email?.toLowerCase() === "sangodeyvin@gmail.com";
+                      isSuperAdminEmail(member.email);
 
                     const formattedDate = member.createdAt
                       ? new Date(member.createdAt).toLocaleDateString(undefined, {

@@ -160,11 +160,11 @@ export const PrayerHub: React.FC<PrayerHubProps> = ({ user: propUser }) => {
               <span>Intercession & Community Support</span>
             </div>
             <h1 className="text-2xl sm:text-3xl font-serif font-bold text-[#2D2D2D]">
-              Dreams, Worries & Prayer Hub
+              Dreams
             </h1>
             <p className="text-[#7A7468] text-sm mt-1 font-sans max-w-3xl leading-relaxed">
               "Bear one another's burdens, and so fulfill the law of Christ" — Galatians 6:2.
-              Share your prayers, dreams, and worries with trusted believers. Post openly or anonymously with system-generated IDs.
+              Share your prayers and dreams with trusted believers. Post openly or anonymously with system-generated IDs.
             </p>
           </div>
 

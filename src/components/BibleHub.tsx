@@ -40,7 +40,7 @@ import {
 } from "../lib/bibleService";
 import { Storage } from "../lib/storage";
 import { AudioTrack } from "./AudioPlayerBar";
-import { getNaturalBibleVoice } from "../lib/audioVoiceHelper";
+import { getNaturalBibleVoice, BANNED_VOICE_NAMES, getMicrosoftTTSUrl, getSavedVoiceGender } from "../lib/audioVoiceHelper";
 
 interface BibleHubProps {
   initialBook?: string;
@@ -118,16 +118,27 @@ export const BibleHub: React.FC<BibleHubProps> = ({
     setChapterCompleted(false);
   }, [selectedBook, selectedChapter]);
 
-  // Load voices for Audio Bible
+  // Load voices for Audio Bible (prioritizing Microsoft natural voices and filtering banned voices)
   useEffect(() => {
     const loadVoices = () => {
       if (typeof window !== "undefined" && "speechSynthesis" in window) {
         const voices = window.speechSynthesis.getVoices();
         if (voices.length > 0) {
-          const englishVoices = voices.filter((v) => v.lang.startsWith("en"));
+          const englishVoices = voices.filter((v) => {
+            const lower = (v.name + " " + v.voiceURI).toLowerCase();
+            return v.lang.startsWith("en") && !BANNED_VOICE_NAMES.some((banned) => lower.includes(banned));
+          });
+          // Sort with Microsoft Natural voices at the top
+          englishVoices.sort((a, b) => {
+            const aLower = a.name.toLowerCase();
+            const bLower = b.name.toLowerCase();
+            const aMs = aLower.includes("microsoft") ? 2 : (aLower.includes("natural") ? 1 : 0);
+            const bMs = bLower.includes("microsoft") ? 2 : (bLower.includes("natural") ? 1 : 0);
+            return bMs - aMs;
+          });
           setAvailableVoices(englishVoices.length > 0 ? englishVoices : voices);
           
-          // Select natural narrator voice by default
+          // Select natural Microsoft narrator voice by default
           const { voice } = getNaturalBibleVoice();
           if (voice) {
             setSelectedVoiceURI(voice.voiceURI);
@@ -343,39 +354,75 @@ export const BibleHub: React.FC<BibleHubProps> = ({
   };
 
   const playSingleVerseAudio = (verseNum: number, text: string) => {
-    if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
+    // If global audio player is provided, route directly to ensure continuous Microsoft Neural narration
+    if (onPlayAudio) {
+      onPlayAudio({
+        id: `bible-${selectedBook}-${selectedChapter}-v${verseNum}`,
+        title: `${selectedBook} ${selectedChapter}:${verseNum}`,
+        subtitle: `Scripture Verse • ${translation} Translation • Microsoft Natural Narration`,
+        textToRead: `${selectedBook}, chapter ${selectedChapter}, verse ${verseNum}. ${text}`,
+        verses: [{ num: verseNum, text }],
+        book: selectedBook,
+        chapter: selectedChapter,
+        onVerseChange: (num: number) => {
+          setAudioVerseNum(num);
+          setIsAudioPlaying(true);
+        },
+        onChapterComplete: () => {
+          setIsAudioPlaying(false);
+          setAudioVerseNum(null);
+        }
+      });
+      setAudioVerseNum(verseNum);
+      setIsAudioPlaying(true);
+      return;
+    }
 
-    window.speechSynthesis.cancel();
     setAudioVerseNum(verseNum);
     setIsAudioPlaying(true);
 
-    // Only recite chapter number when starting; do not say verse number
-    const utteranceText = `${selectedBook} chapter ${selectedChapter}. ${text}`;
-    const utterance = new SpeechSynthesisUtterance(utteranceText);
-    
-    const { voice, pitch: defaultPitch, rate: defaultRate } = getNaturalBibleVoice();
-    if (selectedVoiceURI) {
-      const v = availableVoices.find((voice) => voice.voiceURI === selectedVoiceURI);
-      if (v) utterance.voice = v;
-    } else if (voice) {
-      utterance.voice = voice;
+    // Direct standalone fallback with Microsoft Neural TTS
+    try {
+      const recitationText = `${selectedBook}, chapter ${selectedChapter}. ${text}`;
+      const ttsUrl = getMicrosoftTTSUrl(recitationText, getSavedVoiceGender());
+      const audio = new Audio(ttsUrl);
+      audio.playbackRate = playbackSpeed || 1.0;
+      audio.onended = () => {
+        setIsAudioPlaying(false);
+        setAudioVerseNum(null);
+      };
+      audio.onerror = () => {
+        // Fallback to speech synthesis if network issue occurs
+        if (typeof window !== "undefined" && "speechSynthesis" in window) {
+          const utterance = new SpeechSynthesisUtterance(recitationText);
+          const { voice, pitch, rate } = getNaturalBibleVoice();
+          if (voice) utterance.voice = voice;
+          utterance.pitch = pitch;
+          utterance.rate = playbackSpeed || rate;
+          utterance.onend = () => {
+            setIsAudioPlaying(false);
+            setAudioVerseNum(null);
+          };
+          utterance.onerror = () => {
+            setIsAudioPlaying(false);
+            setAudioVerseNum(null);
+          };
+          synthRef.current = utterance;
+          window.speechSynthesis.speak(utterance);
+        } else {
+          setIsAudioPlaying(false);
+          setAudioVerseNum(null);
+        }
+      };
+
+      audio.play().catch(() => {
+        setIsAudioPlaying(false);
+        setAudioVerseNum(null);
+      });
+    } catch (err) {
+      setIsAudioPlaying(false);
+      setAudioVerseNum(null);
     }
-
-    utterance.pitch = defaultPitch;
-    utterance.rate = playbackSpeed || defaultRate;
-
-    utterance.onend = () => {
-      setIsAudioPlaying(false);
-      setAudioVerseNum(null);
-    };
-
-    utterance.onerror = () => {
-      setIsAudioPlaying(false);
-      setAudioVerseNum(null);
-    };
-
-    synthRef.current = utterance;
-    window.speechSynthesis.speak(utterance);
   };
 
   const handleNextChapter = () => {

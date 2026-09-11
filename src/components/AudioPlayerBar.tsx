@@ -21,7 +21,8 @@ import {
   getNaturalBibleVoice,
   getSavedVoiceGender,
   setSavedVoiceGender,
-  formatBibleTextForSpeech
+  formatBibleTextForSpeech,
+  getMicrosoftTTSUrl
 } from "../lib/audioVoiceHelper";
 import { bluetoothAudioService, AudioOutputDevice } from "../lib/bluetoothAudioService";
 import { VoiceGender } from "../types";
@@ -133,6 +134,7 @@ export const AudioPlayerBar: React.FC<AudioPlayerBarProps> = ({
   const [showDeviceMenu, setShowDeviceMenu] = useState(false);
 
   const synthRef = useRef<SpeechSynthesisUtterance | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
   const segmentsRef = useRef<SpeechSegment[]>([]);
   const currentSegmentIndexRef = useRef<number>(0);
   const keepAliveIntervalRef = useRef<number | null>(null);
@@ -173,12 +175,18 @@ export const AudioPlayerBar: React.FC<AudioPlayerBarProps> = ({
   };
 
   const playSegment = (index: number, genderToUse?: VoiceGender, customRate?: number) => {
-    if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
-
     const segments = segmentsRef.current;
     if (index >= segments.length) {
       // Reached the end of the chapter!
-      window.speechSynthesis.cancel();
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current.onended = null;
+        audioRef.current.onerror = null;
+        audioRef.current = null;
+      }
+      if (typeof window !== "undefined" && "speechSynthesis" in window) {
+        window.speechSynthesis.cancel();
+      }
       stopKeepAlive();
       setIsPlaying(false);
       isPlayingRef.current = false;
@@ -188,7 +196,11 @@ export const AudioPlayerBar: React.FC<AudioPlayerBarProps> = ({
       return;
     }
 
-    window.speechSynthesis.cancel();
+    // Clean up active speech synthesis if running
+    if (typeof window !== "undefined" && "speechSynthesis" in window) {
+      window.speechSynthesis.cancel();
+    }
+
     currentSegmentIndexRef.current = index;
     setIsFinished(false);
     setIsPlaying(true);
@@ -203,30 +215,89 @@ export const AudioPlayerBar: React.FC<AudioPlayerBarProps> = ({
     }
 
     const targetGender = genderToUse || voiceGender;
-    const utterance = new SpeechSynthesisUtterance(currentSeg.text);
-    const { voice, pitch: defaultPitch, rate: defaultRate, voiceName } = getNaturalBibleVoice(targetGender);
+    const rate = (customRate !== undefined ? customRate : playbackRate) || 1.0;
 
-    if (voice) {
-      utterance.voice = voice;
+    // SpeechSynthesis fallback that strictly prefers Microsoft voices and blocks Daniel
+    const fallbackToSpeechSynthesis = () => {
+      if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
+      const utterance = new SpeechSynthesisUtterance(currentSeg.text);
+      const { voice, pitch: defaultPitch, rate: defaultRate, voiceName } = getNaturalBibleVoice(targetGender);
+
+      if (voice) {
+        utterance.voice = voice;
+      }
+      setActiveNarratorName(voiceName);
+      utterance.pitch = defaultPitch;
+      utterance.rate = (customRate !== undefined ? customRate : playbackRate) || defaultRate;
+
+      utterance.onend = () => {
+        if (isPlayingRef.current) {
+          playSegment(index + 1, targetGender, customRate);
+        }
+      };
+
+      utterance.onerror = (e) => {
+        if (e.error === "canceled" || e.error === "interrupted") return;
+        if (isPlayingRef.current) {
+          playSegment(index + 1, targetGender, customRate);
+        }
+      };
+
+      synthRef.current = utterance;
+      startKeepAlive();
+      window.speechSynthesis.speak(utterance);
+    };
+
+    try {
+      const ttsUrl = getMicrosoftTTSUrl(currentSeg.text, targetGender);
+
+      // Reuse the same HTMLAudioElement instance for seamless continuous playback across mobile browsers
+      let audio = audioRef.current;
+      if (!audio) {
+        audio = new Audio();
+        audio.preload = "auto";
+        (audio as any).playsInline = true;
+        audioRef.current = audio;
+        bluetoothAudioService.registerMediaElement(audio);
+      }
+
+      audio.pause();
+      audio.onended = null;
+      audio.onerror = null;
+      audio.src = ttsUrl;
+      audio.playbackRate = rate;
+
+      const narratorLabel = targetGender === "female" ? "Microsoft Jenny (Natural Female)" : "Microsoft Guy (Natural Male)";
+      setActiveNarratorName(narratorLabel);
+
+      audio.onended = () => {
+        if (isPlayingRef.current) {
+          playSegment(index + 1, targetGender, customRate);
+        }
+      };
+
+      audio.onerror = () => {
+        console.warn("Microsoft Neural Audio stream notice, switching to system synthesizer.");
+        fallbackToSpeechSynthesis();
+      };
+
+      const playPromise = audio.play();
+      if (playPromise !== undefined) {
+        playPromise.catch((e) => {
+          console.warn("Direct audio play notice:", e?.message);
+          fallbackToSpeechSynthesis();
+        });
+      }
+
+      // Prefetch the next segment in the background so it plays seamlessly with zero pause
+      if (index + 1 < segments.length) {
+        const nextSeg = segments[index + 1];
+        const nextUrl = getMicrosoftTTSUrl(nextSeg.text, targetGender);
+        fetch(nextUrl, { cache: "force-cache" }).catch(() => {});
+      }
+    } catch (e) {
+      fallbackToSpeechSynthesis();
     }
-    setActiveNarratorName(voiceName);
-    utterance.pitch = defaultPitch; // 1% deeper male voice (0.94)
-    utterance.rate = (customRate !== undefined ? customRate : playbackRate) || defaultRate;
-
-    utterance.onend = () => {
-      // Continue uninterrupted reading to next segment till end of chapter
-      playSegment(index + 1, targetGender, customRate);
-    };
-
-    utterance.onerror = (e) => {
-      if (e.error === "canceled" || e.error === "interrupted") return;
-      // In case of dropped utterance, safely advance to keep reading till the end of the chapter
-      playSegment(index + 1, targetGender, customRate);
-    };
-
-    synthRef.current = utterance;
-    startKeepAlive();
-    window.speechSynthesis.speak(utterance);
   };
 
   useEffect(() => {
@@ -235,6 +306,10 @@ export const AudioPlayerBar: React.FC<AudioPlayerBarProps> = ({
       setIsFinished(false);
       setProgress(0);
       stopKeepAlive();
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current = null;
+      }
       if (typeof window !== "undefined" && "speechSynthesis" in window) {
         window.speechSynthesis.cancel();
       }
@@ -247,7 +322,7 @@ export const AudioPlayerBar: React.FC<AudioPlayerBarProps> = ({
     setProgress(0);
     setIsFinished(false);
 
-    if (segments.length > 0 && typeof window !== "undefined" && "speechSynthesis" in window) {
+    if (segments.length > 0) {
       playSegment(0, voiceGender);
     } else {
       setIsPlaying(true);
@@ -255,6 +330,10 @@ export const AudioPlayerBar: React.FC<AudioPlayerBarProps> = ({
 
     return () => {
       stopKeepAlive();
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current = null;
+      }
       if (typeof window !== "undefined" && "speechSynthesis" in window) {
         window.speechSynthesis.cancel();
       }
@@ -263,23 +342,29 @@ export const AudioPlayerBar: React.FC<AudioPlayerBarProps> = ({
 
   // Handle Play / Pause
   const togglePlay = () => {
-    if (typeof window === "undefined" || !("speechSynthesis" in window)) {
-      setIsPlaying(!isPlaying);
-      return;
-    }
-
     if (isPlaying) {
-      window.speechSynthesis.pause();
+      if (audioRef.current) {
+        audioRef.current.pause();
+      }
+      if (typeof window !== "undefined" && "speechSynthesis" in window) {
+        window.speechSynthesis.pause();
+      }
       stopKeepAlive();
       setIsPlaying(false);
       isPlayingRef.current = false;
     } else {
       if (isFinished || progress >= 100) {
-        // Replay chapter from beginning!
         setProgress(0);
         setIsFinished(false);
         playSegment(0);
-      } else if (window.speechSynthesis.paused) {
+      } else if (audioRef.current && audioRef.current.paused && audioRef.current.src) {
+        audioRef.current.play().then(() => {
+          setIsPlaying(true);
+          isPlayingRef.current = true;
+        }).catch(() => {
+          playSegment(currentSegmentIndexRef.current);
+        });
+      } else if (typeof window !== "undefined" && "speechSynthesis" in window && window.speechSynthesis.paused) {
         window.speechSynthesis.resume();
         startKeepAlive();
         setIsPlaying(true);
@@ -301,8 +386,8 @@ export const AudioPlayerBar: React.FC<AudioPlayerBarProps> = ({
     const nextIdx = (speeds.indexOf(playbackRate) + 1) % speeds.length;
     const newRate = speeds[nextIdx];
     setPlaybackRate(newRate);
-    if (isPlaying) {
-      playSegment(currentSegmentIndexRef.current, voiceGender, newRate);
+    if (audioRef.current) {
+      audioRef.current.playbackRate = newRate;
     }
   };
 

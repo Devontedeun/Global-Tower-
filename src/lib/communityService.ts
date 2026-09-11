@@ -1,4 +1,4 @@
-// Community Service for Dreams, Worries, and Prayer Support
+// Community Service for Dreams and Prayer Support
 // Supports anonymous posting with system identifiers (e.g. "Seeker #A8492")
 // where regular users see the anonymous ID, while ministry admins/moderators can view the linked account for safety and pastoral care.
 

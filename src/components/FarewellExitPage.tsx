@@ -15,6 +15,7 @@ import {
   LogOut
 } from "lucide-react";
 import { Logo } from "./Logo";
+import { getMicrosoftTTSUrl } from "../lib/audioVoiceHelper";
 
 export interface FarewellUser {
   name: string;
@@ -116,6 +117,7 @@ export const FarewellExitPage: React.FC<FarewellExitPageProps> = ({
   const [isMuted, setIsMuted] = useState(false);
   const [copied, setCopied] = useState(false);
   const speechRef = useRef<SpeechSynthesisUtterance | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
 
   const activeScripture =
     FAREWELL_SCRIPTURES.find((s) => s.id === selectedScriptureId) || FAREWELL_SCRIPTURES[0];
@@ -128,51 +130,80 @@ export const FarewellExitPage: React.FC<FarewellExitPageProps> = ({
     window.scrollTo({ top: 0, behavior: "smooth" });
 
     return () => {
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current = null;
+      }
       if (typeof window !== "undefined" && "speechSynthesis" in window) {
         window.speechSynthesis.cancel();
       }
     };
   }, []);
 
-  // Speak scripture aloud using SpeechSynthesis
+  // Speak scripture aloud using Microsoft Neural Voice with speech synthesis fallback
   const speakScripture = (scripture: PartingScripture, muted = false) => {
-    if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
-
-    try {
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current = null;
+    }
+    if (typeof window !== "undefined" && "speechSynthesis" in window) {
       window.speechSynthesis.cancel();
-      if (muted) {
+    }
+
+    if (muted) {
+      setIsSpeaking(false);
+      return;
+    }
+
+    const fallbackToSpeechSynthesis = () => {
+      if (typeof window === "undefined" || !("speechSynthesis" in window)) {
         setIsSpeaking(false);
         return;
       }
+      try {
+        const utterance = new SpeechSynthesisUtterance(scripture.spokenText);
+        utterance.rate = 0.88;
+        utterance.pitch = 0.96;
 
-      const utterance = new SpeechSynthesisUtterance(scripture.spokenText);
-      utterance.rate = 0.88; // Reverent and gentle pace
-      utterance.pitch = 0.96;
+        const voices = window.speechSynthesis.getVoices();
+        const preferred =
+          voices.find(
+            (v) =>
+              v.lang.startsWith("en") &&
+              (v.name.includes("Microsoft") || v.name.includes("Natural")) &&
+              !v.name.toLowerCase().includes("daniel")
+          ) ||
+          voices.find(
+            (v) =>
+              v.lang.startsWith("en") &&
+              (v.name.includes("Google") || v.name.includes("Jenny") || v.name.includes("Guy")) &&
+              !v.name.toLowerCase().includes("daniel")
+          ) ||
+          voices.find((v) => v.lang.startsWith("en") && !v.name.toLowerCase().includes("daniel"));
 
-      const voices = window.speechSynthesis.getVoices();
-      const preferred =
-        voices.find(
-          (v) =>
-            v.lang.startsWith("en") &&
-            (v.name.includes("Natural") ||
-              v.name.includes("Google") ||
-              v.name.includes("Daniel") ||
-              v.name.includes("Samantha") ||
-              v.name.includes("Arthur") ||
-              v.name.includes("Serena"))
-        ) || voices.find((v) => v.lang.startsWith("en"));
+        if (preferred) utterance.voice = preferred;
 
-      if (preferred) utterance.voice = preferred;
+        utterance.onstart = () => setIsSpeaking(true);
+        utterance.onend = () => setIsSpeaking(false);
+        utterance.onerror = () => setIsSpeaking(false);
 
-      utterance.onstart = () => setIsSpeaking(true);
-      utterance.onend = () => setIsSpeaking(false);
-      utterance.onerror = () => setIsSpeaking(false);
+        speechRef.current = utterance;
+        window.speechSynthesis.speak(utterance);
+      } catch (e) {
+        setIsSpeaking(false);
+      }
+    };
 
-      speechRef.current = utterance;
-      window.speechSynthesis.speak(utterance);
+    try {
+      const ttsUrl = getMicrosoftTTSUrl(scripture.spokenText, "female");
+      const audio = new Audio(ttsUrl);
+      audioRef.current = audio;
+      audio.onplay = () => setIsSpeaking(true);
+      audio.onended = () => setIsSpeaking(false);
+      audio.onerror = () => fallbackToSpeechSynthesis();
+      audio.play().catch(() => fallbackToSpeechSynthesis());
     } catch (e) {
-      console.warn("Notice during speech synthesis:", e);
-      setIsSpeaking(false);
+      fallbackToSpeechSynthesis();
     }
   };
 

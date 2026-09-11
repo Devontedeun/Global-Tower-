@@ -17,12 +17,20 @@ import {
   Phone,
   Palette,
   Trash2,
-  ShieldAlert
+  ShieldAlert,
+  AtSign,
+  RefreshCw,
+  AlertCircle,
+  CheckCircle,
+  Smartphone,
+  Download
 } from "lucide-react";
 import { UserProfile, UserRole } from "../types";
-import { Storage } from "../lib/storage";
+import { Storage, isSuperAdminEmail } from "../lib/storage";
+import { UserDataService } from "../lib/userDataService";
 import { useAuth } from "../lib/AuthContext";
 import { UserAvatar, getInitials } from "./UserAvatar";
+import { usePWAInstall } from "../lib/usePWAInstall";
 import { Language, SUPPORTED_LANGUAGES } from "../lib/translations";
 import { DeleteAccountModal } from "./DeleteAccountModal";
 
@@ -60,6 +68,9 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
   const { currentUser, logout, updateProfileData } = useAuth();
 
   const [name, setName] = useState(user.name);
+  const [username, setUsername] = useState(user.username || "");
+  const [usernameStatus, setUsernameStatus] = useState<"idle" | "checking" | "available" | "taken">("idle");
+  const [usernameFeedback, setUsernameFeedback] = useState<string | null>(null);
   const [email, setEmail] = useState(user.email);
   const [phoneNumber, setPhoneNumber] = useState(user.phoneNumber || "");
   const [country, setCountry] = useState(user.country || "Global");
@@ -72,9 +83,38 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
   const [liveEvents, setLiveEvents] = useState(user.notificationPrefs?.liveEvents ?? true);
   const [savedMsg, setSavedMsg] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+
+  const { isInstallable, isInstalled, install } = usePWAInstall();
+  const [barTheme, setBarTheme] = useState<string>(() => {
+    try {
+      return localStorage.getItem('gtc_webapp_bar_theme') || 'gold';
+    } catch {
+      return 'gold';
+    }
+  });
+
+  const handleBarThemeSelect = (themeId: string) => {
+    setBarTheme(themeId);
+    try {
+      localStorage.setItem('gtc_webapp_bar_theme', themeId);
+      window.dispatchEvent(new Event('storage'));
+      const metaTheme = document.querySelector('meta[name="theme-color"]');
+      const colors: Record<string, string> = {
+        gold: '#C5A059',
+        obsidian: '#1A1815',
+        linen: '#FDFCF9',
+        bronze: '#8C6228'
+      };
+      if (metaTheme && colors[themeId]) {
+        metaTheme.setAttribute('content', colors[themeId]);
+      }
+    } catch {}
+  };
 
   useEffect(() => {
     setName(user.name || "");
+    setUsername(user.username || "");
     setEmail(user.email || "");
     setPhoneNumber(user.phoneNumber || "");
     setCountry(user.country || "Global");
@@ -84,19 +124,80 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
     }
   }, [user]);
 
+  // Real-time username verification on profile edit
+  useEffect(() => {
+    const clean = username.trim().toLowerCase().replace(/^@/, "");
+    if (!clean || clean === (user.username || "").toLowerCase()) {
+      setUsernameStatus("idle");
+      setUsernameFeedback(null);
+      return;
+    }
+    if (clean.length < 3) {
+      setUsernameStatus("taken");
+      setUsernameFeedback("Username must be at least 3 characters.");
+      return;
+    }
+    if (!/^[a-z0-9_.-]+$/.test(clean)) {
+      setUsernameStatus("taken");
+      setUsernameFeedback("Letters, numbers, underscores, dashes, and periods only.");
+      return;
+    }
+
+    const localCheck = Storage.isUsernameTaken(clean, user.id);
+    if (localCheck) {
+      setUsernameStatus("taken");
+      setUsernameFeedback(`@${clean} is already claimed.`);
+      return;
+    }
+
+    setUsernameStatus("checking");
+    setUsernameFeedback("Checking availability...");
+
+    const timer = setTimeout(async () => {
+      try {
+        const check = await UserDataService.isUsernameTaken(clean, user.id);
+        if (check.taken) {
+          setUsernameStatus("taken");
+          setUsernameFeedback(check.reason || `@${clean} is already claimed.`);
+        } else {
+          setUsernameStatus("available");
+          setUsernameFeedback(`@${clean} is available!`);
+        }
+      } catch {
+        setUsernameStatus("available");
+      }
+    }, 280);
+
+    return () => clearTimeout(timer);
+  }, [username, user.username, user.id]);
+
   if (!isOpen) return null;
 
   const isSuperAdmin =
     user.role === "super_admin" ||
-    user.email === "sangorichard@gmail.com" ||
-    user.email === "info@globaltowerofchrist.com";
+    isSuperAdminEmail(user.email);
 
   const handleSave = async () => {
+    setSaveError(null);
     const finalRole: UserRole = isSuperAdmin ? "super_admin" : "user";
+    const cleanUsername = username.trim().toLowerCase().replace(/^@/, "");
+
+    if (cleanUsername && cleanUsername !== (user.username || "").toLowerCase()) {
+      if (cleanUsername.length < 3) {
+        setSaveError("Sanctuary username must be at least 3 characters.");
+        return;
+      }
+      const check = await UserDataService.isUsernameTaken(cleanUsername, user.id);
+      if (check.taken) {
+        setSaveError(check.reason || `Username '@${cleanUsername}' is already claimed by another believer.`);
+        return;
+      }
+    }
 
     const updated: UserProfile = {
       ...user,
       name: name.trim() || user.name,
+      username: cleanUsername || user.username,
       email: email.trim() || user.email,
       phoneNumber: phoneNumber.trim(),
       country: country.trim() || "Global",
@@ -114,7 +215,12 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
     Storage.setUser(updated);
     
     // Save to Firestore & Auth profile
-    await updateProfileData(updated);
+    try {
+      await updateProfileData(updated);
+    } catch (e: any) {
+      setSaveError(e.message || "Failed to update profile.");
+      return;
+    }
     
     onUpdateUser(updated);
     setSavedMsg(true);
@@ -234,6 +340,56 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
             />
           </div>
 
+          {/* Sanctuary Username / Handle */}
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <label className="font-bold text-[#2D2D2D] block font-serif text-xs">
+                Sanctuary Username / Handle
+              </label>
+              <span className="text-[10px] text-[#8A8478]">Unique identifier</span>
+            </div>
+            <div className="relative">
+              <AtSign className="w-4 h-4 text-[#8A8478] absolute left-3.5 top-3.5" />
+              <input
+                type="text"
+                value={username}
+                placeholder="e.g. believer_faith"
+                onChange={(e) => setUsername(e.target.value.toLowerCase().replace(/[^a-z0-9_.-]/g, ""))}
+                className={`w-full pl-10 pr-10 py-3 bg-[#F9F7F2] border rounded-xl font-medium focus:outline-none focus:bg-white transition-all text-xs font-sans ${
+                  usernameStatus === "taken"
+                    ? "border-rose-400 focus:border-rose-500 bg-rose-50/20"
+                    : usernameStatus === "available"
+                    ? "border-emerald-400 focus:border-emerald-500 bg-emerald-50/20"
+                    : "border-[#E5E0D5] focus:border-[#C5A059]"
+                }`}
+              />
+              <div className="absolute right-3.5 top-3.5">
+                {usernameStatus === "checking" && (
+                  <RefreshCw className="w-4 h-4 text-amber-500 animate-spin" />
+                )}
+                {usernameStatus === "available" && (
+                  <CheckCircle className="w-4 h-4 text-emerald-600" />
+                )}
+                {usernameStatus === "taken" && (
+                  <AlertCircle className="w-4 h-4 text-rose-500" />
+                )}
+              </div>
+            </div>
+            {usernameFeedback && (
+              <p
+                className={`mt-1 text-[11px] font-medium ${
+                  usernameStatus === "taken"
+                    ? "text-rose-600"
+                    : usernameStatus === "available"
+                    ? "text-emerald-700"
+                    : "text-amber-700"
+                }`}
+              >
+                {usernameFeedback}
+              </p>
+            )}
+          </div>
+
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="font-bold text-[#2D2D2D] block mb-1 font-serif">Email Address</label>
@@ -350,6 +506,60 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
             </label>
           </div>
 
+          {/* Web App & Status Bar Configuration */}
+          <div className="pt-4 border-t border-[#E5E0D5] space-y-2.5">
+            <div className="flex items-center justify-between">
+              <span className="font-bold text-[#2D2D2D] block font-serif">Web App & Top Bar Fitting</span>
+              <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider ${
+                isInstalled ? "bg-emerald-50 text-emerald-700 border border-emerald-200" : "bg-[#C5A059]/15 text-[#8C6B2D] border border-[#C5A059]/30"
+              }`}>
+                {isInstalled ? "✦ Standalone Web App" : "Browser Display"}
+              </span>
+            </div>
+            <p className="text-xs text-[#7A7468]">
+              Provides the best color bar from our sanctuary palette to frame and fit the web app seamlessly against device notches and status bars.
+            </p>
+            <div className="grid grid-cols-2 gap-2 pt-1">
+              {[
+                { id: "gold", name: "Royal Kingdom Gold", hex: "#C5A059" },
+                { id: "obsidian", name: "Sanctuary Obsidian", hex: "#1A1815" },
+                { id: "linen", name: "Sacred Linen", hex: "#FDFCF9" },
+                { id: "bronze", name: "Imperial Bronze", hex: "#8C6228" }
+              ].map((th) => {
+                const isSelected = barTheme === th.id;
+                return (
+                  <button
+                    key={th.id}
+                    type="button"
+                    onClick={() => handleBarThemeSelect(th.id)}
+                    className={`p-2.5 rounded-xl border flex items-center justify-between text-xs transition-all cursor-pointer ${
+                      isSelected
+                        ? "bg-[#FAF6EE] border-[#C5A059] font-bold text-[#2D2D2D] shadow-2xs"
+                        : "bg-[#F9F7F2] border-[#E5E0D5] text-[#7A7468] hover:border-[#C5A059]"
+                    }`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className="w-3.5 h-3.5 rounded-full border border-black/20 shrink-0" style={{ backgroundColor: th.hex }} />
+                      <span className="text-xs">{th.name}</span>
+                    </div>
+                    {isSelected && <Check className="w-3.5 h-3.5 text-[#C5A059]" />}
+                  </button>
+                );
+              })}
+            </div>
+
+            {!isInstalled && isInstallable && (
+              <button
+                type="button"
+                onClick={install}
+                className="mt-2 w-full py-2.5 px-4 bg-[#C5A059] hover:bg-[#B48F48] text-white rounded-xl text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-2 transition-colors cursor-pointer shadow-xs"
+              >
+                <Download className="w-4 h-4" />
+                <span>Install Global Tower as Web App</span>
+              </button>
+            )}
+          </div>
+
           {/* Ministry Founder Card */}
           <div className="p-4 bg-[#FDFCF9] border border-[#E5E0D5] rounded-[24px] space-y-1">
             <span className="text-[10px] font-bold text-[#C5A059] uppercase tracking-wider font-serif">Ministry Leadership</span>
@@ -410,6 +620,13 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
               </button>
             </div>
           </div>
+
+          {saveError && (
+            <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-700 font-medium flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
+              <span>{saveError}</span>
+            </div>
+          )}
 
           <div className="flex items-center justify-between pt-4 border-t border-[#E5E0D5]">
             {savedMsg ? (

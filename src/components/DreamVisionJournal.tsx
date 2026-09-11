@@ -609,7 +609,7 @@ export const DreamVisionJournal: React.FC<DreamVisionJournalProps> = ({
           <div className="bg-white border border-[#E5E0D5] rounded-[32px] p-6 sm:p-8 shadow-xs space-y-5">
             <div className="flex items-center gap-2 text-xs font-bold text-[#C5A059] uppercase tracking-wider">
               <Sparkles className="w-4 h-4 text-[#C5A059]" />
-              <span>Biblical AI Exegesis & Discernment Engine</span>
+              <span>Biblical Exegesis & Discernment Engine</span>
             </div>
 
             <div>
@@ -687,7 +687,7 @@ export const DreamVisionJournal: React.FC<DreamVisionJournalProps> = ({
                   className="px-6 py-3 bg-[#C5A059] hover:bg-[#B48F48] disabled:opacity-50 text-white font-bold uppercase tracking-wider text-xs rounded-full shadow-md shadow-[#C5A059]/20 transition-all flex items-center justify-center gap-2 cursor-pointer shrink-0"
                 >
                   <Sparkles className="w-4 h-4" />
-                  <span>{isAiInterpreting ? "Consulting Scripture..." : "Interpret with Biblical AI"}</span>
+                  <span>{isAiInterpreting ? "Consulting Scripture..." : "Interpret with Scripture"}</span>
                 </button>
               </div>
             </div>

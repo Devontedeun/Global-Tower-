@@ -1,7 +1,9 @@
 import express from "express";
 import path from "path";
+import fs from "fs";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI } from "@google/genai";
+import { MsEdgeTTS, OUTPUT_FORMAT } from "msedge-tts";
 import dotenv from "dotenv";
 import { analyzeSpiritualInquiry, buildHostVersionComparison, HOST_BIBLE_VERSIONS } from "./src/lib/theologicalEngine";
 
@@ -546,6 +548,128 @@ app.get("/api/health", (req, res) => {
   res.json({ status: "ok", timestamp: new Date().toISOString() });
 });
 
+// Microsoft Edge Neural Text-to-Speech Engine
+// Streams high-fidelity Microsoft Guy (Male) and Microsoft Jenny (Female) audio
+const ttsAudioCache = new Map<string, Buffer>();
+const MAX_TTS_CACHE_SIZE = 300;
+
+function sendAudioWithRange(
+  req: express.Request,
+  res: express.Response,
+  audioBuffer: Buffer,
+  selectedVoice: string,
+  isCached: boolean
+) {
+  const totalLength = audioBuffer.length;
+  const range = req.headers.range;
+
+  res.setHeader("Content-Type", "audio/mpeg");
+  res.setHeader("Accept-Ranges", "bytes");
+  res.setHeader("Cache-Control", "public, max-age=86400, stale-while-revalidate=604800");
+  res.setHeader("X-Voice-Engine", isCached ? "Microsoft-Edge-Neural-Cached" : "Microsoft-Edge-Neural");
+  res.setHeader("X-Voice-Name", selectedVoice);
+
+  if (range) {
+    const parts = range.replace(/bytes=/, "").split("-");
+    const start = parseInt(parts[0], 10);
+    const end = parts[1] ? parseInt(parts[1], 10) : totalLength - 1;
+
+    if (isNaN(start) || start >= totalLength || (parts[1] && end >= totalLength) || start > end) {
+      res.status(416).setHeader("Content-Range", `bytes */${totalLength}`);
+      return res.end();
+    }
+
+    const chunkSize = end - start + 1;
+    const chunk = audioBuffer.subarray(start, end + 1);
+
+    res.status(206);
+    res.setHeader("Content-Range", `bytes ${start}-${end}/${totalLength}`);
+    res.setHeader("Content-Length", chunkSize);
+    return res.end(chunk);
+  }
+
+  res.setHeader("Content-Length", totalLength);
+  return res.end(audioBuffer);
+}
+
+app.get("/api/tts", async (req, res) => {
+  let ttsInstance: MsEdgeTTS | null = null;
+  let isClosed = false;
+
+  const cleanup = () => {
+    if (!isClosed && ttsInstance) {
+      isClosed = true;
+      try {
+        ttsInstance.close();
+      } catch (e) {
+        // ignore
+      }
+    }
+  };
+
+  try {
+    const rawText = (req.query.text as string || "").trim();
+    if (!rawText) {
+      return res.status(400).json({ error: "Text parameter is required" });
+    }
+
+    const gender = (req.query.gender as string || "male").toLowerCase();
+    const requestedVoice = (req.query.voice as string || "").trim();
+
+    // Default to studio-grade Microsoft Natural Neural voices
+    const selectedVoice = requestedVoice || (gender === "female" ? "en-US-JennyNeural" : "en-US-GuyNeural");
+    const truncatedText = rawText.length > 1800 ? rawText.substring(0, 1800) : rawText;
+    const cacheKey = `${selectedVoice}:${truncatedText}`;
+
+    if (ttsAudioCache.has(cacheKey)) {
+      const cached = ttsAudioCache.get(cacheKey)!;
+      return sendAudioWithRange(req, res, cached, selectedVoice, true);
+    }
+
+    ttsInstance = new MsEdgeTTS();
+    await ttsInstance.setMetadata(selectedVoice, OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3);
+    const { audioStream } = ttsInstance.toStream(truncatedText);
+
+    const chunks: Buffer[] = [];
+    const timeout = setTimeout(() => {
+      cleanup();
+      if (!res.headersSent) {
+        res.status(504).json({ error: "TTS generation timed out" });
+      }
+    }, 12000);
+
+    audioStream.on("data", (chunk: Buffer) => chunks.push(chunk));
+    audioStream.on("end", () => {
+      clearTimeout(timeout);
+      cleanup();
+
+      const audioBuffer = Buffer.concat(chunks);
+      if (ttsAudioCache.size >= MAX_TTS_CACHE_SIZE) {
+        const firstKey = ttsAudioCache.keys().next().value;
+        if (firstKey) ttsAudioCache.delete(firstKey);
+      }
+      ttsAudioCache.set(cacheKey, audioBuffer);
+
+      sendAudioWithRange(req, res, audioBuffer, selectedVoice, false);
+    });
+
+    audioStream.on("error", (err: any) => {
+      clearTimeout(timeout);
+      cleanup();
+      console.warn("Microsoft TTS stream notice:", err?.message || err);
+      if (!res.headersSent) {
+        res.status(500).json({ error: "TTS generation failed", details: err?.message });
+      }
+    });
+  } catch (err: any) {
+    cleanup();
+    console.warn("Microsoft TTS endpoint notice:", err?.message || err);
+    if (!res.headersSent) {
+      res.status(500).json({ error: "TTS service error", details: err?.message });
+    }
+  }
+});
+
 // Bible Sources & Status Endpoint
 app.get("/api/bible/sources", (req, res) => {
   res.json({
@@ -707,7 +831,7 @@ app.get("/api/bible/chapter", async (req, res) => {
       }
     }
   } catch (err: any) {
-    console.error("Bible chapter fetch error:", err.message);
+    console.warn("Bible chapter fetch notice:", err?.message || err);
   }
 
   res.status(502).json({
@@ -917,19 +1041,54 @@ Format strictly as JSON with this exact structure:
 }`;
 
   if (ai) {
-    try {
-      const response = await ai.models.generateContent({
-        model: "gemini-3.8-flash",
-        contents: prompt,
-        config: {
-          responseMimeType: "application/json",
-          systemInstruction: "You are the verified Scripture research and theological analysis engine for Global Tower of Christ. Never claim AI interpretations are messages from God. Never fabricate scripture. Distinguish clearly between what the Bible explicitly says, supporting Scripture, human perspectives (compared with Scripture), and what is uncertain. Provide practical guidance (prayer, reflection, wise counsel). Never include sermon repository content.",
-        }
-      });
+    const candidateModels = ["gemini-3.1-flash-lite", "gemini-3.8-flash", "gemini-flash-latest"];
+    let geminiResponseText: string | null = null;
 
-      const responseText = response.text || "";
+    for (const modelName of candidateModels) {
       try {
-        const parsed = JSON.parse(responseText);
+        let timer: NodeJS.Timeout | undefined;
+        const timeoutPromise = new Promise<never>((_, reject) => {
+          timer = setTimeout(() => reject(new Error("Gemini API call timed out after 5000ms")), 5000);
+        });
+
+        const response = await Promise.race([
+          ai.models.generateContent({
+            model: modelName,
+            contents: prompt,
+            config: {
+              responseMimeType: "application/json",
+              systemInstruction: "You are the verified Scripture research and theological analysis engine for Global Tower of Christ. Never claim AI interpretations are messages from God. Never fabricate scripture. Distinguish clearly between what the Bible explicitly says, supporting Scripture, human perspectives (compared with Scripture), and what is uncertain. Provide practical guidance (prayer, reflection, wise counsel). Never include sermon repository content.",
+            }
+          }),
+          timeoutPromise
+        ]);
+        if (timer) clearTimeout(timer);
+
+        if (response && response.text) {
+          geminiResponseText = response.text;
+          break;
+        }
+      } catch (err: any) {
+        const errMsg = err?.message || String(err);
+        const isTransient =
+          errMsg.includes("503") ||
+          errMsg.includes("UNAVAILABLE") ||
+          errMsg.includes("high demand") ||
+          errMsg.includes("429") ||
+          errMsg.includes("timed out") ||
+          errMsg.includes("RESOURCE_EXHAUSTED");
+
+        console.warn(`[Gemini Pipeline] Model ${modelName} temporarily unavailable (${isTransient ? "high demand/timeout" : "network"}), trying next model...`);
+      }
+
+      if (geminiResponseText) {
+        break;
+      }
+    }
+
+    if (geminiResponseText) {
+      try {
+        const parsed = JSON.parse(geminiResponseText);
 
         // Verification and formatting layer on relevantScriptures
         const enrichScriptures = (arr: any[]) => {
@@ -973,10 +1132,10 @@ Format strictly as JSON with this exact structure:
         res.json({ success: true, data: parsed, source: "gemini_relevance_pipeline" });
         return;
       } catch (parseErr) {
-        console.error("Failed to parse Gemini output, using dynamic theological engine:", parseErr);
+        console.warn("[Gemini Pipeline] Failed to parse JSON output, using dynamic theological engine:", parseErr);
       }
-    } catch (err: any) {
-      console.error("Gemini API Error:", err?.message || err);
+    } else {
+      console.warn("[Gemini Pipeline] All candidate AI models are currently busy or unavailable; utilizing verified canonical theological engine.");
     }
   }
 
@@ -1013,23 +1172,141 @@ interface DeletionAuditLog {
 }
 const accountDeletionLogs: DeletionAuditLog[] = [];
 
+// Registry of claimed usernames to enforce absolute uniqueness
+const registeredUsernames = new Map<string, string>(); // lowercase username -> identifier
+registeredUsernames.set("apostle_sango", "u-apostle-sango-admin");
+registeredUsernames.set("richard_sango", "sangorichard@gmail.com");
+registeredUsernames.set("beloved_brethren", "u-beloved-brethren");
+
+// Persistent storage file for username registry & audit logs
+const REGISTRY_FILE = path.join(process.cwd(), ".user_registry.json");
+
+function loadRegistryFromDisk() {
+  try {
+    if (fs.existsSync(REGISTRY_FILE)) {
+      const content = fs.readFileSync(REGISTRY_FILE, "utf-8");
+      const parsed = JSON.parse(content);
+      if (parsed.usernames && typeof parsed.usernames === "object") {
+        for (const [k, v] of Object.entries(parsed.usernames)) {
+          registeredUsernames.set(k.toLowerCase().trim(), String(v));
+        }
+      }
+      if (Array.isArray(parsed.revokedAccounts)) {
+        parsed.revokedAccounts.forEach((id: string) => revokedAccounts.add(id));
+      }
+      if (Array.isArray(parsed.accountDeletionLogs)) {
+        accountDeletionLogs.push(...parsed.accountDeletionLogs.slice(0, 200));
+      }
+    }
+  } catch (e) {
+    console.warn("Could not load user registry from disk:", e);
+  }
+}
+
+function saveRegistryToDisk() {
+  try {
+    const payload = {
+      usernames: Object.fromEntries(registeredUsernames),
+      revokedAccounts: Array.from(revokedAccounts),
+      accountDeletionLogs: accountDeletionLogs.slice(0, 200),
+      savedAt: new Date().toISOString()
+    };
+    fs.writeFileSync(REGISTRY_FILE, JSON.stringify(payload, null, 2), "utf-8");
+  } catch (e) {
+    console.warn("Could not persist user registry to disk:", e);
+  }
+}
+
+// Initial load
+loadRegistryFromDisk();
+
+// Endpoint to check username availability
+app.get("/api/auth/check-username", (req, res) => {
+  const raw = String(req.query.username || "").trim();
+  const clean = raw.toLowerCase().replace(/^@/, "");
+  const excludeUid = String(req.query.excludeUid || "").trim();
+
+  if (!clean) {
+    return res.status(400).json({ available: false, error: "Username parameter is required" });
+  }
+
+  const validPattern = /^[a-zA-Z0-9_.-]{3,24}$/;
+  if (!validPattern.test(clean)) {
+    return res.json({
+      available: false,
+      username: clean,
+      error: "Username must be 3-24 characters and contain only letters, numbers, underscores, dots, or hyphens."
+    });
+  }
+
+  const existing = registeredUsernames.get(clean);
+  if (existing && (!excludeUid || existing !== excludeUid)) {
+    return res.json({
+      available: false,
+      username: clean,
+      error: `The sanctuary username '@${clean}' is already registered to another member.`
+    });
+  }
+
+  return res.json({ available: true, username: clean });
+});
+
+// Endpoint to claim a username
+app.post("/api/auth/claim-username", (req, res) => {
+  const { username, uid } = req.body || {};
+  const clean = String(username || "").trim().toLowerCase().replace(/^@/, "");
+  if (!clean || !uid) {
+    return res.status(400).json({ success: false, error: "Missing username or uid parameter" });
+  }
+
+  const existing = registeredUsernames.get(clean);
+  if (existing && existing !== uid) {
+    return res.status(409).json({ success: false, error: `Username @${clean} is already claimed by another believer.` });
+  }
+
+  registeredUsernames.set(clean, uid);
+  saveRegistryToDisk();
+  return res.json({ success: true, username: clean });
+});
+
 const FOUNDER_PROTECTED_EMAILS = [
   "info@globaltowerofchrist.com",
   "sangorichard@gmail.com",
-  "sangodeyvin@gmail.com"
+  "sangodeyvin@gmail.com",
+  "tmsamuralogistics@gmail.com"
 ];
 
 // Endpoint for users to self-delete their own account
 app.post("/api/user/delete-account", async (req, res) => {
-  const { uid, email, reason } = req.body || {};
+  const { uid, email, reason, username } = req.body || {};
   if (!uid && !email) {
     return res.status(400).json({ success: false, error: "Missing uid or email parameter" });
   }
 
   const cleanEmail = (email || "").toLowerCase().trim();
+  const isFounder = FOUNDER_PROTECTED_EMAILS.includes(cleanEmail);
 
-  if (uid) revokedAccounts.add(uid);
-  if (cleanEmail) revokedAccounts.add(cleanEmail);
+  // Super admin / founder accounts are NEVER revoked
+  if (!isFounder) {
+    if (uid) revokedAccounts.add(uid);
+    if (cleanEmail) revokedAccounts.add(cleanEmail);
+  } else {
+    if (uid) revokedAccounts.delete(uid);
+    if (cleanEmail) revokedAccounts.delete(cleanEmail);
+  }
+
+  if (username) {
+    const cleanUser = String(username).toLowerCase().trim().replace(/^@/, "");
+    // Protect founder usernames from deletion
+    if (cleanUser !== "apostle_sango" && cleanUser !== "richard_sango") {
+      registeredUsernames.delete(cleanUser);
+    }
+  }
+  for (const [u, id] of registeredUsernames.entries()) {
+    if ((id === uid || id === cleanEmail) && !isFounder) {
+      registeredUsernames.delete(u);
+    }
+  }
 
   const logEntry: DeletionAuditLog = {
     uid: uid || "unknown",
@@ -1041,26 +1318,48 @@ app.post("/api/user/delete-account", async (req, res) => {
   accountDeletionLogs.unshift(logEntry);
   if (accountDeletionLogs.length > 200) accountDeletionLogs.pop();
 
-  console.log(`[Sacred Privacy Trust] Self-service account deletion completed: UID=${uid}, Email=${cleanEmail}, Reason=${reason || "N/A"}`);
+  saveRegistryToDisk();
+
+  console.log(`[Sacred Privacy Trust] Self-service account deletion completed: UID=${uid}, Email=${cleanEmail}, Reason=${reason || "N/A"}, isSuperAdmin=${isFounder}`);
 
   res.json({
     success: true,
     message: "Your account and all associated spiritual records have been permanently expunged.",
-    deletedAt: logEntry.deletedAt
+    deletedAt: logEntry.deletedAt,
+    isSuperAdmin: isFounder
   });
 });
 
 // Endpoint for administrators to delete / kick a user account from CRM
 app.post("/api/admin/delete-user", async (req, res) => {
-  const { uid, email, reason } = req.body || {};
+  const { uid, email, reason, username } = req.body || {};
   if (!uid && !email) {
     return res.status(400).json({ success: false, error: "Missing uid or email parameter" });
   }
 
   const cleanEmail = (email || "").toLowerCase().trim();
+  const isFounder = FOUNDER_PROTECTED_EMAILS.includes(cleanEmail);
 
-  if (uid) revokedAccounts.add(uid);
-  if (cleanEmail) revokedAccounts.add(cleanEmail);
+  // Super admin / founder accounts are NEVER permanently revoked
+  if (!isFounder) {
+    if (uid) revokedAccounts.add(uid);
+    if (cleanEmail) revokedAccounts.add(cleanEmail);
+  } else {
+    if (uid) revokedAccounts.delete(uid);
+    if (cleanEmail) revokedAccounts.delete(cleanEmail);
+  }
+
+  if (username) {
+    const cleanUser = String(username).toLowerCase().trim().replace(/^@/, "");
+    if (cleanUser !== "apostle_sango" && cleanUser !== "richard_sango") {
+      registeredUsernames.delete(cleanUser);
+    }
+  }
+  for (const [u, id] of registeredUsernames.entries()) {
+    if ((id === uid || id === cleanEmail) && !isFounder) {
+      registeredUsernames.delete(u);
+    }
+  }
 
   const logEntry: DeletionAuditLog = {
     uid: uid || "unknown",
@@ -1072,13 +1371,24 @@ app.post("/api/admin/delete-user", async (req, res) => {
   accountDeletionLogs.unshift(logEntry);
   if (accountDeletionLogs.length > 200) accountDeletionLogs.pop();
 
+  saveRegistryToDisk();
+
   console.log(`[Ministry Governance] User account purged and kicked: UID: ${uid || "N/A"}, Email: ${cleanEmail || "N/A"}`);
 
   res.json({
     success: true,
-    message: `Account for ${cleanEmail || uid} was successfully deleted from Firebase Auth users and kicked from Global Tower of Christ.`,
+    message: `Account for ${cleanEmail || uid} processed successfully.`,
     revokedAt: logEntry.deletedAt
   });
+});
+
+app.post("/api/admin/unrevoke-user", (req, res) => {
+  const { uid, email } = req.body || {};
+  const cleanEmail = String(email || "").toLowerCase().trim();
+  if (uid) revokedAccounts.delete(uid);
+  if (cleanEmail) revokedAccounts.delete(cleanEmail);
+  saveRegistryToDisk();
+  res.json({ success: true, unrevoked: cleanEmail || uid });
 });
 
 app.get("/api/admin/revoked-users", (req, res) => {

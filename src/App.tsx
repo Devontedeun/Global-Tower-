@@ -45,6 +45,7 @@ import { translations, Language } from "./lib/translations";
 import { useAuth } from "./lib/AuthContext";
 import { UserAvatar } from "./components/UserAvatar";
 import { LanguageSelector } from "./components/LanguageSelector";
+import { WebAppTopBar } from "./components/WebAppTopBar";
 
 export default function App() {
   const { currentUser, userProfile, loading, updateProfileData } = useAuth();
@@ -150,12 +151,15 @@ export default function App() {
   // 1. Initial Loading Spinner while Firebase Auth initializes
   if (loading) {
     return (
-      <div className="w-full min-h-screen min-h-[100dvh] bg-[#F9F7F2] flex flex-col items-center justify-center p-4">
-        <div className="flex flex-col items-center space-y-4 animate-pulse">
-          <Logo size="lg" />
-          <div className="flex items-center gap-2 text-[#C5A059] font-serif text-sm font-semibold tracking-wider">
-            <span className="w-4 h-4 border-2 border-[#C5A059] border-t-transparent rounded-full animate-spin" />
-            <span>Entering the Sanctuary...</span>
+      <div className="w-full min-h-screen min-h-[100dvh] bg-[#F9F7F2] flex flex-col">
+        <WebAppTopBar />
+        <div className="flex-1 flex flex-col items-center justify-center p-4">
+          <div className="flex flex-col items-center space-y-4 animate-pulse">
+            <Logo size="lg" />
+            <div className="flex items-center gap-2 text-[#C5A059] font-serif text-sm font-semibold tracking-wider">
+              <span className="w-4 h-4 border-2 border-[#C5A059] border-t-transparent rounded-full animate-spin" />
+              <span>Entering the Sanctuary...</span>
+            </div>
           </div>
         </div>
       </div>
@@ -199,23 +203,27 @@ export default function App() {
   if (!currentUser) {
     return (
       <div className="w-full min-h-screen min-h-[100dvh] bg-[#F9F7F2] text-[#2D2D2D] font-sans flex flex-col selection:bg-[#C5A059] selection:text-white">
-        {/* Simplified Header for Login Portal */}
-        <header className="sticky top-0 z-40 w-full bg-white/90 backdrop-blur-md border-b border-[#E5E0D5] px-4 sm:px-8 py-3.5 flex items-center justify-between shadow-2xs">
-          <Logo size="md" />
-          <div className="flex items-center gap-3">
-            <div className="hidden sm:flex items-center gap-2 text-[11px] font-bold uppercase tracking-widest text-[#C5A059] px-3 py-1 bg-[#FDFCF9] rounded-full border border-[#E5E0D5]">
-              <span>Worship</span>
-              <span className="opacity-40">•</span>
-              <span>Dominion</span>
-              <span className="opacity-40">•</span>
-              <span>Victory</span>
+        {/* Sticky Web App Bar & Header */}
+        <div className="sticky top-0 z-40 w-full">
+          <WebAppTopBar />
+          {/* Simplified Header for Login Portal */}
+          <header className="w-full bg-white/90 backdrop-blur-md border-b border-[#E5E0D5] px-4 sm:px-8 py-3.5 flex items-center justify-between shadow-2xs">
+            <Logo size="md" />
+            <div className="flex items-center gap-3">
+              <div className="hidden sm:flex items-center gap-2 text-[11px] font-bold uppercase tracking-widest text-[#C5A059] px-3 py-1 bg-[#FDFCF9] rounded-full border border-[#E5E0D5]">
+                <span>Worship</span>
+                <span className="opacity-40">•</span>
+                <span>Dominion</span>
+                <span className="opacity-40">•</span>
+                <span>Victory</span>
+              </div>
+              <LanguageSelector
+                currentLanguage={language}
+                onLanguageChange={setLanguage}
+              />
             </div>
-            <LanguageSelector
-              currentLanguage={language}
-              onLanguageChange={setLanguage}
-            />
-          </div>
-        </header>
+          </header>
+        </div>
 
         {/* Main Content: Login / Sign-up Card or Policy Page */}
         <main className="flex-1 flex items-center justify-center p-4 sm:p-8">
@@ -277,7 +285,7 @@ export default function App() {
 
   const navItems = [
     { id: "home", label: t.home, icon: Home },
-    { id: "journal", label: "Interpret Your Dreams & Visions", icon: Moon, badge: "Biblical AI" },
+    { id: "journal", label: "Interpret Your Dreams & Visions", icon: Moon },
     { id: "spiritual-insight", label: "Scripture Inquiry & Doctrine", icon: Sparkles, badge: "Doctrine" },
     { id: "bible", label: "Biblical Doctrine & Scripture", icon: BookOpen },
     { id: "encouragements", label: t.encouragements || "Words of Encouragement", icon: MessageCircle, badge: "Daily" },
@@ -292,76 +300,79 @@ export default function App() {
 
   return (
     <div className="w-full min-h-screen min-h-[100dvh] bg-[#F9F7F2] text-[#2D2D2D] font-sans flex flex-col selection:bg-[#C5A059] selection:text-white overflow-x-hidden">
-      {/* Top Full-Width Header */}
-      <header className="sticky top-0 z-40 w-full bg-white/85 backdrop-blur-md border-b border-[#E5E0D5] shadow-xs">
-        <div className="w-full px-3 sm:px-6 lg:px-8 h-16 sm:h-20 flex items-center justify-between gap-2 sm:gap-4">
-          {/* Brand Logo & Personal Greeting */}
-          <div className="flex items-center gap-2 sm:gap-4">
-            <div
-              onClick={() => handleNavigate("home")}
-              className="cursor-pointer transition-transform hover:scale-102 shrink-0"
-            >
-              <Logo size="md" />
+      {/* Sticky Top Header Container with Signature Royal Gold Web App Bar */}
+      <div className="sticky top-0 z-40 w-full">
+        <WebAppTopBar />
+        <header className="w-full bg-white/90 backdrop-blur-md border-b border-[#E5E0D5] shadow-xs">
+          <div className="w-full px-3 sm:px-6 lg:px-8 h-16 sm:h-20 flex items-center justify-between gap-2 sm:gap-4">
+            {/* Brand Logo & Personal Greeting */}
+            <div className="flex items-center gap-2 sm:gap-4">
+              <div
+                onClick={() => handleNavigate("home")}
+                className="cursor-pointer transition-transform hover:scale-102 shrink-0"
+              >
+                <Logo size="md" />
+              </div>
+
+              <div className="hidden sm:block h-6 w-px bg-[#E5E0D5]"></div>
+
+              <div className="hidden sm:block">
+                <span className="font-serif text-base sm:text-lg text-[#2D2D2D]">
+                  Peace be with you, <span className="text-[#C5A059] italic font-semibold">{user.name.split(" ")[0]}</span>
+                </span>
+              </div>
             </div>
 
-            <div className="hidden sm:block h-6 w-px bg-[#E5E0D5]"></div>
+            {/* Right Header Navigation */}
+            <div className="flex items-center gap-1.5 sm:gap-3">
+              {/* Universal Search Button */}
+              <button
+                onClick={() => setIsSearchOpen(true)}
+                className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 border border-[#E5E0D5] bg-white rounded-full text-xs text-[#7A7468] hover:text-[#C5A059] hover:border-[#C5A059] transition-all cursor-pointer shadow-2xs"
+                title="Search Scriptures, Words & Insights (⌘K)"
+              >
+                <Search className="w-3.5 h-3.5 text-[#C5A059]" />
+                <span className="hidden lg:inline text-xs font-medium">Search scriptures...</span>
+              </button>
 
-            <div className="hidden sm:block">
-              <span className="font-serif text-base sm:text-lg text-[#2D2D2D]">
-                Peace be with you, <span className="text-[#C5A059] italic font-semibold">{user.name.split(" ")[0]}</span>
-              </span>
-            </div>
-          </div>
-
-          {/* Right Header Navigation */}
-          <div className="flex items-center gap-1.5 sm:gap-3">
-            {/* Universal Search Button */}
-            <button
-              onClick={() => setIsSearchOpen(true)}
-              className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 border border-[#E5E0D5] bg-white rounded-full text-xs text-[#7A7468] hover:text-[#C5A059] hover:border-[#C5A059] transition-all cursor-pointer shadow-2xs"
-              title="Search Scriptures, Words & Insights (⌘K)"
-            >
-              <Search className="w-3.5 h-3.5 text-[#C5A059]" />
-              <span className="hidden lg:inline text-xs font-medium">Search scriptures...</span>
-            </button>
-
-            {/* Language Switcher */}
-            <LanguageSelector
-              currentLanguage={language}
-              onLanguageChange={setLanguage}
-            />
-
-            {/* Profile Avatar Button */}
-            <button
-              onClick={() => setIsProfileOpen(true)}
-              className="flex items-center gap-2 p-1 hover:bg-white rounded-full transition-all border border-transparent hover:border-[#E5E0D5] cursor-pointer"
-              title="User Profile & Settings"
-            >
-              <UserAvatar
-                name={user.name}
-                size="sm"
-                bgColor={user.avatarUrl && user.avatarUrl.startsWith("bg-") ? user.avatarUrl : undefined}
-                className="border border-[#C5A059] shadow-xs"
+              {/* Language Switcher */}
+              <LanguageSelector
+                currentLanguage={language}
+                onLanguageChange={setLanguage}
               />
-            </button>
 
-            {/* Mobile Menu Toggle */}
-            <button
-              onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-              className="lg:hidden p-2 text-[#7A7468] hover:bg-white rounded-xl border border-[#E5E0D5] cursor-pointer"
-              aria-label="Toggle navigation menu"
-            >
-              {isMobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
-            </button>
+              {/* Profile Avatar Button */}
+              <button
+                onClick={() => setIsProfileOpen(true)}
+                className="flex items-center gap-2 p-1 hover:bg-white rounded-full transition-all border border-transparent hover:border-[#E5E0D5] cursor-pointer"
+                title="User Profile & Settings"
+              >
+                <UserAvatar
+                  name={user.name}
+                  size="sm"
+                  bgColor={user.avatarUrl && user.avatarUrl.startsWith("bg-") ? user.avatarUrl : undefined}
+                  className="border border-[#C5A059] shadow-xs"
+                />
+              </button>
+
+              {/* Mobile Menu Toggle */}
+              <button
+                onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+                className="lg:hidden p-2 text-[#7A7468] hover:bg-white rounded-xl border border-[#E5E0D5] cursor-pointer"
+                aria-label="Toggle navigation menu"
+              >
+                {isMobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+              </button>
+            </div>
           </div>
-        </div>
-      </header>
+        </header>
+      </div>
 
       {/* Main Full-Width Application Shell */}
       <div className="flex-1 w-full flex min-h-0">
         {/* Desktop Persistent Left Navigation Sidebar */}
         <aside
-          className={`hidden lg:flex flex-col shrink-0 border-r border-[#E5E0D5] bg-white/80 backdrop-blur-xs transition-all duration-300 h-[calc(100vh-65px)] sticky top-[65px] ${
+          className={`hidden lg:flex flex-col shrink-0 border-r border-[#E5E0D5] bg-white/80 backdrop-blur-xs transition-all duration-300 h-[calc(100vh-100px)] sticky top-[100px] ${
             isSidebarCollapsed ? "w-20 p-2.5" : "w-64 xl:w-72 p-3.5 xl:p-4"
           }`}
         >
@@ -723,8 +734,11 @@ export default function App() {
       {/* Feedback Modal */}
       <FeedbackModal isOpen={isFeedbackOpen} onClose={() => setIsFeedbackOpen(false)} />
 
-      {/* Mobile Bottom Navigation Bar */}
-      <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-30 bg-white/95 backdrop-blur-md border-t border-[#E5E0D5] px-2 py-1.5 flex items-center justify-around shadow-md">
+      {/* Mobile Bottom Navigation Bar with Safe Area Bottom Support */}
+      <nav
+        className="lg:hidden fixed bottom-0 left-0 right-0 z-30 bg-white/95 backdrop-blur-md border-t border-[#E5E0D5] px-2 pt-1.5 flex items-center justify-around shadow-md"
+        style={{ paddingBottom: 'max(0.375rem, env(safe-area-inset-bottom, 0px))' }}
+      >
         {[
           { id: "home", label: "Home", icon: Home },
           { id: "bible", label: "Bible", icon: BookOpen },

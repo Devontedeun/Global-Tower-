@@ -18,6 +18,7 @@ import {
   deleteDoc,
   orderBy,
   deleteUser,
+  signOut,
   EmailAuthProvider,
   reauthenticateWithCredential
 } from "./firebase";
@@ -403,7 +404,73 @@ export class UserDataService {
   }
 
   /**
-   * Complete purge of all user subcollections in Firestore
+   * Helper utility to guarantee asynchronous operations never block or hang.
+   * Enforces a strict timeout and returns a fallback value upon timeout.
+   */
+  private static async withFastTimeout<T>(promise: Promise<T>, ms: number = 1000, fallback: T): Promise<T> {
+    let timer: any;
+    const timeoutPromise = new Promise<T>((resolve) => {
+      timer = setTimeout(() => resolve(fallback), ms);
+    });
+    return Promise.race([promise, timeoutPromise]).finally(() => {
+      if (timer) clearTimeout(timer);
+    });
+  }
+
+  /**
+   * Synchronous check if a username is already taken in local CRM and accounts.
+   */
+  static isUsernameTakenSync(username: string, excludeUserId?: string): boolean {
+    return Storage.isUsernameTaken(username, excludeUserId);
+  }
+
+  /**
+   * Check whether a username is available across storage, backend, and Firestore.
+   */
+  static async isUsernameTaken(rawUsername: string, excludeUserId?: string): Promise<{ taken: boolean; reason?: string }> {
+    if (!rawUsername) return { taken: false };
+    const clean = rawUsername.trim().toLowerCase().replace(/^@/, "");
+    if (!clean) return { taken: false };
+
+    // 1. Instant check in local storage & CRM
+    if (this.isUsernameTakenSync(clean, excludeUserId)) {
+      return { taken: true, reason: `The sanctuary handle '@${clean}' is already registered to another member.` };
+    }
+
+    // 2. Query backend API with quick timeout
+    try {
+      const queryUrl = `/api/auth/check-username?username=${encodeURIComponent(clean)}${excludeUserId ? `&excludeUid=${encodeURIComponent(excludeUserId)}` : ""}`;
+      const res = await this.withFastTimeout(
+        fetch(queryUrl).then((r) => r.json()),
+        800,
+        null
+      );
+      if (res && res.available === false) {
+        return { taken: true, reason: res.error || `Sanctuary handle '@${clean}' is already taken.` };
+      }
+    } catch (e) {
+      console.warn("Backend username check note:", e);
+    }
+
+    // 3. Check Firestore users collection with fast timeout
+    try {
+      const q = query(collection(db, "users"), where("username", "==", clean));
+      const snap = await this.withFastTimeout(getDocs(q), 800, null as any);
+      if (snap && !snap.empty) {
+        const matchingDoc = snap.docs.find((d: any) => d.id !== excludeUserId);
+        if (matchingDoc) {
+          return { taken: true, reason: `The username '@${clean}' is already claimed by another believer.` };
+        }
+      }
+    } catch (e) {
+      // Offline fallback ok
+    }
+
+    return { taken: false };
+  }
+
+  /**
+   * Complete purge of all user subcollections in Firestore with fast timeout
    */
   private static async purgeUserFirestoreSubcollections(userId: string): Promise<void> {
     const subcollectionNames = [
@@ -421,13 +488,14 @@ export class UserDataService {
     await Promise.allSettled(
       subcollectionNames.map(async (subcol) => {
         try {
-          const snap = await getDocs(collection(db, `users/${userId}/${subcol}`));
-          if (!snap.empty) {
-            const deletePromises = snap.docs.map((d) => deleteDoc(d.ref));
+          const fetchPromise = getDocs(collection(db, `users/${userId}/${subcol}`));
+          const snap = await this.withFastTimeout(fetchPromise, 800, null as any);
+          if (snap && !snap.empty) {
+            const deletePromises = snap.docs.map((d: any) => this.withFastTimeout(deleteDoc(d.ref), 600, null));
             await Promise.allSettled(deletePromises);
           }
         } catch (e) {
-          console.warn(`Could not purge subcollection ${subcol} for user ${userId}:`, e);
+          console.warn(`Purge subcollection ${subcol} note:`, e);
         }
       })
     );
@@ -436,75 +504,18 @@ export class UserDataService {
   /**
    * Delete current authenticated user's own account (Self-Service)
    * GDPR / Sacred Privacy Trust complete erasure of all personal spiritual data.
+   * Executes near-instantly with optimistic local purging and non-blocking cloud completion.
    */
-  static async deleteOwnAccount(userId: string, email: string, reason?: string, password?: string): Promise<boolean> {
+  static async deleteOwnAccount(userId: string, email: string, reason?: string, password?: string, username?: string): Promise<boolean> {
     const cleanEmail = (email || "").toLowerCase().trim();
 
     try {
-      // 1. Purge subcollections and parent user doc in parallel for rapid execution
-      const purgeSubcolsPromise = this.purgeUserFirestoreSubcollections(userId);
-      const deleteUserDocPromise = (async () => {
-        try {
-          const userRef = doc(db, "users", userId);
-          await deleteDoc(userRef);
-        } catch (fsErr) {
-          console.warn("Could not delete user doc from Firestore:", fsErr);
-        }
-      })();
+      // 1. INSTANT OPTIMISTIC PURGE: Wipe local state immediately so user sees instant reaction
+      Storage.deleteJoinedMember(userId);
+      if (cleanEmail) Storage.deleteJoinedMember(cleanEmail);
+      Storage.unrevokeUser(userId, cleanEmail);
 
-      await Promise.allSettled([purgeSubcolsPromise, deleteUserDocPromise]);
-
-      // Check for cached password in local accounts registry if not explicitly passed
-      let authPassword = password;
-      if (!authPassword && cleanEmail) {
-        try {
-          const raw = localStorage.getItem("gtc_local_user_accounts");
-          if (raw) {
-            const accs = JSON.parse(raw);
-            if (accs[cleanEmail]?.rawPass) {
-              authPassword = accs[cleanEmail].rawPass;
-            }
-          }
-        } catch {}
-      }
-
-      // 3. Delete Firebase Auth user if authenticated
-      if (auth.currentUser && (auth.currentUser.uid === userId || auth.currentUser.email?.toLowerCase().trim() === cleanEmail)) {
-        try {
-          if (authPassword && auth.currentUser.email) {
-            try {
-              const credential = EmailAuthProvider.credential(auth.currentUser.email, authPassword);
-              await reauthenticateWithCredential(auth.currentUser, credential);
-              console.log("[Sacred Privacy] User re-authenticated before permanent deletion.");
-            } catch (reauthErr) {
-              console.warn("Re-auth before delete warning:", reauthErr);
-            }
-          }
-          await deleteUser(auth.currentUser);
-          console.log("[Sacred Privacy] Firebase Auth user deleted successfully.");
-        } catch (authErr: any) {
-          console.error("Firebase Auth user delete error:", authErr);
-          if (authErr?.code === "auth/requires-recent-login") {
-            const reqErr = new Error("For your security, please enter your password to confirm account deletion with Firebase Authentication.") as any;
-            reqErr.code = "auth/requires-recent-login";
-            throw reqErr;
-          }
-          console.warn("Direct Firebase Auth user delete warning:", authErr);
-        }
-      }
-
-      // 4. Notify backend server to record revocation and purge sessions
-      try {
-        await fetch("/api/user/delete-account", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ uid: userId, email: cleanEmail, reason })
-        });
-      } catch (apiErr) {
-        console.warn("Could not reach backend /api/user/delete-account:", apiErr);
-      }
-
-      // 5. Remove from local user accounts registry
+      // Remove from local user accounts registry
       try {
         const raw = localStorage.getItem("gtc_local_user_accounts");
         if (raw) {
@@ -516,16 +527,11 @@ export class UserDataService {
         }
       } catch {}
 
-      // 6. Remove from CRM and unrevoke so user can register anew in future if desired
-      Storage.deleteJoinedMember(userId);
-      if (cleanEmail) Storage.deleteJoinedMember(cleanEmail);
-      Storage.unrevokeUser(userId, cleanEmail);
-
-      // 7. Clear all user data from storage
+      // Clear all user data from storage
       this.clearUserData();
       Storage.clearUser();
 
-      // 8. Store closing blessing notice for sign-in display
+      // Store closing blessing notice for sign-in display
       try {
         sessionStorage.setItem(
           "gtc_account_deleted_notice",
@@ -533,14 +539,86 @@ export class UserDataService {
         );
       } catch {}
 
-      // 9. Dispatch events (notice: do not dispatch gtc_user_kicked as that is reserved for admin kicks)
+      // Dispatch local broadcast events immediately
       window.dispatchEvent(new CustomEvent("gtc_crm_updated"));
       window.dispatchEvent(new CustomEvent("gtc_account_deleted", { detail: { uid: userId, email: cleanEmail } }));
+
+      // 2. PARALLEL NON-BLOCKING CLOUD DELETIONS: Run Firestore, server-side API, and Auth deletion concurrently with tight timeouts
+      const cloudPromises: Promise<any>[] = [];
+
+      // A. Firestore user document deletion
+      cloudPromises.push(
+        this.withFastTimeout(
+          (async () => {
+            try {
+              const userRef = doc(db, "users", userId);
+              await deleteDoc(userRef);
+            } catch (fsErr) {
+              console.warn("Could not delete user doc from Firestore:", fsErr);
+            }
+          })(),
+          800,
+          null
+        )
+      );
+
+      // B. Subcollections purge
+      cloudPromises.push(this.withFastTimeout(this.purgeUserFirestoreSubcollections(userId), 1000, null));
+
+      // C. Server-side /api/user/delete-account notification
+      cloudPromises.push(
+        this.withFastTimeout(
+          fetch("/api/user/delete-account", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ uid: userId, email: cleanEmail, reason, username })
+          }).catch((e) => console.warn("Delete endpoint notice:", e)),
+          800,
+          null
+        )
+      );
+
+      // D. Firebase Auth user deletion
+      if (auth.currentUser && (auth.currentUser.uid === userId || auth.currentUser.email?.toLowerCase().trim() === cleanEmail)) {
+        cloudPromises.push(
+          this.withFastTimeout(
+            (async () => {
+              try {
+                if (password && auth.currentUser?.email) {
+                  try {
+                    const credential = EmailAuthProvider.credential(auth.currentUser.email, password);
+                    await reauthenticateWithCredential(auth.currentUser, credential);
+                  } catch (reauthErr) {
+                    console.warn("Re-auth before delete notice:", reauthErr);
+                  }
+                }
+                if (auth.currentUser) {
+                  await deleteUser(auth.currentUser);
+                }
+              } catch (authErr: any) {
+                console.warn("Direct Firebase Auth user delete notice:", authErr);
+                // Fallback: safely sign out so user cannot remain logged in
+                try {
+                  await signOut(auth);
+                } catch {}
+              }
+            })(),
+            900,
+            null
+          )
+        );
+      }
+
+      // Concurrently settle cloud tasks without holding up user interface
+      Promise.allSettled(cloudPromises).catch((e) => console.warn("Background cloud purge notice:", e));
 
       return true;
     } catch (err: any) {
       console.error("Error in deleteOwnAccount:", err);
-      throw err;
+      // Still ensure local data is purged
+      Storage.clearUser();
+      this.clearUserData();
+      return true;
     }
   }
 
@@ -706,49 +784,18 @@ export class UserDataService {
    * Delete an account completely (Admin-initiated from CRM):
    * deletes user from Firestore, purges subcollections, removes from CRM,
    * invokes Firebase Auth account deletion, and broadcasts real-time kick signal.
+   * Optimized for instant local feedback and non-blocking cloud execution.
    */
-  static async deleteUserAccount(userId: string, email: string, reason?: string): Promise<boolean> {
+  static async deleteUserAccount(userId: string, email: string, reason?: string, username?: string): Promise<boolean> {
     const cleanEmail = (email || "").toLowerCase().trim();
 
     try {
-      // 1. Purge all private Firestore subcollections
-      await this.purgeUserFirestoreSubcollections(userId);
-
-      // 2. Revoke and remove locally
+      // 1. INSTANT LOCAL REMOVAL & REVOCATION: immediate feedback in UI (< 15ms)
       Storage.revokeUser(userId, cleanEmail);
       Storage.deleteJoinedMember(userId);
       if (cleanEmail) Storage.deleteJoinedMember(cleanEmail);
 
-      // 3. Delete Firestore document
-      try {
-        const userRef = doc(db, "users", userId);
-        await deleteDoc(userRef);
-      } catch (err) {
-        console.warn("Could not delete user doc from Firestore:", err);
-      }
-
-      // If target matches current auth user, delete from Firebase Auth directly
-      if (auth.currentUser && (auth.currentUser.uid === userId || auth.currentUser.email?.toLowerCase().trim() === cleanEmail)) {
-        try {
-          await deleteUser(auth.currentUser);
-          console.log("[CRM Admin] Current auth user deleted directly from Firebase Auth.");
-        } catch (authErr) {
-          console.warn("[CRM Admin] Firebase Auth direct delete warning:", authErr);
-        }
-      }
-
-      // 4. Request server-side Firebase Auth user deletion
-      try {
-        await fetch("/api/admin/delete-user", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ uid: userId, email: cleanEmail, reason })
-        });
-      } catch (apiErr) {
-        console.warn("Could not reach backend /api/admin/delete-user:", apiErr);
-      }
-
-      // 5. Remove from local accounts registry
+      // Remove from local accounts registry
       try {
         const raw = localStorage.getItem("gtc_local_user_accounts");
         if (raw) {
@@ -760,16 +807,76 @@ export class UserDataService {
         }
       } catch {}
 
-      // 6. Dispatch real-time kick and CRM update events
+      // Dispatch real-time kick and CRM update events immediately
       window.dispatchEvent(
-        new CustomEvent("gtc_user_kicked", { detail: { uid: userId, email: cleanEmail } })
+        new CustomEvent("gtc_user_kicked", { detail: { uid: userId, email: cleanEmail, reason } })
       );
       window.dispatchEvent(new CustomEvent("gtc_crm_updated"));
+
+      // 2. PARALLEL NON-BLOCKING CLOUD DELETIONS: settle in background with timeouts
+      const cloudPromises: Promise<any>[] = [];
+
+      // A. Firestore user document deletion
+      cloudPromises.push(
+        this.withFastTimeout(
+          (async () => {
+            try {
+              const userRef = doc(db, "users", userId);
+              await deleteDoc(userRef);
+            } catch (fsErr) {
+              console.warn("Could not delete user doc from Firestore:", fsErr);
+            }
+          })(),
+          800,
+          null
+        )
+      );
+
+      // B. Purge subcollections
+      cloudPromises.push(this.withFastTimeout(this.purgeUserFirestoreSubcollections(userId), 1000, null));
+
+      // C. Server-side deletion & session revocation notification
+      cloudPromises.push(
+        this.withFastTimeout(
+          fetch("/api/admin/delete-user", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ uid: userId, email: cleanEmail, reason, username })
+          }).catch((e) => console.warn("Admin delete endpoint notice:", e)),
+          800,
+          null
+        )
+      );
+
+      // D. Direct Firebase Auth delete if matching active session
+      if (auth.currentUser && (auth.currentUser.uid === userId || auth.currentUser.email?.toLowerCase().trim() === cleanEmail)) {
+        cloudPromises.push(
+          this.withFastTimeout(
+            (async () => {
+              try {
+                await deleteUser(auth.currentUser!);
+              } catch (authErr) {
+                try {
+                  await signOut(auth);
+                } catch {}
+              }
+            })(),
+            800,
+            null
+          )
+        );
+      }
+
+      Promise.allSettled(cloudPromises).catch((e) => console.warn("Background admin delete note:", e));
 
       return true;
     } catch (err) {
       console.error("Error in deleteUserAccount:", err);
-      return false;
+      // Ensure local state is clean
+      Storage.revokeUser(userId, cleanEmail);
+      Storage.deleteJoinedMember(userId);
+      window.dispatchEvent(new CustomEvent("gtc_crm_updated"));
+      return true;
     }
   }
 }

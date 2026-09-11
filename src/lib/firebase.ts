@@ -34,7 +34,7 @@ import rawFirebaseConfig from "../../firebase-applet-config.json";
 // Firebase configuration with valid API key guarantee
 const firebaseConfig = {
   ...rawFirebaseConfig,
-  apiKey: ((import.meta as any).env?.VITE_FIREBASE_API_KEY as string | undefined) || rawFirebaseConfig.apiKey || "AIzaSyCO23KxuJNVFP2qnCkHFbpHRVYrvQz0Vog"
+  apiKey: ((import.meta as any).env?.VITE_FIREBASE_API_KEY as string | undefined) || rawFirebaseConfig.apiKey
 };
 
 // Initialize Firebase App

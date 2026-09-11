@@ -55,6 +55,7 @@ export interface VerifiedScriptureItem {
 export interface UserProfile {
   id: string;
   name: string;
+  username?: string;
   firstName?: string;
   lastName?: string;
   email: string;

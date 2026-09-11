@@ -24,9 +24,42 @@ import {
   PRAYER_ITEMS_INITIAL
 } from "../data/mockData";
 
+export const FOUNDER_SUPERADMIN_EMAILS = [
+  "info@globaltowerofchrist.com",
+  "sangorichard@gmail.com",
+  "sangodeyvin@gmail.com",
+  "tmsamuralogistics@gmail.com"
+];
+
+export function isSuperAdminEmail(email?: string): boolean {
+  if (!email) return false;
+  const clean = email.toLowerCase().trim();
+  if (FOUNDER_SUPERADMIN_EMAILS.includes(clean)) return true;
+  try {
+    const raw = localStorage.getItem("gtc_local_user_accounts");
+    if (raw) {
+      const accounts = JSON.parse(raw);
+      if (accounts[clean]?.profile?.role === "super_admin") return true;
+    }
+    const crmRaw = localStorage.getItem("gtc_crm_users");
+    if (crmRaw) {
+      const crm: UserProfile[] = JSON.parse(crmRaw);
+      const found = crm.find((u) => u.email?.toLowerCase().trim() === clean);
+      if (found?.role === "super_admin") return true;
+    }
+    const active = localStorage.getItem("gtc_active_session");
+    if (active) {
+      const parsed = JSON.parse(active);
+      if (parsed?.profile?.email?.toLowerCase().trim() === clean && parsed?.profile?.role === "super_admin") return true;
+    }
+  } catch {}
+  return false;
+}
+
 export const APOSTLE_SANGO_ADMIN: UserProfile = {
   id: "u-apostle-sango-admin",
   name: "Apostle R.Sango",
+  username: "apostle_sango",
   firstName: "Apostle",
   lastName: "R.Sango",
   email: "info@globaltowerofchrist.com",
@@ -54,6 +87,7 @@ export const APOSTLE_SANGO_ADMIN: UserProfile = {
 export const BELOVED_BRETHREN_USER: UserProfile = {
   id: "u-beloved-brethren",
   name: "Beloved Brethren",
+  username: "beloved_brethren",
   firstName: "Beloved",
   lastName: "Brethren",
   email: "brethren@globaltowerofchrist.org",
@@ -833,19 +867,62 @@ export const Storage = {
     try {
       const raw = localStorage.getItem("gtc_crm_users");
       const list: UserProfile[] = raw ? JSON.parse(raw) : [];
-      // Always ensure Richard Sango exists in member list
+      // Add Apostle R.Sango to member list only if not explicitly revoked/deleted
       const hasAdmin = list.some(
         (u) =>
           u.email.toLowerCase() === "info@globaltowerofchrist.com" ||
           u.email.toLowerCase() === "sangorichard@gmail.com"
       );
-      if (!hasAdmin) {
+      const isRevoked = this.isUserRevoked(APOSTLE_SANGO_ADMIN.id, APOSTLE_SANGO_ADMIN.email);
+      if (!hasAdmin && !isRevoked) {
         list.unshift(APOSTLE_SANGO_ADMIN);
       }
-      return list;
+      return list.filter((u) => !this.isUserRevoked(u.id, u.email));
     } catch {
-      return [APOSTLE_SANGO_ADMIN];
+      return this.isUserRevoked(APOSTLE_SANGO_ADMIN.id, APOSTLE_SANGO_ADMIN.email) ? [] : [APOSTLE_SANGO_ADMIN];
     }
+  },
+  isUsernameTaken(rawUsername: string, excludeUserId?: string): boolean {
+    if (!rawUsername) return false;
+    const clean = rawUsername.trim().toLowerCase().replace(/^@/, "");
+    if (!clean) return false;
+
+    // 1. Check CRM members
+    const members = this.getJoinedMembers();
+    const takenInCrm = members.some((m) => {
+      if (excludeUserId && m.id === excludeUserId) return false;
+      const mUser = (m.username || "").trim().toLowerCase().replace(/^@/, "");
+      const mName = (m.name || "").trim().toLowerCase();
+      return mUser === clean || mName === clean;
+    });
+    if (takenInCrm) return true;
+
+    // 2. Check local user accounts
+    try {
+      const raw = localStorage.getItem("gtc_local_user_accounts");
+      if (raw) {
+        const accounts = JSON.parse(raw);
+        for (const email of Object.keys(accounts)) {
+          const acc = accounts[email];
+          const accProfile = acc?.profile;
+          if (accProfile) {
+            if (excludeUserId && (accProfile.id === excludeUserId || acc?.user?.uid === excludeUserId)) continue;
+            const uName = (accProfile.username || "").trim().toLowerCase().replace(/^@/, "");
+            const fName = (accProfile.name || "").trim().toLowerCase();
+            if (uName === clean || fName === clean) return true;
+          }
+        }
+      }
+    } catch {}
+
+    // 3. Check active user
+    const currentUser = this.getUser();
+    if (currentUser && (!excludeUserId || currentUser.id !== excludeUserId)) {
+      const curUser = (currentUser.username || "").trim().toLowerCase().replace(/^@/, "");
+      if (curUser === clean) return true;
+    }
+
+    return false;
   },
   saveJoinedMember(member: UserProfile): UserProfile[] {
     try {
@@ -879,9 +956,13 @@ export const Storage = {
   },
   revokeUser(id: string, email: string): void {
     try {
+      const cleanEmail = (email || "").toLowerCase().trim();
+      // Super admin / founder accounts can never be revoked or blocked
+      if (isSuperAdminEmail(cleanEmail) || id === APOSTLE_SANGO_ADMIN.id) {
+        return;
+      }
       const revokedRaw = localStorage.getItem("gtc_revoked_users") || "[]";
       const revokedList: { id: string; email: string; revokedAt: string }[] = JSON.parse(revokedRaw);
-      const cleanEmail = (email || "").toLowerCase().trim();
       if (!revokedList.some((r) => (r.id && r.id === id) || (r.email && r.email === cleanEmail))) {
         revokedList.push({ id, email: cleanEmail, revokedAt: new Date().toISOString() });
         localStorage.setItem("gtc_revoked_users", JSON.stringify(revokedList));
@@ -907,11 +988,16 @@ export const Storage = {
     }
   },
   isUserRevoked(id?: string, email?: string): boolean {
+    const cleanEmail = (email || "").toLowerCase().trim();
+    // Super admins are NEVER revoked, even if their account was previously deleted
+    if (isSuperAdminEmail(cleanEmail) || id === APOSTLE_SANGO_ADMIN.id) {
+      this.unrevokeUser(id, cleanEmail);
+      return false;
+    }
     try {
       const revokedRaw = localStorage.getItem("gtc_revoked_users");
       if (!revokedRaw) return false;
       const list: { id: string; email: string }[] = JSON.parse(revokedRaw);
-      const cleanEmail = (email || "").toLowerCase().trim();
       return list.some(
         (r) => (id && r.id === id) || (cleanEmail && r.email?.toLowerCase().trim() === cleanEmail)
       );

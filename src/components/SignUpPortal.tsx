@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   UserPlus,
   LogIn,
@@ -21,11 +21,14 @@ import {
   Camera,
   Image,
   Trash2,
-  RotateCcw
+  RotateCcw,
+  AtSign,
+  RefreshCw
 } from "lucide-react";
 import { Logo } from "./Logo";
 import { useAuth } from "../lib/AuthContext";
 import { Storage } from "../lib/storage";
+import { UserDataService } from "../lib/userDataService";
 import { PrivacyPolicy } from "./PrivacyPolicy";
 import { TermsAndConditions } from "./TermsAndConditions";
 
@@ -93,6 +96,10 @@ export const SignUpPortal: React.FC<SignUpPortalProps> = ({
   // Form State
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
+  const [username, setUsername] = useState("");
+  const [isUsernameCustomized, setIsUsernameCustomized] = useState(false);
+  const [usernameStatus, setUsernameStatus] = useState<"idle" | "checking" | "available" | "taken">("idle");
+  const [usernameFeedback, setUsernameFeedback] = useState<string | null>(null);
   const [email, setEmail] = useState("");
   const [phoneNumber, setPhoneNumber] = useState("");
   const [country, setCountry] = useState("United States");
@@ -128,6 +135,66 @@ export const SignUpPortal: React.FC<SignUpPortalProps> = ({
   const [mockDataDeleted, setMockDataDeleted] = useState(() => Storage.isMockDataCleared());
   const [clearMockOnSubmit, setClearMockOnSubmit] = useState(true);
   const [viewingPolicy, setViewingPolicy] = useState<"privacy" | "terms" | null>(null);
+
+  // Auto-suggest username as believer enters names unless they manually modified it
+  useEffect(() => {
+    if (isUsernameCustomized) return;
+    const f = firstName.trim().toLowerCase().replace(/[^a-z0-9]/g, "");
+    const l = lastName.trim().toLowerCase().replace(/[^a-z0-9]/g, "");
+    if (f || l) {
+      const suggested = l ? `${f}_${l}` : f;
+      setUsername(suggested);
+    }
+  }, [firstName, lastName, isUsernameCustomized]);
+
+  // Real-time username verification against local CRM, accounts, and server registry
+  useEffect(() => {
+    const clean = username.trim().toLowerCase().replace(/^@/, "");
+    if (!clean) {
+      setUsernameStatus("idle");
+      setUsernameFeedback(null);
+      return;
+    }
+    if (clean.length < 3) {
+      setUsernameStatus("taken");
+      setUsernameFeedback("Username must be at least 3 characters.");
+      return;
+    }
+    if (!/^[a-z0-9_.-]+$/.test(clean)) {
+      setUsernameStatus("taken");
+      setUsernameFeedback("Only letters, numbers, underscores, dashes, and periods are allowed.");
+      return;
+    }
+
+    // Instant local check
+    const localCheck = Storage.isUsernameTaken(clean);
+    if (localCheck) {
+      setUsernameStatus("taken");
+      setUsernameFeedback(`@${clean} is already claimed by another believer.`);
+      return;
+    }
+
+    setUsernameStatus("checking");
+    setUsernameFeedback("Checking sanctuary availability...");
+
+    const timer = setTimeout(async () => {
+      try {
+        const check = await UserDataService.isUsernameTaken(clean);
+        if (check.taken) {
+          setUsernameStatus("taken");
+          setUsernameFeedback(check.reason || `@${clean} is already claimed by another believer.`);
+        } else {
+          setUsernameStatus("available");
+          setUsernameFeedback(`@${clean} is available!`);
+        }
+      } catch {
+        setUsernameStatus("available");
+        setUsernameFeedback(`@${clean} is ready.`);
+      }
+    }, 250);
+
+    return () => clearTimeout(timer);
+  }, [username]);
 
   const handleDeleteMockData = (e?: React.MouseEvent) => {
     if (e) e.preventDefault();
@@ -180,6 +247,18 @@ export const SignUpPortal: React.FC<SignUpPortalProps> = ({
   const validateSignUp = () => {
     if (!firstName.trim()) return "Please enter your first name.";
     if (!lastName.trim()) return "Please enter your last name.";
+
+    // Username uniqueness validation
+    const cleanUsername = username.trim().toLowerCase().replace(/^@/, "");
+    if (!cleanUsername) return "Please choose a sanctuary username / handle.";
+    if (cleanUsername.length < 3) return "Username must be at least 3 characters long.";
+    if (!/^[a-z0-9_.-]+$/.test(cleanUsername)) {
+      return "Username can only contain letters, numbers, underscores, dashes, and periods.";
+    }
+    if (usernameStatus === "taken") {
+      return usernameFeedback || `Username '@${cleanUsername}' is already taken by another believer. Please pick a different handle.`;
+    }
+
     if (!email.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       return "Please enter a valid email address.";
     }
@@ -232,6 +311,7 @@ export const SignUpPortal: React.FC<SignUpPortalProps> = ({
         await register({
           firstName,
           lastName,
+          username: username.trim().toLowerCase().replace(/^@/, ""),
           email,
           phoneNumber,
           country,
@@ -253,7 +333,9 @@ export const SignUpPortal: React.FC<SignUpPortalProps> = ({
         if (onSuccess) onSuccess({ isNewSignUp: true, firstName: firstName.trim() });
       } catch (err: any) {
         console.error("Registration error:", err);
-        if (err.code === "auth/email-already-in-use") {
+        if (err.code === "auth/username-already-in-use" || err.message?.includes("username") || err.message?.includes("sanctuary handle")) {
+          setErrorMessage(err.message || "This username is already taken. Please choose a different handle.");
+        } else if (err.code === "auth/email-already-in-use") {
           setErrorMessage("This email address is already registered. Please log in instead.");
         } else if (err.code === "auth/weak-password") {
           setErrorMessage("The password is too weak. Please use at least 8 characters with numbers and uppercase letters.");
@@ -570,6 +652,60 @@ export const SignUpPortal: React.FC<SignUpPortalProps> = ({
                   />
                 </div>
               </div>
+            </div>
+
+            {/* Sanctuary Username / Handle (Enforces Uniqueness) */}
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <label className="font-bold text-[#2D2D2D] block font-serif text-xs">
+                  Sanctuary Username / Handle <span className="text-rose-500">*</span>
+                </label>
+                <span className="text-[10px] text-[#8A8478]">Must be unique</span>
+              </div>
+              <div className="relative">
+                <AtSign className="w-4 h-4 text-[#8A8478] absolute left-3.5 top-3.5" />
+                <input
+                  type="text"
+                  required
+                  value={username}
+                  placeholder="e.g. believer_faith"
+                  onChange={(e) => {
+                    setIsUsernameCustomized(true);
+                    setUsername(e.target.value.toLowerCase().replace(/[^a-z0-9_.-]/g, ""));
+                  }}
+                  className={`w-full pl-10 pr-10 py-3 bg-[#F9F7F2] border rounded-xl font-medium focus:outline-none focus:bg-white transition-all text-xs ${
+                    usernameStatus === "taken"
+                      ? "border-rose-400 focus:border-rose-500 bg-rose-50/30"
+                      : usernameStatus === "available"
+                      ? "border-emerald-400 focus:border-emerald-500 bg-emerald-50/20"
+                      : "border-[#E5E0D5] focus:border-[#C5A059]"
+                  }`}
+                />
+                <div className="absolute right-3.5 top-3.5">
+                  {usernameStatus === "checking" && (
+                    <RefreshCw className="w-4 h-4 text-amber-500 animate-spin" />
+                  )}
+                  {usernameStatus === "available" && (
+                    <CheckCircle className="w-4 h-4 text-emerald-600" />
+                  )}
+                  {usernameStatus === "taken" && (
+                    <AlertCircle className="w-4 h-4 text-rose-500" />
+                  )}
+                </div>
+              </div>
+              {usernameFeedback && (
+                <p
+                  className={`mt-1 text-[11px] font-medium flex items-center gap-1 ${
+                    usernameStatus === "taken"
+                      ? "text-rose-600"
+                      : usernameStatus === "available"
+                      ? "text-emerald-700"
+                      : "text-amber-700"
+                  }`}
+                >
+                  {usernameFeedback}
+                </p>
+              )}
             </div>
 
             {/* Email & Phone */}

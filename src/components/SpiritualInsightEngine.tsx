@@ -66,8 +66,8 @@ export const SpiritualInsightEngine: React.FC<SpiritualInsightEngineProps> = ({
       type: "doctrine" as const
     },
     {
-      title: "Biblical Guidance for Anxious Dreams & Worries",
-      query: "How does Scripture teach believers to address recurrent worries, anxious thoughts, and disturbing night dreams?",
+      title: "Biblical Guidance for Dreams",
+      query: "How does Scripture teach believers to discern and interpret dreams in light of God's Word?",
       type: "dream" as const
     },
     {
@@ -258,7 +258,7 @@ export const SpiritualInsightEngine: React.FC<SpiritualInsightEngineProps> = ({
         <div className="flex items-center gap-2 overflow-x-auto pb-1 text-xs font-semibold">
           {[
             { id: "doctrine", label: "Biblical Doctrine & Context" },
-            { id: "dream", label: "Dreams & Worries" },
+            { id: "dream", label: "Dreams" },
             { id: "vision", label: "Visions & Prophecy" },
             { id: "symbol", label: "Biblical Symbols" },
             { id: "biblical_question", label: "Scripture Inquiry" }

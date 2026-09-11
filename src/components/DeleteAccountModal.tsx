@@ -20,6 +20,7 @@ import {
 import { UserProfile } from "../types";
 import { useAuth } from "../lib/AuthContext";
 import { UserDataService } from "../lib/userDataService";
+import { getMicrosoftTTSUrl } from "../lib/audioVoiceHelper";
 
 interface DeleteAccountModalProps {
   isOpen: boolean;
@@ -147,10 +148,15 @@ export const DeleteAccountModal: React.FC<DeleteAccountModalProps> = ({
     PARTING_SCRIPTURES.find((s) => s.id === selectedScriptureId) || PARTING_SCRIPTURES[0];
 
   const speechUtteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
 
   // Stop speech when component unmounts
   useEffect(() => {
     return () => {
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current = null;
+      }
       if (typeof window !== "undefined" && "speechSynthesis" in window) {
         window.speechSynthesis.cancel();
       }
@@ -212,65 +218,88 @@ export const DeleteAccountModal: React.FC<DeleteAccountModalProps> = ({
     });
   };
 
-  // Speak the closing scripture aloud
+  // Speak the closing scripture aloud using Microsoft Neural Voice with speech synthesis fallback
   const speakClosingScripture = (scriptureToSpeak: PartingScripture, muted = false) => {
-    if (typeof window === "undefined" || !("speechSynthesis" in window)) {
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current = null;
+    }
+    if (typeof window !== "undefined" && "speechSynthesis" in window) {
+      window.speechSynthesis.cancel();
+    }
+
+    if (muted) {
       setIsSpeaking(false);
-      setHasFinishedSpeaking(true);
       return;
     }
 
-    try {
-      window.speechSynthesis.cancel();
-
-      if (muted) {
+    const fallbackToSpeechSynthesis = () => {
+      if (typeof window === "undefined" || !("speechSynthesis" in window)) {
         setIsSpeaking(false);
+        setHasFinishedSpeaking(true);
         return;
       }
 
-      const utterance = new SpeechSynthesisUtterance(scriptureToSpeak.spokenText);
-      utterance.rate = 0.88; // Reverent, gentle, calm pacing
-      utterance.pitch = 0.96; // Warm and soothing
+      try {
+        const utterance = new SpeechSynthesisUtterance(scriptureToSpeak.spokenText);
+        utterance.rate = 0.88; // Reverent, gentle, calm pacing
+        utterance.pitch = 0.96; // Warm and soothing
 
-      // Try to choose an English voice that is natural and gentle
-      const voices = window.speechSynthesis.getVoices();
-      const preferred =
-        voices.find(
-          (v) =>
-            v.lang.startsWith("en") &&
-            (v.name.includes("Natural") ||
-              v.name.includes("Google") ||
-              v.name.includes("Daniel") ||
-              v.name.includes("Samantha") ||
-              v.name.includes("Arthur") ||
-              v.name.includes("Serena"))
-        ) || voices.find((v) => v.lang.startsWith("en"));
+        const voices = window.speechSynthesis.getVoices();
+        const preferred =
+          voices.find(
+            (v) =>
+              v.lang.startsWith("en") &&
+              (v.name.includes("Microsoft") || v.name.includes("Natural")) &&
+              !v.name.toLowerCase().includes("daniel")
+          ) ||
+          voices.find(
+            (v) =>
+              v.lang.startsWith("en") &&
+              (v.name.includes("Google") || v.name.includes("Jenny") || v.name.includes("Guy")) &&
+              !v.name.toLowerCase().includes("daniel")
+          ) ||
+          voices.find((v) => v.lang.startsWith("en") && !v.name.toLowerCase().includes("daniel"));
 
-      if (preferred) {
-        utterance.voice = preferred;
+        if (preferred) {
+          utterance.voice = preferred;
+        }
+
+        utterance.onstart = () => {
+          setIsSpeaking(true);
+        };
+
+        utterance.onend = () => {
+          setIsSpeaking(false);
+          setHasFinishedSpeaking(true);
+        };
+
+        utterance.onerror = () => {
+          setIsSpeaking(false);
+          setHasFinishedSpeaking(true);
+        };
+
+        speechUtteranceRef.current = utterance;
+        window.speechSynthesis.speak(utterance);
+      } catch (err) {
+        setIsSpeaking(false);
+        setHasFinishedSpeaking(true);
       }
+    };
 
-      utterance.onstart = () => {
-        setIsSpeaking(true);
-      };
-
-      utterance.onend = () => {
+    try {
+      const ttsUrl = getMicrosoftTTSUrl(scriptureToSpeak.spokenText, "female");
+      const audio = new Audio(ttsUrl);
+      audioRef.current = audio;
+      audio.onplay = () => setIsSpeaking(true);
+      audio.onended = () => {
         setIsSpeaking(false);
         setHasFinishedSpeaking(true);
       };
-
-      utterance.onerror = (e) => {
-        console.warn("Speech synthesis notice:", e);
-        setIsSpeaking(false);
-        setHasFinishedSpeaking(true);
-      };
-
-      speechUtteranceRef.current = utterance;
-      window.speechSynthesis.speak(utterance);
-    } catch (err) {
-      console.warn("Could not initiate speech synthesis:", err);
-      setIsSpeaking(false);
-      setHasFinishedSpeaking(true);
+      audio.onerror = () => fallbackToSpeechSynthesis();
+      audio.play().catch(() => fallbackToSpeechSynthesis());
+    } catch (e) {
+      fallbackToSpeechSynthesis();
     }
   };
 

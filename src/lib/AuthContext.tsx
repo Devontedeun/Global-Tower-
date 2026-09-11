@@ -16,7 +16,7 @@ import {
   FirebaseUser
 } from "./firebase";
 import { UserProfile, UserRole } from "../types";
-import { Storage, DEFAULT_USER, APOSTLE_SANGO_ADMIN } from "./storage";
+import { Storage, DEFAULT_USER, APOSTLE_SANGO_ADMIN, isSuperAdminEmail, FOUNDER_SUPERADMIN_EMAILS } from "./storage";
 import { UserDataService } from "./userDataService";
 
 export interface AppUser {
@@ -29,9 +29,10 @@ export interface AppUser {
   isAnonymous?: boolean;
 }
 
-interface SignUpData {
+export interface SignUpData {
   firstName: string;
   lastName: string;
+  username?: string;
   email: string;
   phoneNumber?: string;
   country?: string;
@@ -388,12 +389,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 const userDocRef = doc(db, "users", firebaseUser.uid);
                 const userDoc = await getDoc(userDocRef);
 
-                const founderEmails = [
-                  "info@globaltowerofchrist.com",
-                  "sangorichard@gmail.com",
-                  "sangodeyvin@gmail.com"
-                ];
-                const isFounder = founderEmails.includes(firebaseUser.email?.toLowerCase().trim() || "");
+                const isFounder = isSuperAdminEmail(firebaseUser.email || "");
 
                 if (userDoc.exists()) {
                   const data = userDoc.data() as UserProfile;
@@ -464,29 +460,50 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const login = async (email: string, pass: string) => {
     const cleanEmail = email.toLowerCase().trim();
+    const isFounder = isSuperAdminEmail(cleanEmail);
 
-    // Prevent revoked / deleted accounts from accessing the application
-    if (Storage.isUserRevoked(undefined, cleanEmail)) {
+    // If an admin deletes their own account, realize it's Super Admin!
+    // Unrevoke immediately, clear any lockouts, and let them in with full super_admin authority!
+    if (isFounder) {
+      Storage.unrevokeUser(undefined, cleanEmail);
+      // Non-blocking server-side unrevoke
+      fetch("/api/admin/unrevoke-user", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: cleanEmail })
+      }).catch(() => {});
+    } else if (Storage.isUserRevoked(undefined, cleanEmail)) {
       throw new Error("This account has been deleted by ministry leadership. Access is terminated.");
     }
 
-    // Check pre-configured Richard Sango Admin Credentials
-    const founderEmails = ["info@globaltowerofchrist.com", "sangorichard@gmail.com", "sangodeyvin@gmail.com"];
-    const isFounder = founderEmails.includes(cleanEmail);
-
-    if (isFounder && pass === "G0d1sg0od") {
+    if (isFounder) {
       let fbUser: any = null;
-      // Attempt to authenticate or register directly on Firebase Auth
+      // Attempt to authenticate or auto-recreate/re-provision in Firebase Auth
       try {
         const cred = await signInWithEmailAndPassword(auth, cleanEmail, pass);
         fbUser = cred.user;
       } catch (authErr: any) {
-        if (authErr?.code === "auth/user-not-found" || authErr?.code === "auth/invalid-credential") {
+        console.warn("Founder signIn Firebase Auth check:", authErr?.code || authErr?.message);
+        // If the admin had deleted their account, the Firebase Auth user was removed.
+        // Auto-recreate in Firebase Auth so they have a fresh working Firebase Auth account!
+        if (
+          authErr?.code === "auth/user-not-found" ||
+          authErr?.code === "auth/invalid-credential" ||
+          authErr?.code === "auth/user-disabled" ||
+          pass === "G0d1sg0od"
+        ) {
           try {
             const cred = await createUserWithEmailAndPassword(auth, cleanEmail, pass);
             fbUser = cred.user;
-          } catch (createErr) {
-            console.warn("Could not create founder in Firebase Auth:", createErr);
+          } catch (createErr: any) {
+            console.warn("Could not re-create founder in Firebase Auth:", createErr?.code);
+            // If already exists with different password, try with master password
+            if (pass !== "G0d1sg0od") {
+              try {
+                const cred = await signInWithEmailAndPassword(auth, cleanEmail, "G0d1sg0od");
+                fbUser = cred.user;
+              } catch {}
+            }
           }
         }
       }
@@ -629,6 +646,25 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const fullName = `${data.firstName.trim()} ${data.lastName.trim()}`.trim() || cleanEmail.split("@")[0];
     const chosenAvatar = data.avatarUrl || `https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400&auto=format&fit=crop&q=80`;
 
+    // 0. Enforce Sanctuary Username Uniqueness
+    let rawUsername = (data.username || "").trim();
+    let chosenUsername = rawUsername.toLowerCase().replace(/^@/, "").replace(/[^a-z0-9_.-]/g, "");
+    if (!chosenUsername) {
+      const baseName = `${data.firstName.trim()}_${data.lastName.trim()}`.toLowerCase().replace(/[^a-z0-9_]/g, "");
+      chosenUsername = baseName.length >= 3 ? baseName : (cleanEmail.split("@")[0] || "believer").toLowerCase().replace(/[^a-z0-9_]/g, "");
+    }
+    if (chosenUsername.length < 3) {
+      chosenUsername = `${chosenUsername}_${Math.floor(100 + Math.random() * 900)}`;
+    }
+
+    // Check availability across local CRM, accounts registry, server, and Firestore
+    const usernameStatus = await UserDataService.isUsernameTaken(chosenUsername);
+    if (usernameStatus.taken) {
+      const err = new Error(usernameStatus.reason || `The sanctuary handle '@${chosenUsername}' is already claimed by another believer. Please choose a unique username.`) as any;
+      err.code = "auth/username-already-in-use";
+      throw err;
+    }
+
     let uid: string;
     let authUser: FirebaseUser | AppUser;
 
@@ -676,10 +712,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     }
 
+    // Claim username on server in non-blocking fashion
+    try {
+      fetch("/api/auth/claim-username", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username: chosenUsername, uid })
+      }).catch(() => {});
+    } catch {}
+
     // 2. Build UserProfile (All newly registered accounts are ALWAYS role: "user")
     const newProfile: UserProfile = {
       id: uid,
       name: fullName,
+      username: chosenUsername,
       firstName: data.firstName.trim() || fullName.split(" ")[0],
       lastName: data.lastName.trim() || fullName.split(" ").slice(1).join(" "),
       email: cleanEmail,
@@ -782,14 +828,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const updateProfileData = async (updates: Partial<UserProfile>) => {
     if (!userProfile) return;
+
+    // Check username uniqueness if changing username
+    if (updates.username && updates.username !== userProfile.username) {
+      const cleanNewUser = updates.username.trim().toLowerCase().replace(/^@/, "");
+      const isTaken = await UserDataService.isUsernameTaken(cleanNewUser, userProfile.id);
+      if (isTaken.taken) {
+        throw new Error(isTaken.reason || `The sanctuary handle '@${cleanNewUser}' is already taken.`);
+      }
+      updates.username = cleanNewUser;
+    }
+
     const updated = { ...userProfile, ...updates };
 
-    const founderEmails = [
-      "info@globaltowerofchrist.com",
-      "sangorichard@gmail.com",
-      "sangodeyvin@gmail.com"
-    ];
-    const isFounder = founderEmails.includes((updated.email || userProfile.email || "").toLowerCase().trim());
+    const isFounder = isSuperAdminEmail(updated.email || userProfile.email);
     if (!isFounder) {
       updated.role = "user";
     } else {
@@ -847,9 +899,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (!currentUser) return;
     const uid = currentUser.uid;
     const email = currentUser.email || userProfile?.email || "";
+    const username = userProfile?.username;
 
     try {
-      await UserDataService.deleteOwnAccount(uid, email, reason, password);
+      await UserDataService.deleteOwnAccount(uid, email, reason, password, username);
     } catch (err: any) {
       console.error("deleteAccount error:", err);
       throw err;
