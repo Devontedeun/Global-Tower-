@@ -18,6 +18,7 @@ import {
   ChevronRight,
   Check,
   X,
+  Square,
   Layers,
   Edit3,
   AlignLeft,
@@ -40,7 +41,19 @@ import {
 } from "../lib/bibleService";
 import { Storage } from "../lib/storage";
 import { AudioTrack } from "./AudioPlayerBar";
-import { getNaturalBibleVoice, BANNED_VOICE_NAMES, getMicrosoftTTSUrl, getSavedVoiceGender } from "../lib/audioVoiceHelper";
+import {
+  getNaturalBibleVoice,
+  BANNED_VOICE_NAMES,
+  getAudioTTSUrl,
+  getMicrosoftTTSUrl,
+  getSavedVoiceGender,
+  getSavedVoiceId,
+  setSavedVoiceId,
+  getSavedMuteState,
+  setSavedMuteState,
+  unlockAudio,
+  SERVER_VOICES
+} from "../lib/audioVoiceHelper";
 
 interface BibleHubProps {
   initialBook?: string;
@@ -97,11 +110,35 @@ export const BibleHub: React.FC<BibleHubProps> = ({
   const [audioVerseNum, setAudioVerseNum] = useState<number | null>(null);
   const [playbackSpeed, setPlaybackSpeed] = useState<number>(1.0);
   const [availableVoices, setAvailableVoices] = useState<SpeechSynthesisVoice[]>([]);
-  const [selectedVoiceURI, setSelectedVoiceURI] = useState<string>("");
+  const [selectedVoiceURI, setSelectedVoiceURI] = useState<string>(() => getSavedVoiceId());
   const [showAudioSettings, setShowAudioSettings] = useState(false);
+  const [isMuted, setIsMuted] = useState<boolean>(() => getSavedMuteState());
 
   const synthRef = useRef<SpeechSynthesisUtterance | null>(null);
   const currentVersesRef = useRef<{ num: number; text: string }[]>([]);
+
+  // Keep selected voice in sync with global voice changes
+  useEffect(() => {
+    const handleVoiceChange = (e: any) => {
+      const vId = e?.detail?.voiceId;
+      if (vId && vId !== selectedVoiceURI) {
+        setSelectedVoiceURI(vId);
+      }
+    };
+    window.addEventListener("gtc_voice_changed", handleVoiceChange);
+    return () => window.removeEventListener("gtc_voice_changed", handleVoiceChange);
+  }, [selectedVoiceURI]);
+
+  // Keep mute state in sync with global audio player events
+  useEffect(() => {
+    const handleMuteChange = (e: any) => {
+      if (typeof e?.detail?.isMuted === "boolean") {
+        setIsMuted(e.detail.isMuted);
+      }
+    };
+    window.addEventListener("gtc_audio_mute_changed", handleMuteChange);
+    return () => window.removeEventListener("gtc_audio_mute_changed", handleMuteChange);
+  }, []);
 
   // Update initial props when changed
   useEffect(() => {
@@ -138,12 +175,17 @@ export const BibleHub: React.FC<BibleHubProps> = ({
           });
           setAvailableVoices(englishVoices.length > 0 ? englishVoices : voices);
           
-          // Select natural Microsoft narrator voice by default
-          const { voice } = getNaturalBibleVoice();
-          if (voice) {
-            setSelectedVoiceURI(voice.voiceURI);
-          } else if (!selectedVoiceURI && englishVoices.length > 0) {
-            setSelectedVoiceURI(englishVoices[0].voiceURI);
+          // Only fallback if no voice is currently saved or selected
+          const savedVoice = getSavedVoiceId();
+          if (!savedVoice && !selectedVoiceURI) {
+            const { voice } = getNaturalBibleVoice();
+            if (voice) {
+              setSelectedVoiceURI(voice.voiceURI);
+              setSavedVoiceId(voice.voiceURI);
+            } else if (englishVoices.length > 0) {
+              setSelectedVoiceURI(englishVoices[0].voiceURI);
+              setSavedVoiceId(englishVoices[0].voiceURI);
+            }
           }
         }
       }
@@ -212,11 +254,24 @@ export const BibleHub: React.FC<BibleHubProps> = ({
 
   // Audio Control Methods
   const stopAudio = () => {
-    if (typeof window !== "undefined" && "speechSynthesis" in window) {
-      window.speechSynthesis.cancel();
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("gtc_stop_audio"));
+      if ("speechSynthesis" in window) {
+        window.speechSynthesis.cancel();
+      }
     }
     setIsAudioPlaying(false);
     setAudioVerseNum(null);
+  };
+
+  const handleToggleMute = () => {
+    unlockAudio();
+    const nextMute = !isMuted;
+    setIsMuted(nextMute);
+    setSavedMuteState(nextMute);
+    if (!nextMute && !isAudioPlaying && versesList.length > 0) {
+      toggleChapterAudio();
+    }
   };
 
   const playVerseByIndex = (index: number, book = selectedBook, chapter = selectedChapter) => {
@@ -265,17 +320,21 @@ export const BibleHub: React.FC<BibleHubProps> = ({
       : verse.text;
     const utterance = new SpeechSynthesisUtterance(utteranceText);
     
-    const { voice, pitch: defaultPitch, rate: defaultRate } = getNaturalBibleVoice();
-    if (selectedVoiceURI) {
-      const v = availableVoices.find((voice) => voice.voiceURI === selectedVoiceURI);
-      if (v) utterance.voice = v;
-    } else if (voice) {
-      utterance.voice = voice;
+    const resolved = getNaturalBibleVoice(getSavedVoiceGender(), selectedVoiceURI);
+    if (resolved.voice) {
+      utterance.voice = resolved.voice;
     }
 
+    console.log("[BibleHub:SpeechSynthesis] Utterance active:", {
+      requestedVoice: selectedVoiceURI,
+      actualVoice: resolved.actualVoiceName,
+      fallbackUsed: resolved.fallbackUsed,
+      provider: resolved.provider
+    });
+
     // Use natural pitch (0.94 for deeper reverent male voice)
-    utterance.pitch = defaultPitch;
-    utterance.rate = playbackSpeed || defaultRate;
+    utterance.pitch = resolved.pitch;
+    utterance.rate = playbackSpeed || resolved.rate;
 
     utterance.onend = () => {
       if (index + 1 < verses.length) {
@@ -321,20 +380,27 @@ export const BibleHub: React.FC<BibleHubProps> = ({
   };
 
   const toggleChapterAudio = () => {
+    unlockAudio();
     if (isAudioPlaying) {
       stopAudio();
     } else {
       if (versesList.length === 0) return;
       setChapterCompleted(false);
+      // If muted, unmute so audio sound immediately plays aloud
+      if (isMuted) {
+        setIsMuted(false);
+        setSavedMuteState(false);
+      }
       if (onPlayAudio) {
         onPlayAudio({
           id: `bible-${selectedBook}-${selectedChapter}`,
           title: `${selectedBook} Chapter ${selectedChapter}`,
-          subtitle: `Audio Bible • ${translation} Translation • Natural Voice Narration • Continuous Chapter Mode`,
+          subtitle: `Audio Bible • ${translation} Translation • Continuous Chapter Mode`,
           textToRead: `${selectedBook}, chapter ${selectedChapter}. ${fullChapterText}`,
           verses: versesList.map((v) => ({ num: v.num, text: v.text })),
           book: selectedBook,
           chapter: selectedChapter,
+          voiceId: selectedVoiceURI,
           onVerseChange: (num: number) => {
             setAudioVerseNum(num);
             setIsAudioPlaying(true);
@@ -344,6 +410,10 @@ export const BibleHub: React.FC<BibleHubProps> = ({
             setIsAudioPlaying(false);
             setAudioVerseNum(null);
             setChapterCompleted(true);
+          },
+          onPlaybackStateChange: (playing: boolean) => {
+            setIsAudioPlaying(playing);
+            if (!playing) setAudioVerseNum(null);
           }
         });
         setIsAudioPlaying(true);
@@ -354,16 +424,22 @@ export const BibleHub: React.FC<BibleHubProps> = ({
   };
 
   const playSingleVerseAudio = (verseNum: number, text: string) => {
-    // If global audio player is provided, route directly to ensure continuous Microsoft Neural narration
+    unlockAudio();
+    if (isMuted) {
+      setIsMuted(false);
+      setSavedMuteState(false);
+    }
+    // If global audio player is provided, route directly to ensure continuous narration
     if (onPlayAudio) {
       onPlayAudio({
         id: `bible-${selectedBook}-${selectedChapter}-v${verseNum}`,
         title: `${selectedBook} ${selectedChapter}:${verseNum}`,
-        subtitle: `Scripture Verse • ${translation} Translation • Microsoft Natural Narration`,
+        subtitle: `Scripture Verse • ${translation} Translation`,
         textToRead: `${selectedBook}, chapter ${selectedChapter}, verse ${verseNum}. ${text}`,
         verses: [{ num: verseNum, text }],
         book: selectedBook,
         chapter: selectedChapter,
+        voiceId: selectedVoiceURI,
         onVerseChange: (num: number) => {
           setAudioVerseNum(num);
           setIsAudioPlaying(true);
@@ -371,6 +447,10 @@ export const BibleHub: React.FC<BibleHubProps> = ({
         onChapterComplete: () => {
           setIsAudioPlaying(false);
           setAudioVerseNum(null);
+        },
+        onPlaybackStateChange: (playing: boolean) => {
+          setIsAudioPlaying(playing);
+          if (!playing) setAudioVerseNum(null);
         }
       });
       setAudioVerseNum(verseNum);
@@ -381,12 +461,14 @@ export const BibleHub: React.FC<BibleHubProps> = ({
     setAudioVerseNum(verseNum);
     setIsAudioPlaying(true);
 
-    // Direct standalone fallback with Microsoft Neural TTS
+    // Direct standalone fallback
     try {
       const recitationText = `${selectedBook}, chapter ${selectedChapter}. ${text}`;
-      const ttsUrl = getMicrosoftTTSUrl(recitationText, getSavedVoiceGender());
+      const ttsUrl = getAudioTTSUrl(recitationText, selectedVoiceURI, getSavedVoiceGender());
       const audio = new Audio(ttsUrl);
       audio.playbackRate = playbackSpeed || 1.0;
+      audio.muted = isMuted;
+      audio.volume = isMuted ? 0 : 1.0;
       audio.onended = () => {
         setIsAudioPlaying(false);
         setAudioVerseNum(null);
@@ -395,10 +477,10 @@ export const BibleHub: React.FC<BibleHubProps> = ({
         // Fallback to speech synthesis if network issue occurs
         if (typeof window !== "undefined" && "speechSynthesis" in window) {
           const utterance = new SpeechSynthesisUtterance(recitationText);
-          const { voice, pitch, rate } = getNaturalBibleVoice();
-          if (voice) utterance.voice = voice;
-          utterance.pitch = pitch;
-          utterance.rate = playbackSpeed || rate;
+          const resolved = getNaturalBibleVoice(getSavedVoiceGender(), selectedVoiceURI);
+          if (resolved.voice) utterance.voice = resolved.voice;
+          utterance.pitch = resolved.pitch;
+          utterance.rate = playbackSpeed || resolved.rate;
           utterance.onend = () => {
             setIsAudioPlaying(false);
             setAudioVerseNum(null);
@@ -907,6 +989,19 @@ export const BibleHub: React.FC<BibleHubProps> = ({
                 </span>
               </button>
 
+              {/* Explicit Unmute Button in Top Bar if Audio is Playing but Muted */}
+              {isAudioPlaying && isMuted && (
+                <button
+                  id="audio-bible-top-unmute-btn"
+                  onClick={handleToggleMute}
+                  className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-bold rounded-full bg-rose-600 hover:bg-rose-700 text-white shadow-md ring-2 ring-rose-400/50 animate-pulse cursor-pointer"
+                  title="Sound is muted — click to unmute and hear audio"
+                >
+                  <VolumeX className="w-3.5 h-3.5" />
+                  <span>Unmute Sound</span>
+                </button>
+              )}
+
               <button
                 onClick={() => setShowAudioSettings(!showAudioSettings)}
                 className={`p-2 rounded-full border transition-colors cursor-pointer ${
@@ -955,12 +1050,25 @@ export const BibleHub: React.FC<BibleHubProps> = ({
           {isAudioPlaying && (
             <div
               id="active-audio-bible-bar"
-              className="p-4 bg-gradient-to-r from-[#FDFCF9] via-[#FAF6EE] to-[#FDFCF9] border border-[#C5A059]/40 rounded-2xl flex flex-wrap items-center justify-between gap-3 shadow-xs animate-fadeIn"
+              className={`p-4 rounded-2xl flex flex-wrap items-center justify-between gap-3 shadow-xs animate-fadeIn transition-colors ${
+                isMuted
+                  ? "bg-rose-50/70 border-2 border-rose-300"
+                  : "bg-gradient-to-r from-[#FDFCF9] via-[#FAF6EE] to-[#FDFCF9] border border-[#C5A059]/40"
+              }`}
             >
               <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-full bg-[#C5A059] text-white flex items-center justify-center shadow-xs">
-                  <Volume2 className="w-4 h-4 animate-pulse" />
-                </div>
+                <button
+                  id="bible-banner-mute-toggle"
+                  onClick={handleToggleMute}
+                  className={`w-9 h-9 rounded-full flex items-center justify-center shadow-xs cursor-pointer transition-all ${
+                    isMuted
+                      ? "bg-rose-600 text-white ring-2 ring-rose-400 animate-pulse"
+                      : "bg-[#C5A059] text-white"
+                  }`}
+                  title={isMuted ? "Click to Unmute Sound" : "Click to Mute Audio"}
+                >
+                  {isMuted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4 animate-pulse" />}
+                </button>
                 <div>
                   <div className="flex items-center gap-2">
                     <span className="text-xs font-bold text-[#2D2D2D] font-serif">
@@ -971,26 +1079,61 @@ export const BibleHub: React.FC<BibleHubProps> = ({
                         Verse {audioVerseNum}
                       </span>
                     )}
+                    {isMuted && (
+                      <span className="px-2 py-0.5 bg-rose-200 text-rose-800 text-[10px] font-bold rounded-full border border-rose-300 animate-pulse">
+                        Muted
+                      </span>
+                    )}
                   </div>
                   <p className="text-[11px] text-[#7A7468]">
                     {translation} Verified Audio Bible • {playbackSpeed}x Speed
+                    {isMuted ? " • Audio is muted, click Unmute to hear sound" : ""}
                   </p>
                 </div>
               </div>
 
               <div className="flex items-center gap-2">
                 <button
+                  id="bible-audio-play-pause-btn"
                   onClick={toggleChapterAudio}
                   className="p-2 bg-[#C5A059] text-white hover:bg-[#B48F48] rounded-xl text-xs cursor-pointer shadow-xs transition-colors"
+                  title={isAudioPlaying ? "Pause narration" : "Resume narration"}
                 >
                   {isAudioPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
                 </button>
+
+                {/* Explicit Unmute / Mute Button */}
                 <button
-                  onClick={stopAudio}
-                  className="p-1.5 bg-white hover:bg-rose-50 text-[#7A7468] hover:text-rose-600 border border-[#E5E0D5] rounded-xl text-xs cursor-pointer transition-colors ml-1"
-                  title="Stop audio"
+                  id="bible-audio-unmute-btn"
+                  onClick={handleToggleMute}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+                    isMuted
+                      ? "bg-rose-600 hover:bg-rose-700 text-white shadow-md ring-2 ring-rose-400/50 animate-pulse"
+                      : "bg-[#F9F7F2] hover:bg-white text-[#7A7468] hover:text-[#2D2D2D] border border-[#E5E0D5]"
+                  }`}
+                  title={isMuted ? "Audio is Muted — Click to Unmute & Hear Sound" : "Mute audio"}
                 >
-                  <VolumeX className="w-3.5 h-3.5" />
+                  {isMuted ? (
+                    <>
+                      <VolumeX className="w-4 h-4 text-white" />
+                      <span>Unmute</span>
+                    </>
+                  ) : (
+                    <>
+                      <Volume2 className="w-4 h-4 text-[#C5A059]" />
+                      <span className="hidden sm:inline text-[11px]">Mute</span>
+                    </>
+                  )}
+                </button>
+
+                {/* Distinct Stop Button */}
+                <button
+                  id="bible-audio-stop-btn"
+                  onClick={stopAudio}
+                  className="p-2 bg-white hover:bg-rose-50 text-[#7A7468] hover:text-rose-600 border border-[#E5E0D5] rounded-xl text-xs cursor-pointer transition-colors"
+                  title="Stop audio playback"
+                >
+                  <Square className="w-3.5 h-3.5 fill-current" />
                 </button>
               </div>
             </div>
@@ -1032,19 +1175,43 @@ export const BibleHub: React.FC<BibleHubProps> = ({
                   <div className="flex items-center justify-between mb-1">
                     <label className="text-[11px] font-bold text-[#7A7468]">Narrator Voice:</label>
                     <span className="text-[9px] bg-[#2D2D2D] text-[#C5A059] px-1.5 py-0.5 rounded-full font-bold">
-                      Natural Voice Pitch
+                      Natural Neural & AI
                     </span>
                   </div>
                   <select
+                    id="bible-narrator-voice-select"
                     value={selectedVoiceURI}
-                    onChange={(e) => setSelectedVoiceURI(e.target.value)}
+                    onChange={(e) => {
+                      const newId = e.target.value;
+                      setSelectedVoiceURI(newId);
+                      setSavedVoiceId(newId);
+                      console.log(`[BibleHub] Voice changed in audio settings: "${newId}"`);
+                    }}
                     className="w-full p-1.5 bg-white border border-[#E5E0D5] rounded-lg text-xs font-medium focus:outline-none focus:border-[#C5A059]"
                   >
-                    {availableVoices.map((voice) => (
-                      <option key={voice.voiceURI} value={voice.voiceURI}>
-                        {voice.name} ({voice.lang})
-                      </option>
-                    ))}
+                    <optgroup label="Microsoft Neural Voices (Recommended)">
+                      {SERVER_VOICES.filter((v) => v.provider === "microsoft").map((v) => (
+                        <option key={v.id} value={v.id}>
+                          {v.name}
+                        </option>
+                      ))}
+                    </optgroup>
+                    <optgroup label="Gemini AI Voices">
+                      {SERVER_VOICES.filter((v) => v.provider === "gemini").map((v) => (
+                        <option key={v.id} value={v.id}>
+                          {v.name}
+                        </option>
+                      ))}
+                    </optgroup>
+                    {availableVoices.length > 0 && (
+                      <optgroup label="System / Browser Voices">
+                        {availableVoices.map((voice) => (
+                          <option key={voice.voiceURI} value={`browser:${voice.voiceURI}`}>
+                            {voice.name} ({voice.lang})
+                          </option>
+                        ))}
+                      </optgroup>
+                    )}
                   </select>
                 </div>
               </div>

@@ -6,6 +6,8 @@ import {
   RotateCw,
   Volume2,
   VolumeX,
+  Volume1,
+  Square,
   X,
   FastForward,
   Bookmark,
@@ -21,8 +23,18 @@ import {
   getNaturalBibleVoice,
   getSavedVoiceGender,
   setSavedVoiceGender,
+  getSavedVoiceId,
+  setSavedVoiceId,
+  getSavedMuteState,
+  setSavedMuteState,
+  getSavedAudioVolume,
+  setSavedAudioVolume,
+  unlockAudio,
   formatBibleTextForSpeech,
-  getMicrosoftTTSUrl
+  getAudioTTSUrl,
+  getMicrosoftTTSUrl,
+  SERVER_VOICES,
+  VoiceOption
 } from "../lib/audioVoiceHelper";
 import { bluetoothAudioService, AudioOutputDevice } from "../lib/bluetoothAudioService";
 import { VoiceGender } from "../types";
@@ -37,8 +49,10 @@ export interface AudioTrack {
   verses?: { num: number; text: string }[];
   book?: string;
   chapter?: number;
+  voiceId?: string;
   onVerseChange?: (verseNum: number) => void;
   onChapterComplete?: () => void;
+  onPlaybackStateChange?: (isPlaying: boolean) => void;
 }
 
 interface SpeechSegment {
@@ -124,6 +138,9 @@ export const AudioPlayerBar: React.FC<AudioPlayerBarProps> = ({
   const [playbackRate, setPlaybackRate] = useState<number>(1.0);
   const [progress, setProgress] = useState(0); // 0 to 100
   const [voiceGender, setVoiceGender] = useState<VoiceGender>(getSavedVoiceGender());
+  const [selectedVoiceId, setSelectedVoiceId] = useState<string>(() => {
+    return currentTrack?.voiceId || getSavedVoiceId();
+  });
   const [activeNarratorName, setActiveNarratorName] = useState<string>("");
   const [availableDevices, setAvailableDevices] = useState<AudioOutputDevice[]>([]);
   const [activeOutput, setActiveOutput] = useState<{ deviceId: string; label: string; isBluetooth: boolean }>({
@@ -132,6 +149,10 @@ export const AudioPlayerBar: React.FC<AudioPlayerBarProps> = ({
     isBluetooth: false
   });
   const [showDeviceMenu, setShowDeviceMenu] = useState(false);
+  const [isMuted, setIsMuted] = useState<boolean>(() => getSavedMuteState());
+  const [volume, setVolume] = useState<number>(() => getSavedAudioVolume());
+  const [showVolumeSlider, setShowVolumeSlider] = useState(false);
+  const [hasAutoplayBlock, setHasAutoplayBlock] = useState(false);
 
   const synthRef = useRef<SpeechSynthesisUtterance | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -139,6 +160,98 @@ export const AudioPlayerBar: React.FC<AudioPlayerBarProps> = ({
   const currentSegmentIndexRef = useRef<number>(0);
   const keepAliveIntervalRef = useRef<number | null>(null);
   const isPlayingRef = useRef<boolean>(false);
+  const isMutedRef = useRef<boolean>(isMuted);
+  const volumeRef = useRef<number>(volume);
+
+  useEffect(() => {
+    isMutedRef.current = isMuted;
+  }, [isMuted]);
+
+  useEffect(() => {
+    volumeRef.current = volume;
+  }, [volume]);
+
+  // Sync selected voice with currentTrack if specified
+  useEffect(() => {
+    if (currentTrack?.voiceId && currentTrack.voiceId !== selectedVoiceId) {
+      setSelectedVoiceId(currentTrack.voiceId);
+      setSavedVoiceId(currentTrack.voiceId);
+    }
+  }, [currentTrack?.voiceId]);
+
+  // Subscribe to external voice changes (e.g. from BibleHub settings or other views)
+  useEffect(() => {
+    const handleVoiceChange = (e: any) => {
+      const vId = e?.detail?.voiceId;
+      if (vId && vId !== selectedVoiceId) {
+        console.log(`[AudioPlayerBar] Received global voice change: "${vId}"`);
+        setSelectedVoiceId(vId);
+        const serverVoice = SERVER_VOICES.find((v) => v.id === vId);
+        if (serverVoice) {
+          setVoiceGender(serverVoice.gender);
+          setActiveNarratorName(serverVoice.name);
+        }
+        if (isPlayingRef.current) {
+          playSegment(currentSegmentIndexRef.current, undefined, undefined, vId);
+        }
+      }
+    };
+
+    window.addEventListener("gtc_voice_changed", handleVoiceChange);
+    return () => window.removeEventListener("gtc_voice_changed", handleVoiceChange);
+  }, [selectedVoiceId]);
+
+  // Subscribe to global mute and volume events
+  useEffect(() => {
+    const handleMuteEvent = (e: any) => {
+      if (typeof e?.detail?.isMuted === "boolean") {
+        const nextMute = e.detail.isMuted;
+        setIsMuted(nextMute);
+        isMutedRef.current = nextMute;
+        if (audioRef.current) {
+          audioRef.current.muted = nextMute;
+          audioRef.current.volume = nextMute ? 0 : (volumeRef.current || 1.0);
+          if (!nextMute && audioRef.current.paused && isPlayingRef.current) {
+            audioRef.current.play().catch(() => {});
+          }
+        }
+      }
+    };
+
+    const handleVolumeEvent = (e: any) => {
+      if (typeof e?.detail?.volume === "number") {
+        const nextVol = e.detail.volume;
+        setVolume(nextVol);
+        volumeRef.current = nextVol;
+        if (audioRef.current) {
+          audioRef.current.volume = isMutedRef.current ? 0 : nextVol;
+        }
+      }
+    };
+
+    const handleStopEvent = () => {
+      console.log("[AudioPlayerBar] Received global stop audio event");
+      if (audioRef.current) {
+        audioRef.current.pause();
+      }
+      if (typeof window !== "undefined" && "speechSynthesis" in window) {
+        window.speechSynthesis.cancel();
+      }
+      stopKeepAlive();
+      setIsPlaying(false);
+      isPlayingRef.current = false;
+      onClose();
+    };
+
+    window.addEventListener("gtc_audio_mute_changed", handleMuteEvent);
+    window.addEventListener("gtc_audio_volume_changed", handleVolumeEvent);
+    window.addEventListener("gtc_stop_audio", handleStopEvent);
+    return () => {
+      window.removeEventListener("gtc_audio_mute_changed", handleMuteEvent);
+      window.removeEventListener("gtc_audio_volume_changed", handleVolumeEvent);
+      window.removeEventListener("gtc_stop_audio", handleStopEvent);
+    };
+  }, [onClose]);
 
   // Subscribe to Bluetooth audio device changes
   useEffect(() => {
@@ -174,7 +287,12 @@ export const AudioPlayerBar: React.FC<AudioPlayerBarProps> = ({
     }
   };
 
-  const playSegment = (index: number, genderToUse?: VoiceGender, customRate?: number) => {
+  const playSegment = (
+    index: number,
+    genderToUse?: VoiceGender,
+    customRate?: number,
+    voiceToUse?: string
+  ) => {
     const segments = segmentsRef.current;
     if (index >= segments.length) {
       // Reached the end of the chapter!
@@ -214,32 +332,62 @@ export const AudioPlayerBar: React.FC<AudioPlayerBarProps> = ({
       currentTrack.onVerseChange(currentSeg.verseNum);
     }
 
+    const targetVoice = voiceToUse || selectedVoiceId || getSavedVoiceId();
     const targetGender = genderToUse || voiceGender;
     const rate = (customRate !== undefined ? customRate : playbackRate) || 1.0;
 
-    // SpeechSynthesis fallback that strictly prefers Microsoft voices and blocks Daniel
+    // Resolve voice display name
+    const serverVoice = SERVER_VOICES.find((v) => v.id === targetVoice);
+    const narratorLabel = serverVoice
+      ? serverVoice.name
+      : targetVoice.startsWith("browser:")
+      ? targetVoice.replace("browser:", "")
+      : targetGender === "female"
+      ? "Jenny (Natural Female)"
+      : "Guy (Natural Male)";
+    setActiveNarratorName(narratorLabel);
+
+    console.log(`[AudioPlayerBar] Segment ${index + 1}/${segments.length}:`, {
+      selectedVoice: targetVoice,
+      actualVoiceName: narratorLabel,
+      provider: serverVoice?.provider || (targetVoice.startsWith("browser:") ? "browser" : "microsoft"),
+      gender: targetGender,
+      rate,
+      snippet: currentSeg.text.substring(0, 40) + "..."
+    });
+
+    // SpeechSynthesis fallback that strictly honors requested voice
     const fallbackToSpeechSynthesis = () => {
       if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
       const utterance = new SpeechSynthesisUtterance(currentSeg.text);
-      const { voice, pitch: defaultPitch, rate: defaultRate, voiceName } = getNaturalBibleVoice(targetGender);
+      const resolved = getNaturalBibleVoice(targetGender, targetVoice);
 
-      if (voice) {
-        utterance.voice = voice;
+      if (resolved.voice) {
+        utterance.voice = resolved.voice;
       }
-      setActiveNarratorName(voiceName);
-      utterance.pitch = defaultPitch;
-      utterance.rate = (customRate !== undefined ? customRate : playbackRate) || defaultRate;
+      setActiveNarratorName(resolved.actualVoiceName);
+      utterance.pitch = resolved.pitch;
+      utterance.rate = (customRate !== undefined ? customRate : playbackRate) || resolved.rate;
+      utterance.volume = isMutedRef.current ? 0 : (volumeRef.current || 1.0);
+
+      console.log(`[AudioPlayerBar:SpeechSynthesis] Utterance ready:`, {
+        requestedVoice: targetVoice,
+        actualVoice: resolved.actualVoiceName,
+        fallbackUsed: resolved.fallbackUsed,
+        provider: resolved.provider,
+        volume: utterance.volume
+      });
 
       utterance.onend = () => {
         if (isPlayingRef.current) {
-          playSegment(index + 1, targetGender, customRate);
+          playSegment(index + 1, targetGender, customRate, targetVoice);
         }
       };
 
       utterance.onerror = (e) => {
         if (e.error === "canceled" || e.error === "interrupted") return;
         if (isPlayingRef.current) {
-          playSegment(index + 1, targetGender, customRate);
+          playSegment(index + 1, targetGender, customRate, targetVoice);
         }
       };
 
@@ -248,10 +396,16 @@ export const AudioPlayerBar: React.FC<AudioPlayerBarProps> = ({
       window.speechSynthesis.speak(utterance);
     };
 
-    try {
-      const ttsUrl = getMicrosoftTTSUrl(currentSeg.text, targetGender);
+    // If a browser voice was explicitly selected, bypass server TTS and speak directly
+    if (targetVoice.startsWith("browser:")) {
+      fallbackToSpeechSynthesis();
+      return;
+    }
 
-      // Reuse the same HTMLAudioElement instance for seamless continuous playback across mobile browsers
+    try {
+      const ttsUrl = getAudioTTSUrl(currentSeg.text, targetVoice, targetGender);
+
+      // Reuse the same HTMLAudioElement instance for seamless continuous playback
       let audio = audioRef.current;
       if (!audio) {
         audio = new Audio();
@@ -266,33 +420,43 @@ export const AudioPlayerBar: React.FC<AudioPlayerBarProps> = ({
       audio.onerror = null;
       audio.src = ttsUrl;
       audio.playbackRate = rate;
-
-      const narratorLabel = targetGender === "female" ? "Microsoft Jenny (Natural Female)" : "Microsoft Guy (Natural Male)";
-      setActiveNarratorName(narratorLabel);
+      audio.muted = isMutedRef.current;
+      audio.volume = isMutedRef.current ? 0 : (volumeRef.current || 1.0);
 
       audio.onended = () => {
         if (isPlayingRef.current) {
-          playSegment(index + 1, targetGender, customRate);
+          playSegment(index + 1, targetGender, customRate, targetVoice);
         }
       };
 
       audio.onerror = () => {
-        console.warn("Microsoft Neural Audio stream notice, switching to system synthesizer.");
+        console.warn(`[AudioPlayerBar] Server TTS notice for "${targetVoice}", switching to synthesizer.`);
         fallbackToSpeechSynthesis();
       };
 
       const playPromise = audio.play();
       if (playPromise !== undefined) {
-        playPromise.catch((e) => {
-          console.warn("Direct audio play notice:", e?.message);
-          fallbackToSpeechSynthesis();
-        });
+        playPromise
+          .then(() => {
+            setHasAutoplayBlock(false);
+          })
+          .catch((e) => {
+            if (e?.name === "AbortError") {
+              return;
+            }
+            if (e?.name === "NotAllowedError") {
+              console.warn("[AudioPlayerBar] Browser blocked autoplay audio. Click unmute/play to hear:", e);
+              setHasAutoplayBlock(true);
+            }
+            console.warn("[AudioPlayerBar] Audio play catch:", e?.name, e?.message);
+            fallbackToSpeechSynthesis();
+          });
       }
 
-      // Prefetch the next segment in the background so it plays seamlessly with zero pause
+      // Prefetch the next segment with the exact same voice
       if (index + 1 < segments.length) {
         const nextSeg = segments[index + 1];
-        const nextUrl = getMicrosoftTTSUrl(nextSeg.text, targetGender);
+        const nextUrl = getAudioTTSUrl(nextSeg.text, targetVoice, targetGender);
         fetch(nextUrl, { cache: "force-cache" }).catch(() => {});
       }
     } catch (e) {
@@ -342,6 +506,7 @@ export const AudioPlayerBar: React.FC<AudioPlayerBarProps> = ({
 
   // Handle Play / Pause
   const togglePlay = () => {
+    unlockAudio();
     if (isPlaying) {
       if (audioRef.current) {
         audioRef.current.pause();
@@ -352,18 +517,26 @@ export const AudioPlayerBar: React.FC<AudioPlayerBarProps> = ({
       stopKeepAlive();
       setIsPlaying(false);
       isPlayingRef.current = false;
+      currentTrack?.onPlaybackStateChange?.(false);
     } else {
+      currentTrack?.onPlaybackStateChange?.(true);
       if (isFinished || progress >= 100) {
         setProgress(0);
         setIsFinished(false);
         playSegment(0);
       } else if (audioRef.current && audioRef.current.paused && audioRef.current.src) {
-        audioRef.current.play().then(() => {
-          setIsPlaying(true);
-          isPlayingRef.current = true;
-        }).catch(() => {
-          playSegment(currentSegmentIndexRef.current);
-        });
+        audioRef.current.muted = isMutedRef.current;
+        audioRef.current.volume = isMutedRef.current ? 0 : (volumeRef.current || 1.0);
+        audioRef.current
+          .play()
+          .then(() => {
+            setIsPlaying(true);
+            isPlayingRef.current = true;
+            setHasAutoplayBlock(false);
+          })
+          .catch(() => {
+            playSegment(currentSegmentIndexRef.current);
+          });
       } else if (typeof window !== "undefined" && "speechSynthesis" in window && window.speechSynthesis.paused) {
         window.speechSynthesis.resume();
         startKeepAlive();
@@ -375,10 +548,121 @@ export const AudioPlayerBar: React.FC<AudioPlayerBarProps> = ({
     }
   };
 
+  const handleToggleMute = () => {
+    unlockAudio();
+    const nextMuted = !isMuted;
+    setIsMuted(nextMuted);
+    isMutedRef.current = nextMuted;
+    setSavedMuteState(nextMuted);
+
+    if (audioRef.current) {
+      audioRef.current.muted = nextMuted;
+      audioRef.current.volume = nextMuted ? 0 : (volumeRef.current || 1.0);
+      if (!nextMuted) {
+        setHasAutoplayBlock(false);
+        if (audioRef.current.paused && isPlayingRef.current) {
+          audioRef.current.play().catch((e) => {
+            console.warn("[AudioPlayerBar] Play on unmute catch:", e);
+          });
+        }
+      }
+    }
+
+    if (typeof window !== "undefined" && "speechSynthesis" in window) {
+      if (nextMuted) {
+        window.speechSynthesis.pause();
+      } else {
+        if (window.speechSynthesis.paused) {
+          window.speechSynthesis.resume();
+        }
+      }
+    }
+
+    // If audio was blocked or stalled while unmuting, restart active segment so sound immediately comes out
+    if (!nextMuted && (!isPlaying || hasAutoplayBlock)) {
+      setHasAutoplayBlock(false);
+      playSegment(currentSegmentIndexRef.current);
+    }
+  };
+
+  const handleVolumeChange = (newVolume: number) => {
+    const clamped = Math.max(0, Math.min(1, newVolume));
+    setVolume(clamped);
+    volumeRef.current = clamped;
+    setSavedAudioVolume(clamped);
+
+    if (clamped === 0) {
+      setIsMuted(true);
+      isMutedRef.current = true;
+      setSavedMuteState(true);
+      if (audioRef.current) {
+        audioRef.current.muted = true;
+        audioRef.current.volume = 0;
+      }
+    } else {
+      if (isMuted) {
+        setIsMuted(false);
+        isMutedRef.current = false;
+        setSavedMuteState(false);
+      }
+      if (audioRef.current) {
+        audioRef.current.muted = false;
+        audioRef.current.volume = clamped;
+        if (audioRef.current.paused && isPlayingRef.current) {
+          audioRef.current.play().catch(() => {});
+        }
+      }
+    }
+  };
+
+  const handleForceUnblockAndPlay = () => {
+    unlockAudio();
+    setHasAutoplayBlock(false);
+    setIsMuted(false);
+    isMutedRef.current = false;
+    setSavedMuteState(false);
+    if (audioRef.current) {
+      audioRef.current.muted = false;
+      audioRef.current.volume = volumeRef.current || 1.0;
+      audioRef.current
+        .play()
+        .then(() => {
+          setIsPlaying(true);
+          isPlayingRef.current = true;
+        })
+        .catch(() => {
+          playSegment(currentSegmentIndexRef.current);
+        });
+    } else {
+      playSegment(currentSegmentIndexRef.current);
+    }
+  };
+
+  const handleVoiceChange = (newVoiceId: string) => {
+    setSelectedVoiceId(newVoiceId);
+    setSavedVoiceId(newVoiceId);
+    const serverVoice = SERVER_VOICES.find((v) => v.id === newVoiceId);
+    let g = voiceGender;
+    if (serverVoice) {
+      g = serverVoice.gender;
+      setVoiceGender(g);
+      setActiveNarratorName(serverVoice.name);
+    }
+    console.log(`[AudioPlayerBar] Voice manually changed from player: "${newVoiceId}"`);
+    playSegment(currentSegmentIndexRef.current, g, undefined, newVoiceId);
+  };
+
   const handleGenderToggle = (newGender: VoiceGender) => {
     setVoiceGender(newGender);
     setSavedVoiceGender(newGender);
-    playSegment(currentSegmentIndexRef.current, newGender);
+    const newVoiceId = getSavedVoiceId();
+    setSelectedVoiceId(newVoiceId);
+    const serverVoice = SERVER_VOICES.find((v) => v.id === newVoiceId);
+    if (serverVoice) {
+      setActiveNarratorName(serverVoice.name);
+    }
+    console.log(`[AudioPlayerBar] Gender toggled to "${newGender}", active voice: "${newVoiceId}"`);
+    playSegment(currentSegmentIndexRef.current, newGender, undefined, newVoiceId);
   };
 
   const handleSpeedChange = () => {
@@ -412,6 +696,23 @@ export const AudioPlayerBar: React.FC<AudioPlayerBarProps> = ({
       id="global-audio-player"
       className="fixed bottom-16 md:bottom-5 left-4 right-4 md:left-72 md:right-8 z-40 bg-[#FDFCF9]/98 backdrop-blur-md border border-[#E5E0D5] rounded-3xl shadow-xl p-4 transition-all animate-slideUp space-y-2.5"
     >
+      {/* Autoplay unblock notification banner */}
+      {hasAutoplayBlock && (
+        <div
+          id="audio-autoplay-unblock-banner"
+          onClick={handleForceUnblockAndPlay}
+          className="w-full bg-amber-500 hover:bg-amber-600 text-white px-3.5 py-2.5 rounded-2xl text-xs font-bold flex items-center justify-between shadow-md cursor-pointer transition-colors"
+        >
+          <div className="flex items-center gap-2">
+            <VolumeX className="w-4 h-4 text-white animate-pulse shrink-0" />
+            <span>Sound paused by browser policy. Click anywhere to Unmute & Hear the Bible!</span>
+          </div>
+          <span className="px-2.5 py-1 bg-white text-amber-900 rounded-xl text-[11px] font-extrabold uppercase tracking-wide shrink-0 shadow-xs">
+            Unmute Now
+          </span>
+        </div>
+      )}
+
       {/* Progress bar */}
       <div className="w-full bg-[#E5E0D5]/60 h-1.5 rounded-full overflow-hidden cursor-pointer">
         <div
@@ -423,9 +724,26 @@ export const AudioPlayerBar: React.FC<AudioPlayerBarProps> = ({
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
         {/* Track Info & Voice / Bluetooth Indicators */}
         <div className="flex items-center gap-3 min-w-0">
-          <div className="w-10 h-10 rounded-2xl bg-[#C5A059] text-white flex items-center justify-center font-bold text-xs shrink-0 shadow-xs">
-            <Volume2 className="w-5 h-5 animate-pulse" />
-          </div>
+          <button
+            id="audio-left-mute-toggle"
+            onClick={handleToggleMute}
+            className={`w-10 h-10 rounded-2xl text-white flex items-center justify-center font-bold text-xs shrink-0 shadow-xs cursor-pointer transition-all ${
+              isMuted
+                ? "bg-rose-600 hover:bg-rose-700 ring-2 ring-rose-400/60 shadow-rose-600/30 animate-pulse"
+                : "bg-[#C5A059] hover:bg-[#B48F48]"
+            }`}
+            title={isMuted ? "Audio is Muted • Click to Unmute & Hear Sound" : "Audio Playing • Click to Mute"}
+          >
+            {isMuted ? (
+              <VolumeX className="w-5 h-5" />
+            ) : volume === 0 ? (
+              <VolumeX className="w-5 h-5" />
+            ) : volume < 0.5 ? (
+              <Volume1 className={`w-5 h-5 ${isPlaying ? "animate-pulse" : ""}`} />
+            ) : (
+              <Volume2 className={`w-5 h-5 ${isPlaying ? "animate-pulse" : ""}`} />
+            )}
+          </button>
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <h4 className="text-xs sm:text-sm font-serif font-bold text-[#2D2D2D] truncate">
@@ -538,9 +856,35 @@ export const AudioPlayerBar: React.FC<AudioPlayerBarProps> = ({
           </div>
         </div>
 
-        {/* Voice Gender Selector & Playback Controls */}
+        {/* Voice Selector & Playback Controls */}
         <div className="flex flex-wrap items-center justify-between lg:justify-end gap-2 sm:gap-3">
-          {/* Male / Female Voice Selector */}
+          {/* Narrator Voice Selector Dropdown */}
+          <div className="inline-flex items-center">
+            <select
+              id="audio-player-voice-select"
+              value={selectedVoiceId}
+              onChange={(e) => handleVoiceChange(e.target.value)}
+              className="bg-[#F9F7F2] hover:bg-white border border-[#E5E0D5] hover:border-[#C5A059] text-[#2D2D2D] rounded-xl px-2.5 py-1 text-[11px] font-semibold transition-all cursor-pointer focus:outline-none focus:ring-1 focus:ring-[#C5A059] max-w-[155px] sm:max-w-[200px] truncate shadow-2xs"
+              title="Select narrator voice"
+            >
+              <optgroup label="Microsoft Neural Voices">
+                {SERVER_VOICES.filter((v) => v.provider === "microsoft").map((v) => (
+                  <option key={v.id} value={v.id}>
+                    {v.name}
+                  </option>
+                ))}
+              </optgroup>
+              <optgroup label="Gemini AI Voices">
+                {SERVER_VOICES.filter((v) => v.provider === "gemini").map((v) => (
+                  <option key={v.id} value={v.id}>
+                    {v.name}
+                  </option>
+                ))}
+              </optgroup>
+            </select>
+          </div>
+
+          {/* Quick Male / Female Toggle */}
           <div className="inline-flex items-center p-0.5 bg-[#F9F7F2] border border-[#E5E0D5] rounded-xl text-[11px] font-semibold">
             <button
               onClick={() => handleGenderToggle("male")}
@@ -549,7 +893,7 @@ export const AudioPlayerBar: React.FC<AudioPlayerBarProps> = ({
                   ? "bg-[#C5A059] text-white shadow-2xs font-bold"
                   : "text-[#7A7468] hover:text-[#2D2D2D]"
               }`}
-              title="Warm, reverent male narrator voice (1% deeper)"
+              title="Warm, reverent male narrator voice"
             >
               Male
             </button>
@@ -605,6 +949,80 @@ export const AudioPlayerBar: React.FC<AudioPlayerBarProps> = ({
             >
               <RotateCw className="w-4 h-4" />
             </button>
+
+            {/* Dedicated UNMUTE / MUTE button */}
+            <button
+              id="audio-player-mute-btn"
+              onClick={handleToggleMute}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+                isMuted
+                  ? "bg-rose-600 hover:bg-rose-700 text-white shadow-md ring-2 ring-rose-400/50 animate-pulse"
+                  : "bg-[#F9F7F2] hover:bg-white text-[#7A7468] hover:text-[#2D2D2D] border border-[#E5E0D5]"
+              }`}
+              title={isMuted ? "Audio is Muted — Click to Unmute & Hear Sound" : "Mute Audio"}
+            >
+              {isMuted ? (
+                <>
+                  <VolumeX className="w-4 h-4 text-white" />
+                  <span className="text-[11px] font-extrabold uppercase tracking-wide">Unmute</span>
+                </>
+              ) : (
+                <>
+                  <Volume2 className="w-4 h-4 text-[#C5A059]" />
+                  <span className="hidden sm:inline text-[11px]">Mute</span>
+                </>
+              )}
+            </button>
+
+            {/* Volume Control Popover */}
+            <div className="relative inline-block">
+              <button
+                id="audio-volume-control-btn"
+                onClick={() => setShowVolumeSlider(!showVolumeSlider)}
+                className={`p-1.5 rounded-xl text-xs cursor-pointer transition-colors ${
+                  showVolumeSlider
+                    ? "bg-[#C5A059] text-white"
+                    : "text-[#7A7468] hover:text-[#C5A059] hover:bg-[#F9F7F2]"
+                }`}
+                title={`Volume: ${Math.round(isMuted ? 0 : volume * 100)}%`}
+              >
+                {isMuted || volume === 0 ? (
+                  <VolumeX className="w-4 h-4 text-rose-600" />
+                ) : volume < 0.5 ? (
+                  <Volume1 className="w-4 h-4" />
+                ) : (
+                  <Volume2 className="w-4 h-4" />
+                )}
+              </button>
+
+              {showVolumeSlider && (
+                <div className="absolute right-0 bottom-full mb-2 bg-white border border-[#E5E0D5] rounded-2xl shadow-xl p-3 z-50 flex items-center gap-2.5 w-48 animate-fadeIn">
+                  <button
+                    onClick={handleToggleMute}
+                    className="text-[#7A7468] hover:text-[#2D2D2D] cursor-pointer shrink-0"
+                    title={isMuted ? "Unmute" : "Mute"}
+                  >
+                    {isMuted || volume === 0 ? (
+                      <VolumeX className="w-4 h-4 text-rose-600" />
+                    ) : (
+                      <Volume2 className="w-4 h-4 text-[#C5A059]" />
+                    )}
+                  </button>
+                  <input
+                    type="range"
+                    min="0"
+                    max="1"
+                    step="0.05"
+                    value={isMuted ? 0 : volume}
+                    onChange={(e) => handleVolumeChange(parseFloat(e.target.value))}
+                    className="w-full h-1.5 bg-[#E5E0D5] accent-[#C5A059] rounded-lg cursor-pointer"
+                  />
+                  <span className="text-[10px] font-bold text-[#7A7468] w-7 text-right shrink-0">
+                    {Math.round(isMuted ? 0 : volume * 100)}%
+                  </span>
+                </div>
+              )}
+            </div>
 
             {/* Speed toggle */}
             <button

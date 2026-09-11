@@ -548,26 +548,55 @@ app.get("/api/health", (req, res) => {
   res.json({ status: "ok", timestamp: new Date().toISOString() });
 });
 
-// Microsoft Edge Neural Text-to-Speech Engine
-// Streams high-fidelity Microsoft Guy (Male) and Microsoft Jenny (Female) audio
+// Comprehensive Text-to-Speech Engine
+// Supports high-fidelity Microsoft Edge Neural voices and Gemini AI voices with seamless caching and fallback
 const ttsAudioCache = new Map<string, Buffer>();
-const MAX_TTS_CACHE_SIZE = 300;
+const MAX_TTS_CACHE_SIZE = 500;
+
+// Helper to wrap raw 24kHz 16-bit Mono PCM in a standard RIFF/WAVE header
+function pcmToWav(pcmBuffer: Buffer, sampleRate = 24000, channels = 1, bitsPerSample = 16): Buffer {
+  const byteRate = sampleRate * channels * (bitsPerSample / 8);
+  const blockAlign = channels * (bitsPerSample / 8);
+  const header = Buffer.alloc(44);
+
+  header.write("RIFF", 0);
+  header.writeUInt32LE(36 + pcmBuffer.length, 4);
+  header.write("WAVE", 8);
+  header.write("fmt ", 12);
+  header.writeUInt32LE(16, 16); // Subchunk1Size (16 for standard PCM)
+  header.writeUInt16LE(1, 20); // AudioFormat (1 for PCM)
+  header.writeUInt16LE(channels, 22);
+  header.writeUInt32LE(sampleRate, 24);
+  header.writeUInt32LE(byteRate, 28);
+  header.writeUInt16LE(blockAlign, 32);
+  header.writeUInt16LE(bitsPerSample, 34);
+  header.write("data", 36);
+  header.writeUInt32LE(pcmBuffer.length, 40);
+
+  return Buffer.concat([header, pcmBuffer]);
+}
 
 function sendAudioWithRange(
   req: express.Request,
   res: express.Response,
   audioBuffer: Buffer,
   selectedVoice: string,
-  isCached: boolean
+  isCached: boolean,
+  contentType: string = "audio/mpeg",
+  engineName: string = "Microsoft-Edge-Neural",
+  requestedVoice?: string,
+  fallbackUsed: boolean = false
 ) {
   const totalLength = audioBuffer.length;
   const range = req.headers.range;
 
-  res.setHeader("Content-Type", "audio/mpeg");
+  res.setHeader("Content-Type", contentType);
   res.setHeader("Accept-Ranges", "bytes");
   res.setHeader("Cache-Control", "public, max-age=86400, stale-while-revalidate=604800");
-  res.setHeader("X-Voice-Engine", isCached ? "Microsoft-Edge-Neural-Cached" : "Microsoft-Edge-Neural");
+  res.setHeader("X-Voice-Engine", isCached ? `${engineName}-Cached` : engineName);
   res.setHeader("X-Voice-Name", selectedVoice);
+  res.setHeader("X-Voice-Requested", requestedVoice || selectedVoice);
+  res.setHeader("X-Voice-Fallback", fallbackUsed ? "true" : "false");
 
   if (range) {
     const parts = range.replace(/bytes=/, "").split("-");
@@ -592,6 +621,52 @@ function sendAudioWithRange(
   return res.end(audioBuffer);
 }
 
+// List of verified Microsoft Edge Neural voices supported out of the box
+const VERIFIED_EDGE_VOICES = new Set([
+  "en-US-GuyNeural",
+  "en-US-ChristopherNeural",
+  "en-US-EricNeural",
+  "en-US-BrianNeural",
+  "en-GB-RyanNeural",
+  "en-US-JennyNeural",
+  "en-US-AriaNeural",
+  "en-US-MichelleNeural",
+  "en-GB-SoniaNeural",
+  "en-US-AvaNeural",
+  "en-US-EmmaNeural",
+  "en-US-RogerNeural",
+  "en-US-SteffanNeural",
+  "en-GB-LibbyNeural",
+  "en-CA-LiamNeural",
+  "en-AU-WilliamMultilingualNeural",
+]);
+
+// Endpoint returning available voices catalog
+app.get("/api/tts/voices", (req, res) => {
+  const hasGemini = !!process.env.GEMINI_API_KEY;
+  res.json({
+    status: "ok",
+    hasGemini,
+    voices: [
+      { id: "en-US-GuyNeural", name: "Guy (Microsoft Neural • Reverent US)", gender: "male", provider: "microsoft" },
+      { id: "en-US-ChristopherNeural", name: "Christopher (Microsoft Neural • Authoritative US)", gender: "male", provider: "microsoft" },
+      { id: "en-US-EricNeural", name: "Eric (Microsoft Neural • Calm & Gentle US)", gender: "male", provider: "microsoft" },
+      { id: "en-US-BrianNeural", name: "Brian (Microsoft Neural • Expressive US)", gender: "male", provider: "microsoft" },
+      { id: "en-GB-RyanNeural", name: "Ryan (Microsoft Neural • British Narrator)", gender: "male", provider: "microsoft" },
+      { id: "en-US-JennyNeural", name: "Jenny (Microsoft Neural • Reverent US)", gender: "female", provider: "microsoft" },
+      { id: "en-US-AriaNeural", name: "Aria (Microsoft Neural • Expressive US)", gender: "female", provider: "microsoft" },
+      { id: "en-US-MichelleNeural", name: "Michelle (Microsoft Neural • Gentle US)", gender: "female", provider: "microsoft" },
+      { id: "en-GB-SoniaNeural", name: "Sonia (Microsoft Neural • British Narrator)", gender: "female", provider: "microsoft" },
+      { id: "gemini:Charon", name: "Charon (Gemini AI • Deep Male)", gender: "male", provider: "gemini", available: hasGemini },
+      { id: "gemini:Puck", name: "Puck (Gemini AI • Clear Male)", gender: "male", provider: "gemini", available: hasGemini },
+      { id: "gemini:Fenrir", name: "Fenrir (Gemini AI • Resonant Male)", gender: "male", provider: "gemini", available: hasGemini },
+      { id: "gemini:Kore", name: "Kore (Gemini AI • Gentle Female)", gender: "female", provider: "gemini", available: hasGemini },
+      { id: "gemini:Aoede", name: "Aoede (Gemini AI • Expressive Female)", gender: "female", provider: "gemini", available: hasGemini },
+      { id: "gemini:Zephyr", name: "Zephyr (Gemini AI • Crisp Female)", gender: "female", provider: "gemini", available: hasGemini },
+    ],
+  });
+});
+
 app.get("/api/tts", async (req, res) => {
   let ttsInstance: MsEdgeTTS | null = null;
   let isClosed = false;
@@ -608,22 +683,92 @@ app.get("/api/tts", async (req, res) => {
   };
 
   try {
-    const rawText = (req.query.text as string || "").trim();
+    const rawText = ((req.query.text as string) || "").trim();
     if (!rawText) {
       return res.status(400).json({ error: "Text parameter is required" });
     }
 
-    const gender = (req.query.gender as string || "male").toLowerCase();
-    const requestedVoice = (req.query.voice as string || "").trim();
+    const gender = ((req.query.gender as string) || "male").toLowerCase();
+    const requestedVoice = ((req.query.voice as string) || "").trim();
+    const truncatedText = rawText.length > 2000 ? rawText.substring(0, 2000) : rawText;
 
-    // Default to studio-grade Microsoft Natural Neural voices
-    const selectedVoice = requestedVoice || (gender === "female" ? "en-US-JennyNeural" : "en-US-GuyNeural");
-    const truncatedText = rawText.length > 1800 ? rawText.substring(0, 1800) : rawText;
-    const cacheKey = `${selectedVoice}:${truncatedText}`;
+    // 1. Check if Gemini AI TTS is requested
+    const isGeminiRequested =
+      requestedVoice.toLowerCase().startsWith("gemini:") ||
+      ["puck", "charon", "kore", "fenrir", "zephyr", "aoede"].includes(requestedVoice.toLowerCase());
+
+    if (isGeminiRequested && process.env.GEMINI_API_KEY) {
+      const geminiVoiceName = requestedVoice.replace(/^gemini:/i, "") || (gender === "female" ? "Kore" : "Puck");
+      const geminiCacheKey = `gemini:${geminiVoiceName}:${truncatedText}`;
+
+      if (ttsAudioCache.has(geminiCacheKey)) {
+        const cached = ttsAudioCache.get(geminiCacheKey)!;
+        return sendAudioWithRange(req, res, cached, geminiVoiceName, true, "audio/wav", "Gemini-TTS", requestedVoice, false);
+      }
+
+      try {
+        const ai = getGeminiClient();
+        const geminiRes = await ai.models.generateContent({
+          model: "gemini-3.1-flash-tts-preview",
+          contents: [{ parts: [{ text: truncatedText }] }],
+          config: {
+            responseModalities: ["AUDIO"],
+            speechConfig: {
+              voiceConfig: {
+                prebuiltVoiceConfig: { voiceName: geminiVoiceName },
+              },
+            },
+          },
+        });
+
+        const b64Data = geminiRes.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+        if (b64Data) {
+          const rawPcm = Buffer.from(b64Data, "base64");
+          const wavBuffer = pcmToWav(rawPcm, 24000, 1, 16);
+
+          if (ttsAudioCache.size >= MAX_TTS_CACHE_SIZE) {
+            const firstKey = ttsAudioCache.keys().next().value;
+            if (firstKey) ttsAudioCache.delete(firstKey);
+          }
+          ttsAudioCache.set(geminiCacheKey, wavBuffer);
+
+          console.log(`[TTS:Gemini] Synthesized "${geminiVoiceName}", size=${wavBuffer.length} bytes`);
+          return sendAudioWithRange(req, res, wavBuffer, geminiVoiceName, false, "audio/wav", "Gemini-TTS", requestedVoice, false);
+        }
+      } catch (geminiErr: any) {
+        console.warn(`[TTS] Gemini TTS notice: ${geminiErr?.message || geminiErr}. Gracefully falling back to Microsoft Neural voice.`);
+        // Fall through to Microsoft Edge Neural TTS below
+      }
+    }
+
+    // 2. Microsoft Edge Neural Voice Synthesis
+    let selectedVoice = requestedVoice;
+    let fallbackUsed = false;
+
+    // Clean voice identifier if it has prefixes like "browser:"
+    if (selectedVoice.startsWith("browser:")) {
+      selectedVoice = selectedVoice.replace("browser:", "");
+    }
+
+    // If no voice specified or voice is not a direct valid Edge Neural voice, resolve cleanly
+    if (!selectedVoice || !VERIFIED_EDGE_VOICES.has(selectedVoice)) {
+      // Check if it's one of our known names without exact case
+      const matched = Array.from(VERIFIED_EDGE_VOICES).find(
+        (v) => v.toLowerCase() === selectedVoice.toLowerCase() || v.toLowerCase().includes(selectedVoice.toLowerCase())
+      );
+      if (matched) {
+        selectedVoice = matched;
+      } else {
+        selectedVoice = gender === "female" ? "en-US-JennyNeural" : "en-US-GuyNeural";
+        fallbackUsed = selectedVoice !== requestedVoice;
+      }
+    }
+
+    const cacheKey = `edge:${selectedVoice}:${truncatedText}`;
 
     if (ttsAudioCache.has(cacheKey)) {
       const cached = ttsAudioCache.get(cacheKey)!;
-      return sendAudioWithRange(req, res, cached, selectedVoice, true);
+      return sendAudioWithRange(req, res, cached, selectedVoice, true, "audio/mpeg", "Microsoft-Edge-Neural", requestedVoice, fallbackUsed);
     }
 
     ttsInstance = new MsEdgeTTS();
@@ -650,13 +795,42 @@ app.get("/api/tts", async (req, res) => {
       }
       ttsAudioCache.set(cacheKey, audioBuffer);
 
-      sendAudioWithRange(req, res, audioBuffer, selectedVoice, false);
+      console.log(`[TTS:Edge] Synthesized voice="${selectedVoice}", requested="${requestedVoice}", size=${audioBuffer.length} bytes, fallback=${fallbackUsed}`);
+      sendAudioWithRange(req, res, audioBuffer, selectedVoice, false, "audio/mpeg", "Microsoft-Edge-Neural", requestedVoice, fallbackUsed);
     });
 
-    audioStream.on("error", (err: any) => {
+    audioStream.on("error", async (err: any) => {
       clearTimeout(timeout);
       cleanup();
-      console.warn("Microsoft TTS stream notice:", err?.message || err);
+      console.warn(`[TTS] Edge TTS stream error for voice "${selectedVoice}":`, err?.message || err);
+
+      // If a non-default voice failed, retry with canonical fallback
+      const defaultVoice = gender === "female" ? "en-US-JennyNeural" : "en-US-GuyNeural";
+      if (selectedVoice !== defaultVoice) {
+        console.log(`[TTS] Retrying with canonical voice "${defaultVoice}"...`);
+        try {
+          const fallbackTts = new MsEdgeTTS();
+          await fallbackTts.setMetadata(defaultVoice, OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3);
+          const fallbackStream = fallbackTts.toStream(truncatedText).audioStream;
+          const fallbackChunks: Buffer[] = [];
+          fallbackStream.on("data", (c) => fallbackChunks.push(c));
+          fallbackStream.on("end", () => {
+            fallbackTts.close();
+            const fallbackBuf = Buffer.concat(fallbackChunks);
+            if (!res.headersSent) {
+              sendAudioWithRange(req, res, fallbackBuf, defaultVoice, false, "audio/mpeg", "Microsoft-Edge-Neural", requestedVoice, true);
+            }
+          });
+          fallbackStream.on("error", () => {
+            fallbackTts.close();
+            if (!res.headersSent) res.status(500).json({ error: "TTS failed after retry" });
+          });
+          return;
+        } catch (retryErr) {
+          // ignore
+        }
+      }
+
       if (!res.headersSent) {
         res.status(500).json({ error: "TTS generation failed", details: err?.message });
       }

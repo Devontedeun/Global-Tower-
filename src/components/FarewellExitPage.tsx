@@ -15,7 +15,12 @@ import {
   LogOut
 } from "lucide-react";
 import { Logo } from "./Logo";
-import { getMicrosoftTTSUrl } from "../lib/audioVoiceHelper";
+import {
+  getAudioTTSUrl,
+  getNaturalBibleVoice,
+  getSavedVoiceGender,
+  getSavedVoiceId
+} from "../lib/audioVoiceHelper";
 
 export interface FarewellUser {
   name: string;
@@ -155,6 +160,9 @@ export const FarewellExitPage: React.FC<FarewellExitPageProps> = ({
       return;
     }
 
+    const savedGender = getSavedVoiceGender();
+    const savedVoiceId = getSavedVoiceId();
+
     const fallbackToSpeechSynthesis = () => {
       if (typeof window === "undefined" || !("speechSynthesis" in window)) {
         setIsSpeaking(false);
@@ -162,26 +170,16 @@ export const FarewellExitPage: React.FC<FarewellExitPageProps> = ({
       }
       try {
         const utterance = new SpeechSynthesisUtterance(scripture.spokenText);
+        const resolved = getNaturalBibleVoice(savedGender, savedVoiceId);
+        if (resolved.voice) utterance.voice = resolved.voice;
         utterance.rate = 0.88;
-        utterance.pitch = 0.96;
+        utterance.pitch = resolved.pitch || 0.96;
 
-        const voices = window.speechSynthesis.getVoices();
-        const preferred =
-          voices.find(
-            (v) =>
-              v.lang.startsWith("en") &&
-              (v.name.includes("Microsoft") || v.name.includes("Natural")) &&
-              !v.name.toLowerCase().includes("daniel")
-          ) ||
-          voices.find(
-            (v) =>
-              v.lang.startsWith("en") &&
-              (v.name.includes("Google") || v.name.includes("Jenny") || v.name.includes("Guy")) &&
-              !v.name.toLowerCase().includes("daniel")
-          ) ||
-          voices.find((v) => v.lang.startsWith("en") && !v.name.toLowerCase().includes("daniel"));
-
-        if (preferred) utterance.voice = preferred;
+        console.log("[FarewellExitPage:SpeechSynthesis] Utterance active:", {
+          requestedVoice: savedVoiceId,
+          actualVoice: resolved.actualVoiceName,
+          fallbackUsed: resolved.fallbackUsed
+        });
 
         utterance.onstart = () => setIsSpeaking(true);
         utterance.onend = () => setIsSpeaking(false);
@@ -194,8 +192,13 @@ export const FarewellExitPage: React.FC<FarewellExitPageProps> = ({
       }
     };
 
+    if (savedVoiceId.startsWith("browser:")) {
+      fallbackToSpeechSynthesis();
+      return;
+    }
+
     try {
-      const ttsUrl = getMicrosoftTTSUrl(scripture.spokenText, "female");
+      const ttsUrl = getAudioTTSUrl(scripture.spokenText, savedVoiceId, savedGender);
       const audio = new Audio(ttsUrl);
       audioRef.current = audio;
       audio.onplay = () => setIsSpeaking(true);

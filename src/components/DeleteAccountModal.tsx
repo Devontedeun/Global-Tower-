@@ -20,7 +20,12 @@ import {
 import { UserProfile } from "../types";
 import { useAuth } from "../lib/AuthContext";
 import { UserDataService } from "../lib/userDataService";
-import { getMicrosoftTTSUrl } from "../lib/audioVoiceHelper";
+import {
+  getAudioTTSUrl,
+  getNaturalBibleVoice,
+  getSavedVoiceGender,
+  getSavedVoiceId
+} from "../lib/audioVoiceHelper";
 
 interface DeleteAccountModalProps {
   isOpen: boolean;
@@ -233,6 +238,9 @@ export const DeleteAccountModal: React.FC<DeleteAccountModalProps> = ({
       return;
     }
 
+    const savedGender = getSavedVoiceGender();
+    const savedVoiceId = getSavedVoiceId();
+
     const fallbackToSpeechSynthesis = () => {
       if (typeof window === "undefined" || !("speechSynthesis" in window)) {
         setIsSpeaking(false);
@@ -242,28 +250,18 @@ export const DeleteAccountModal: React.FC<DeleteAccountModalProps> = ({
 
       try {
         const utterance = new SpeechSynthesisUtterance(scriptureToSpeak.spokenText);
-        utterance.rate = 0.88; // Reverent, gentle, calm pacing
-        utterance.pitch = 0.96; // Warm and soothing
-
-        const voices = window.speechSynthesis.getVoices();
-        const preferred =
-          voices.find(
-            (v) =>
-              v.lang.startsWith("en") &&
-              (v.name.includes("Microsoft") || v.name.includes("Natural")) &&
-              !v.name.toLowerCase().includes("daniel")
-          ) ||
-          voices.find(
-            (v) =>
-              v.lang.startsWith("en") &&
-              (v.name.includes("Google") || v.name.includes("Jenny") || v.name.includes("Guy")) &&
-              !v.name.toLowerCase().includes("daniel")
-          ) ||
-          voices.find((v) => v.lang.startsWith("en") && !v.name.toLowerCase().includes("daniel"));
-
-        if (preferred) {
-          utterance.voice = preferred;
+        const resolved = getNaturalBibleVoice(savedGender, savedVoiceId);
+        if (resolved.voice) {
+          utterance.voice = resolved.voice;
         }
+        utterance.rate = 0.88; // Reverent, gentle, calm pacing
+        utterance.pitch = resolved.pitch || 0.96;
+
+        console.log("[DeleteAccountModal:SpeechSynthesis] Utterance active:", {
+          requestedVoice: savedVoiceId,
+          actualVoice: resolved.actualVoiceName,
+          fallbackUsed: resolved.fallbackUsed
+        });
 
         utterance.onstart = () => {
           setIsSpeaking(true);
@@ -287,8 +285,13 @@ export const DeleteAccountModal: React.FC<DeleteAccountModalProps> = ({
       }
     };
 
+    if (savedVoiceId.startsWith("browser:")) {
+      fallbackToSpeechSynthesis();
+      return;
+    }
+
     try {
-      const ttsUrl = getMicrosoftTTSUrl(scriptureToSpeak.spokenText, "female");
+      const ttsUrl = getAudioTTSUrl(scriptureToSpeak.spokenText, savedVoiceId, savedGender);
       const audio = new Audio(ttsUrl);
       audioRef.current = audio;
       audio.onplay = () => setIsSpeaking(true);

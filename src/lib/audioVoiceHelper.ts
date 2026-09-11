@@ -12,7 +12,133 @@ export interface NarratorVoiceConfig {
   voiceName: string;
 }
 
-const GENDER_STORAGE_KEY = "gtc_narrator_voice_gender";
+export interface VoiceOption {
+  id: string; // e.g. "en-US-GuyNeural", "en-US-ChristopherNeural", "gemini:Puck", "browser:Samantha"
+  name: string; // Display label
+  gender: VoiceGender;
+  provider: "microsoft" | "gemini" | "browser";
+  description?: string;
+  isDefault?: boolean;
+}
+
+export const GENDER_STORAGE_KEY = "gtc_narrator_voice_gender";
+export const VOICE_STORAGE_KEY = "gtc_selected_narrator_voice";
+
+// Comprehensive Catalog of High-Quality Server Voices
+export const SERVER_VOICES: VoiceOption[] = [
+  // Microsoft Edge Neural Voices (Male)
+  {
+    id: "en-US-GuyNeural",
+    name: "Guy (Microsoft Neural • Reverent US)",
+    gender: "male",
+    provider: "microsoft",
+    description: "Deep, warm, mature narrator — reverent scripture tone",
+    isDefault: true,
+  },
+  {
+    id: "en-US-ChristopherNeural",
+    name: "Christopher (Microsoft Neural • Authoritative US)",
+    gender: "male",
+    provider: "microsoft",
+    description: "Clear, resonant, and dignified delivery",
+  },
+  {
+    id: "en-US-EricNeural",
+    name: "Eric (Microsoft Neural • Calm & Gentle US)",
+    gender: "male",
+    provider: "microsoft",
+    description: "Soft, contemplative delivery for devotional meditation",
+  },
+  {
+    id: "en-US-BrianNeural",
+    name: "Brian (Microsoft Neural • Expressive US)",
+    gender: "male",
+    provider: "microsoft",
+    description: "Articulate and engaging American narrator",
+  },
+  {
+    id: "en-GB-RyanNeural",
+    name: "Ryan (Microsoft Neural • British Narrator)",
+    gender: "male",
+    provider: "microsoft",
+    description: "Distinguished British classical cathedral cadence",
+  },
+
+  // Microsoft Edge Neural Voices (Female)
+  {
+    id: "en-US-JennyNeural",
+    name: "Jenny (Microsoft Neural • Reverent US)",
+    gender: "female",
+    provider: "microsoft",
+    description: "Warm, clear, and reverent female scripture reader",
+    isDefault: true,
+  },
+  {
+    id: "en-US-AriaNeural",
+    name: "Aria (Microsoft Neural • Expressive US)",
+    gender: "female",
+    provider: "microsoft",
+    description: "Vibrant, poetic, lyrical narrator",
+  },
+  {
+    id: "en-US-MichelleNeural",
+    name: "Michelle (Microsoft Neural • Gentle US)",
+    gender: "female",
+    provider: "microsoft",
+    description: "Gentle, peaceful, and comforting cadence",
+  },
+  {
+    id: "en-GB-SoniaNeural",
+    name: "Sonia (Microsoft Neural • British Narrator)",
+    gender: "female",
+    provider: "microsoft",
+    description: "Refined British female narrative delivery",
+  },
+
+  // Gemini AI Voices (Server-side Studio AI)
+  {
+    id: "gemini:Charon",
+    name: "Charon (Gemini AI • Deep Male)",
+    gender: "male",
+    provider: "gemini",
+    description: "Solemn, low-frequency AI-synthesized narrator",
+  },
+  {
+    id: "gemini:Puck",
+    name: "Puck (Gemini AI • Clear Male)",
+    gender: "male",
+    provider: "gemini",
+    description: "Crisp, articulated modern AI narrator",
+  },
+  {
+    id: "gemini:Fenrir",
+    name: "Fenrir (Gemini AI • Resonant Male)",
+    gender: "male",
+    provider: "gemini",
+    description: "Rich and deep AI timber",
+  },
+  {
+    id: "gemini:Kore",
+    name: "Kore (Gemini AI • Gentle Female)",
+    gender: "female",
+    provider: "gemini",
+    description: "Soothing and peaceful AI narrator",
+  },
+  {
+    id: "gemini:Aoede",
+    name: "Aoede (Gemini AI • Expressive Female)",
+    gender: "female",
+    provider: "gemini",
+    description: "Melodic, dynamic female AI cadence",
+  },
+  {
+    id: "gemini:Zephyr",
+    name: "Zephyr (Gemini AI • Crisp Female)",
+    gender: "female",
+    provider: "gemini",
+    description: "Clear and precise modern female AI delivery",
+  },
+];
 
 export function getSavedVoiceGender(): VoiceGender {
   if (typeof window === "undefined") return "male";
@@ -29,12 +155,177 @@ export function setSavedVoiceGender(gender: VoiceGender) {
   if (typeof window === "undefined") return;
   try {
     localStorage.setItem(GENDER_STORAGE_KEY, gender);
+
+    // Check if the currently saved voice belongs to this gender
+    const currentVoiceId = getSavedVoiceId();
+    const currentVoice = SERVER_VOICES.find((v) => v.id === currentVoiceId);
+    if (currentVoice && currentVoice.gender !== gender) {
+      const defaultVoice = gender === "female" ? "en-US-JennyNeural" : "en-US-GuyNeural";
+      localStorage.setItem(VOICE_STORAGE_KEY, defaultVoice);
+      console.log(`[AudioVoiceHelper] Gender changed to "${gender}", updated default voice to "${defaultVoice}"`);
+      window.dispatchEvent(
+        new CustomEvent("gtc_voice_changed", {
+          detail: { voiceId: defaultVoice, gender }
+        })
+      );
+    }
   } catch (e) {
     // ignore
   }
 }
 
-// Top natural, warm, mature voice profiles with Microsoft Voices prioritized first
+/**
+ * Retrieve the saved voice ID from localStorage.
+ * Restores seamlessly after page reload.
+ */
+export function getSavedVoiceId(): string {
+  if (typeof window === "undefined") return "en-US-GuyNeural";
+  try {
+    const saved = localStorage.getItem(VOICE_STORAGE_KEY);
+    if (saved && saved.trim()) {
+      return saved.trim();
+    }
+  } catch (e) {
+    // fallback
+  }
+  const gender = getSavedVoiceGender();
+  return gender === "female" ? "en-US-JennyNeural" : "en-US-GuyNeural";
+}
+
+/**
+ * Persist the selected voice ID to localStorage and notify all active listeners.
+ */
+export function setSavedVoiceId(voiceId: string) {
+  if (typeof window === "undefined" || !voiceId) return;
+  try {
+    localStorage.setItem(VOICE_STORAGE_KEY, voiceId);
+
+    // If it's a known server voice, align saved gender as well
+    const serverVoice = SERVER_VOICES.find((v) => v.id === voiceId);
+    let activeGender = getSavedVoiceGender();
+    if (serverVoice) {
+      activeGender = serverVoice.gender;
+      localStorage.setItem(GENDER_STORAGE_KEY, activeGender);
+    }
+
+    console.log(`[AudioVoiceHelper] Voice persisted to localStorage: id="${voiceId}", gender="${activeGender}"`);
+
+    window.dispatchEvent(
+      new CustomEvent("gtc_voice_changed", {
+        detail: { voiceId, gender: activeGender }
+      })
+    );
+  } catch (e) {
+    console.warn("[AudioVoiceHelper] Failed to save voice to localStorage:", e);
+  }
+}
+
+// -------------------------------------------------------------
+// Persistent Audio Mute & Volume Management
+// -------------------------------------------------------------
+export const MUTE_STORAGE_KEY = "gtc_audio_is_muted";
+export const VOLUME_STORAGE_KEY = "gtc_audio_volume";
+
+export function getSavedMuteState(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    const saved = localStorage.getItem(MUTE_STORAGE_KEY);
+    return saved === "true";
+  } catch (e) {
+    return false;
+  }
+}
+
+export function setSavedMuteState(isMuted: boolean) {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(MUTE_STORAGE_KEY, String(isMuted));
+    console.log(`[AudioVoiceHelper] Mute state updated: isMuted=${isMuted}`);
+    window.dispatchEvent(
+      new CustomEvent("gtc_audio_mute_changed", {
+        detail: { isMuted }
+      })
+    );
+  } catch (e) {
+    console.warn("[AudioVoiceHelper] Failed to persist mute state:", e);
+  }
+}
+
+export function getSavedAudioVolume(): number {
+  if (typeof window === "undefined") return 1.0;
+  try {
+    const saved = localStorage.getItem(VOLUME_STORAGE_KEY);
+    if (saved !== null) {
+      const parsed = parseFloat(saved);
+      if (!isNaN(parsed) && parsed >= 0 && parsed <= 1) {
+        return parsed;
+      }
+    }
+  } catch (e) {
+    // fallback
+  }
+  return 1.0;
+}
+
+export function setSavedAudioVolume(volume: number) {
+  if (typeof window === "undefined") return;
+  try {
+    const clamped = Math.max(0, Math.min(1, volume));
+    localStorage.setItem(VOLUME_STORAGE_KEY, String(clamped));
+    window.dispatchEvent(
+      new CustomEvent("gtc_audio_volume_changed", {
+        detail: { volume: clamped }
+      })
+    );
+  } catch (e) {
+    // ignore
+  }
+}
+
+// -------------------------------------------------------------
+// AudioContext & Hardware Unlocker (Guarantees Sound Output)
+// -------------------------------------------------------------
+let sharedAudioCtx: AudioContext | null = null;
+
+export function unlockAudio(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+    if (AudioCtx) {
+      if (!sharedAudioCtx) {
+        sharedAudioCtx = new AudioCtx();
+      }
+      if (sharedAudioCtx.state === "suspended") {
+        sharedAudioCtx.resume().catch(() => {});
+      }
+      // Play brief silent micro-buffer to satisfy mobile/desktop autoplay policies
+      try {
+        const buffer = sharedAudioCtx.createBuffer(1, 1, 22050);
+        const source = sharedAudioCtx.createBufferSource();
+        source.buffer = buffer;
+        source.connect(sharedAudioCtx.destination);
+        source.start(0);
+      } catch (e) {
+        // ignore buffer error
+      }
+    }
+
+    if ("speechSynthesis" in window) {
+      // Resume if paused
+      if (window.speechSynthesis.paused) {
+        window.speechSynthesis.resume();
+      }
+    }
+
+    console.log("[AudioVoiceHelper] Audio pipeline unlocked on user gesture.");
+    return true;
+  } catch (e) {
+    console.warn("[AudioVoiceHelper] Audio unlock exception:", e);
+    return false;
+  }
+}
+
+// Banned robotic voice names in browser SpeechSynthesis
 export const BANNED_VOICE_NAMES = [
   "daniel",
   "alex",
@@ -54,7 +345,7 @@ export const BANNED_VOICE_NAMES = [
   "ralph"
 ];
 
-const PREFERRED_MALE_VOICES = [
+export const PREFERRED_MALE_VOICES = [
   "Microsoft Guy Online (Natural)",
   "Microsoft Christopher Online (Natural)",
   "Microsoft Eric Online (Natural)",
@@ -75,7 +366,7 @@ const PREFERRED_MALE_VOICES = [
   "Google US English"
 ];
 
-const PREFERRED_FEMALE_VOICES = [
+export const PREFERRED_FEMALE_VOICES = [
   "Microsoft Jenny Online (Natural)",
   "Microsoft Aria Online (Natural)",
   "Microsoft Sonia Online (Natural)",
@@ -96,150 +387,193 @@ const PREFERRED_FEMALE_VOICES = [
 ];
 
 /**
- * Returns a direct URL to the Microsoft Edge Neural Audio stream.
- * Produces studio-grade natural human speech.
+ * Returns a direct URL to the Server TTS endpoint (/api/tts).
+ * Properly passes the selected voice ID so the server synthesizes the EXACT requested voice.
  */
-export function getMicrosoftTTSUrl(text: string, gender: VoiceGender = "male"): string {
+export function getAudioTTSUrl(text: string, voiceId?: string, gender?: VoiceGender): string {
   const clean = text.trim();
-  const voice = gender === "female" ? "en-US-JennyNeural" : "en-US-GuyNeural";
-  return `/api/tts?voice=${encodeURIComponent(voice)}&gender=${encodeURIComponent(gender)}&text=${encodeURIComponent(clean)}`;
+  const activeGender = gender || getSavedVoiceGender();
+  const activeVoiceId = voiceId || getSavedVoiceId();
+
+  console.log(`[AudioTTS URL] Requesting TTS stream:`, {
+    selectedVoice: activeVoiceId,
+    gender: activeGender,
+    textLength: clean.length,
+    snippet: clean.substring(0, 40) + "..."
+  });
+
+  return `/api/tts?voice=${encodeURIComponent(activeVoiceId)}&gender=${encodeURIComponent(activeGender)}&text=${encodeURIComponent(clean)}`;
 }
 
-export function getNaturalBibleVoice(genderParam?: VoiceGender): NarratorVoiceConfig {
+/**
+ * Alias for getAudioTTSUrl to maintain compatibility across legacy callers.
+ */
+export function getMicrosoftTTSUrl(text: string, genderOrVoice?: VoiceGender | string): string {
+  if (genderOrVoice === "male" || genderOrVoice === "female") {
+    const savedVoiceId = getSavedVoiceId();
+    const savedGender = getSavedVoiceGender();
+    // If the saved voice matches the requested gender, use the saved voice
+    const targetVoice = (savedGender === genderOrVoice)
+      ? savedVoiceId
+      : (genderOrVoice === "female" ? "en-US-JennyNeural" : "en-US-GuyNeural");
+    return getAudioTTSUrl(text, targetVoice, genderOrVoice);
+  }
+  return getAudioTTSUrl(text, genderOrVoice);
+}
+
+/**
+ * Resolves the requested voice in browser SpeechSynthesis at runtime.
+ * Explicitly enumerates available voices and finds the requested voice.
+ * Never silently defaults without clear diagnostic logging.
+ */
+export function getNaturalBibleVoice(
+  genderParam?: VoiceGender,
+  requestedVoiceId?: string
+): NarratorVoiceConfig & { requestedVoice: string; actualVoiceName: string; fallbackUsed: boolean; provider: string } {
   const gender: VoiceGender = genderParam || getSavedVoiceGender();
+  const rawTargetVoiceId = requestedVoiceId || getSavedVoiceId();
+
+  const isBrowserVoice = rawTargetVoiceId.startsWith("browser:");
+  const searchName = isBrowserVoice ? rawTargetVoiceId.replace("browser:", "") : rawTargetVoiceId;
 
   if (typeof window === "undefined" || !("speechSynthesis" in window)) {
+    console.warn(`[SpeechSynthesis] window.speechSynthesis unavailable in this environment. Requested: "${rawTargetVoiceId}"`);
     return {
       voice: null,
       pitch: gender === "male" ? 0.94 : 1.02,
       rate: 0.94,
       gender,
-      voiceName: gender === "male" ? "Microsoft Guy (Natural Male)" : "Microsoft Jenny (Natural Female)"
+      voiceName: gender === "male" ? "Guy (Natural Male)" : "Jenny (Natural Female)",
+      requestedVoice: rawTargetVoiceId,
+      actualVoiceName: "None (SpeechSynthesis unavailable)",
+      fallbackUsed: true,
+      provider: "none"
     };
   }
 
   const voices = window.speechSynthesis.getVoices();
   if (!voices || voices.length === 0) {
+    console.warn(`[SpeechSynthesis] No voices enumerated by browser yet. Requested: "${rawTargetVoiceId}"`);
     return {
       voice: null,
       pitch: gender === "male" ? 0.94 : 1.02,
       rate: 0.94,
       gender,
-      voiceName: gender === "male" ? "Microsoft Guy (Natural Male)" : "Microsoft Jenny (Natural Female)"
+      voiceName: gender === "male" ? "Guy (Natural Male)" : "Jenny (Natural Female)",
+      requestedVoice: rawTargetVoiceId,
+      actualVoiceName: "None (Empty voice list)",
+      fallbackUsed: true,
+      provider: "none"
     };
   }
 
-  // Filter out unwanted / robotic voices (e.g. Daniel, Fred)
+  // Filter out unwanted / robotic voices
   const validVoices = voices.filter((v) => {
     const lower = (v.name + " " + v.voiceURI).toLowerCase();
     return !BANNED_VOICE_NAMES.some((banned) => lower.includes(banned));
   });
-
   const voicePool = validVoices.length > 0 ? validVoices : voices;
 
-  // 1. Strict priority: Search for Microsoft natural voices first
-  const msVoice = voicePool.find((v) => {
-    const lower = (v.name + " " + v.voiceURI).toLowerCase();
-    if (!lower.includes("microsoft")) return false;
-    if (gender === "male") {
-      return (
-        lower.includes("guy") ||
-        lower.includes("christopher") ||
-        lower.includes("eric") ||
-        lower.includes("ryan") ||
-        lower.includes("david") ||
-        lower.includes("mark") ||
-        lower.includes("george") ||
-        lower.includes("male")
-      );
-    } else {
-      return (
-        lower.includes("jenny") ||
-        lower.includes("aria") ||
-        lower.includes("sonia") ||
-        lower.includes("libby") ||
-        lower.includes("zira") ||
-        lower.includes("michelle") ||
-        lower.includes("female")
-      );
-    }
-  });
+  // 1. Direct match by URI or exact name
+  const exactMatch = voicePool.find(
+    (v) =>
+      v.voiceURI === searchName ||
+      v.name === searchName ||
+      v.voiceURI.toLowerCase() === searchName.toLowerCase() ||
+      v.name.toLowerCase() === searchName.toLowerCase()
+  );
 
-  if (msVoice) {
+  if (exactMatch) {
+    console.log(`[SpeechSynthesis] Requested voice "${rawTargetVoiceId}" FOUND:`, {
+      name: exactMatch.name,
+      lang: exactMatch.lang,
+      voiceURI: exactMatch.voiceURI,
+      fallbackUsed: false
+    });
     return {
-      voice: msVoice,
-      rate: gender === "male" ? 0.94 : 0.95,
+      voice: exactMatch,
       pitch: gender === "male" ? 0.94 : 1.02,
+      rate: 0.94,
       gender,
-      voiceName: msVoice.name
+      voiceName: exactMatch.name,
+      requestedVoice: rawTargetVoiceId,
+      actualVoiceName: exactMatch.name,
+      fallbackUsed: false,
+      provider: "browser"
     };
   }
 
-  // Any Microsoft voice in the preferred gender
-  const anyMs = voicePool.find((v) => {
-    const lower = (v.name + " " + v.voiceURI).toLowerCase();
-    return lower.includes("microsoft");
-  });
-  if (anyMs) {
-    return {
-      voice: anyMs,
-      rate: gender === "male" ? 0.94 : 0.95,
-      pitch: gender === "male" ? 0.94 : 1.02,
-      gender,
-      voiceName: anyMs.name
-    };
-  }
+  // 2. Partial match on voice name (e.g. if user selected "en-US-ChristopherNeural" or "Christopher")
+  const cleanKeyword = searchName
+    .replace(/^(en-US-|en-GB-|Microsoft |Google |Online \(Natural\)|Neural)/gi, "")
+    .trim()
+    .toLowerCase();
 
-  const preferredList = gender === "male" ? PREFERRED_MALE_VOICES : PREFERRED_FEMALE_VOICES;
-
-  // 2. Check exact or partial matches in the preferred natural list (all non-banned)
-  for (const name of preferredList) {
-    const found = voicePool.find((v) =>
-      v.name.toLowerCase().includes(name.toLowerCase()) ||
-      v.voiceURI.toLowerCase().includes(name.toLowerCase())
+  if (cleanKeyword.length >= 3) {
+    const keywordMatch = voicePool.find(
+      (v) => v.name.toLowerCase().includes(cleanKeyword) || v.voiceURI.toLowerCase().includes(cleanKeyword)
     );
-    if (found) {
+    if (keywordMatch) {
+      console.log(`[SpeechSynthesis] Requested voice "${rawTargetVoiceId}" matched by keyword "${cleanKeyword}":`, {
+        name: keywordMatch.name,
+        lang: keywordMatch.lang,
+        fallbackUsed: false
+      });
       return {
-        voice: found,
-        rate: gender === "male" ? 0.94 : 0.95,
+        voice: keywordMatch,
         pitch: gender === "male" ? 0.94 : 1.02,
+        rate: 0.94,
         gender,
-        voiceName: found.name
+        voiceName: keywordMatch.name,
+        requestedVoice: rawTargetVoiceId,
+        actualVoiceName: keywordMatch.name,
+        fallbackUsed: false,
+        provider: "browser"
       };
     }
   }
 
-  // 3. Gender heuristic based on voice name keywords (excluding banned voices)
-  const genderKeywords = gender === "male"
-    ? ["male", "guy", "man", "david", "george", "christopher", "ryan", "eric"]
-    : ["female", "woman", "girl", "zira", "samantha", "victoria", "karen", "aria", "jenny"];
+  // 3. Fallback: select best voice for gender
+  const msVoices = voicePool.filter(
+    (v) => v.name.toLowerCase().includes("microsoft") || v.voiceURI.toLowerCase().includes("microsoft")
+  );
+  const poolToUse = msVoices.length > 0 ? msVoices : voicePool;
 
-  const matchedByKeyword = voicePool.find((v) => {
-    if (!v.lang.startsWith("en")) return false;
-    const nameLower = v.name.toLowerCase();
-    return genderKeywords.some((kw) => nameLower.includes(kw));
+  const fallbackMatch =
+    poolToUse.find((v) => {
+      const lower = (v.name + " " + v.voiceURI).toLowerCase();
+      if (gender === "male") {
+        return (
+          lower.includes("guy") ||
+          lower.includes("christopher") ||
+          lower.includes("eric") ||
+          lower.includes("david") ||
+          lower.includes("male")
+        );
+      } else {
+        return lower.includes("jenny") || lower.includes("aria") || lower.includes("zira") || lower.includes("female");
+      }
+    }) ||
+    poolToUse.find((v) => v.lang.startsWith("en")) ||
+    poolToUse[0];
+
+  console.warn(`[SpeechSynthesis] Requested voice "${rawTargetVoiceId}" NOT found in browser voices. Fallback used:`, {
+    requestedVoice: rawTargetVoiceId,
+    fallbackVoice: fallbackMatch?.name || "System default",
+    lang: fallbackMatch?.lang,
+    fallbackUsed: true
   });
 
-  if (matchedByKeyword) {
-    return {
-      voice: matchedByKeyword,
-      rate: gender === "male" ? 0.94 : 0.95,
-      pitch: gender === "male" ? 0.94 : 1.02,
-      gender,
-      voiceName: matchedByKeyword.name
-    };
-  }
-
-  // 4. Any English voice fallback (still excluding banned voices)
-  const anyEnglish = voicePool.find((v) => v.lang.startsWith("en"));
-  const chosen = anyEnglish || voicePool[0];
-
   return {
-    voice: chosen || null,
-    rate: gender === "male" ? 0.93 : 0.95,
-    pitch: gender === "male" ? 0.92 : 1.04,
+    voice: fallbackMatch || null,
+    pitch: gender === "male" ? 0.94 : 1.02,
+    rate: 0.94,
     gender,
-    voiceName: chosen ? chosen.name : (gender === "male" ? "Microsoft Guy (Natural Male)" : "Microsoft Jenny (Natural Female)")
+    voiceName: fallbackMatch ? fallbackMatch.name : (gender === "male" ? "Guy (Natural Male)" : "Jenny (Natural Female)"),
+    requestedVoice: rawTargetVoiceId,
+    actualVoiceName: fallbackMatch ? fallbackMatch.name : "System Default",
+    fallbackUsed: true,
+    provider: "browser"
   };
 }
 
