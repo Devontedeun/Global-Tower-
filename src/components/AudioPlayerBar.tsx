@@ -17,7 +17,10 @@ import {
   Bluetooth,
   Headphones,
   Check,
-  ChevronDown
+  ChevronDown,
+  FileText,
+  Save,
+  CheckCircle2
 } from "lucide-react";
 import {
   getNaturalBibleVoice,
@@ -37,7 +40,8 @@ import {
   VoiceOption
 } from "../lib/audioVoiceHelper";
 import { bluetoothAudioService, AudioOutputDevice } from "../lib/bluetoothAudioService";
-import { VoiceGender } from "../types";
+import { Storage } from "../lib/storage";
+import { VoiceGender, StudyNote } from "../types";
 
 export interface AudioTrack {
   id: string;
@@ -153,6 +157,48 @@ export const AudioPlayerBar: React.FC<AudioPlayerBarProps> = ({
   const [volume, setVolume] = useState<number>(() => getSavedAudioVolume());
   const [showVolumeSlider, setShowVolumeSlider] = useState(false);
   const [hasAutoplayBlock, setHasAutoplayBlock] = useState(false);
+  const [showNotePopover, setShowNotePopover] = useState(false);
+  const [noteText, setNoteText] = useState("");
+  const [noteSavedFeedback, setNoteSavedFeedback] = useState(false);
+
+  const getCurrentPlayingVerse = (): number | undefined => {
+    if (segmentsRef.current && segmentsRef.current[currentSegmentIndexRef.current]?.verseNum) {
+      return segmentsRef.current[currentSegmentIndexRef.current].verseNum;
+    }
+    return undefined;
+  };
+
+  const handleSavePlayerNote = () => {
+    if (!noteText.trim() || !currentTrack) return;
+    const verseNum = getCurrentPlayingVerse();
+    const bookName = currentTrack.book || "Scripture";
+    const chapNum = currentTrack.chapter;
+    const ref = chapNum && verseNum
+      ? `${bookName} ${chapNum}:${verseNum}`
+      : chapNum
+      ? `${bookName} ${chapNum}`
+      : bookName;
+
+    const newNote: StudyNote = {
+      id: `note-${Date.now()}`,
+      title: `${ref} Audio Reflection`,
+      content: noteText.trim(),
+      scriptureRef: ref,
+      tags: ["Audio Reflection", bookName],
+      folder: "Audio Bible",
+      isPrivate: true,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+
+    Storage.saveNote(newNote);
+    setNoteSavedFeedback(true);
+    setTimeout(() => {
+      setNoteSavedFeedback(false);
+      setShowNotePopover(false);
+      setNoteText("");
+    }, 1000);
+  };
 
   const synthRef = useRef<SpeechSynthesisUtterance | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -487,6 +533,7 @@ export const AudioPlayerBar: React.FC<AudioPlayerBarProps> = ({
     setIsFinished(false);
 
     if (segments.length > 0) {
+      unlockAudio();
       playSegment(0, voiceGender);
     } else {
       setIsPlaying(true);
@@ -694,7 +741,7 @@ export const AudioPlayerBar: React.FC<AudioPlayerBarProps> = ({
   return (
     <div
       id="global-audio-player"
-      className="fixed bottom-16 md:bottom-5 left-4 right-4 md:left-72 md:right-8 z-40 bg-[#FDFCF9]/98 backdrop-blur-md border border-[#E5E0D5] rounded-3xl shadow-xl p-4 transition-all animate-slideUp space-y-2.5"
+      className="fixed bottom-[calc(4.25rem+env(safe-area-inset-bottom,0px))] lg:bottom-5 left-2 right-2 sm:left-4 sm:right-4 lg:left-72 lg:right-8 z-40 bg-[#FDFCF9]/98 backdrop-blur-md border border-[#E5E0D5] rounded-2xl sm:rounded-3xl shadow-xl p-3 sm:p-4 transition-all animate-slideUp space-y-2 sm:space-y-2.5"
     >
       {/* Autoplay unblock notification banner */}
       {hasAutoplayBlock && (
@@ -778,7 +825,7 @@ export const AudioPlayerBar: React.FC<AudioPlayerBarProps> = ({
 
                 {/* Device Selection Popover */}
                 {showDeviceMenu && (
-                  <div className="absolute left-0 bottom-full mb-2 w-64 bg-white border border-[#E5E0D5] rounded-2xl shadow-xl p-3 z-50 text-xs space-y-2 animate-fadeIn">
+                  <div className="absolute left-0 bottom-full mb-2 w-64 max-w-[calc(100vw-2rem)] bg-white border border-[#E5E0D5] rounded-2xl shadow-xl p-3 z-50 text-xs space-y-2 animate-fadeIn">
                     <div className="flex items-center justify-between border-b border-[#E5E0D5] pb-1.5">
                       <span className="font-bold text-[#2D2D2D] text-[11px] uppercase tracking-wider">
                         Audio Output Routing
@@ -996,7 +1043,7 @@ export const AudioPlayerBar: React.FC<AudioPlayerBarProps> = ({
               </button>
 
               {showVolumeSlider && (
-                <div className="absolute right-0 bottom-full mb-2 bg-white border border-[#E5E0D5] rounded-2xl shadow-xl p-3 z-50 flex items-center gap-2.5 w-48 animate-fadeIn">
+                <div className="absolute right-0 bottom-full mb-2 bg-white border border-[#E5E0D5] rounded-2xl shadow-xl p-3 z-50 flex items-center gap-2.5 w-48 max-w-[calc(100vw-2.5rem)] animate-fadeIn">
                   <button
                     onClick={handleToggleMute}
                     className="text-[#7A7468] hover:text-[#2D2D2D] cursor-pointer shrink-0"
@@ -1033,6 +1080,20 @@ export const AudioPlayerBar: React.FC<AudioPlayerBarProps> = ({
               {playbackRate}x
             </button>
 
+            {/* Quick Study Reflection Note button */}
+            <button
+              onClick={() => setShowNotePopover(!showNotePopover)}
+              className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-[11px] font-bold border transition-colors cursor-pointer ${
+                showNotePopover
+                  ? "bg-[#C5A059] text-white border-[#C5A059]"
+                  : "bg-white hover:bg-[#F9F7F2] text-[#2D2D2D] border-[#E5E0D5]"
+              }`}
+              title="Take a note while listening"
+            >
+              <FileText className="w-3.5 h-3.5 text-[#C5A059]" />
+              <span className="hidden xs:inline">Note</span>
+            </button>
+
             {/* AI Insight trigger for this chapter/verse */}
             {onAnalyzeWithAI && currentTrack.textToRead && (
               <button
@@ -1060,6 +1121,80 @@ export const AudioPlayerBar: React.FC<AudioPlayerBarProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Quick Study Reflection Note Popover (runs concurrently with playback) */}
+      {showNotePopover && (
+        <div
+          id="audio-quick-note-popover"
+          className="absolute right-2 sm:right-6 bottom-full mb-3 w-[calc(100vw-32px)] sm:w-96 max-w-sm bg-white border border-[#E5E0D5] rounded-3xl shadow-2xl p-4 sm:p-5 z-50 animate-fadeIn space-y-3"
+        >
+          <div className="flex items-center justify-between border-b border-[#E5E0D5] pb-2.5">
+            <div className="flex items-center gap-2">
+              <div className="w-7 h-7 rounded-xl bg-[#C5A059]/15 text-[#C5A059] flex items-center justify-center font-bold">
+                <FileText className="w-3.5 h-3.5" />
+              </div>
+              <div>
+                <span className="text-xs font-bold text-[#2D2D2D] block leading-none">
+                  {currentTrack.book || "Bible"} {currentTrack.chapter ? `Ch ${currentTrack.chapter}` : ""} Reflection
+                </span>
+                {getCurrentPlayingVerse() && (
+                  <span className="text-[10px] text-[#C5A059] font-semibold">
+                    Reciting Verse {getCurrentPlayingVerse()}
+                  </span>
+                )}
+              </div>
+            </div>
+            <button
+              onClick={() => setShowNotePopover(false)}
+              className="p-1 text-[#8A8478] hover:text-[#2D2D2D] rounded-lg cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+
+          <div className="p-2 bg-amber-50/80 border border-amber-200/80 rounded-xl text-[11px] text-amber-950 flex items-center gap-2">
+            <Volume2 className="w-3.5 h-3.5 text-[#C5A059] animate-pulse shrink-0" />
+            <span className="leading-tight">
+              Audio continues uninterrupted while you take notes. Reflections are saved to your Study Notes.
+            </span>
+          </div>
+
+          <textarea
+            rows={3}
+            autoFocus
+            placeholder="Jot down quick thoughts, revelations, or prayers as you listen..."
+            value={noteText}
+            onChange={(e) => setNoteText(e.target.value)}
+            className="w-full p-3 bg-[#F9F7F2] border border-[#E5E0D5] rounded-xl text-xs focus:outline-none focus:border-[#C5A059] focus:bg-white transition-all placeholder:text-[#AAA498]"
+          />
+
+          {noteSavedFeedback && (
+            <div className="text-xs font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-xl p-2 text-center flex items-center justify-center gap-1.5 animate-fadeIn">
+              <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+              <span>Saved to your Study Notes!</span>
+            </div>
+          )}
+
+          <div className="flex items-center justify-end gap-2 pt-1">
+            <button
+              type="button"
+              onClick={() => setShowNotePopover(false)}
+              className="px-3 py-1.5 text-xs text-[#7A7468] hover:bg-[#F9F7F2] rounded-xl cursor-pointer transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleSavePlayerNote}
+              disabled={!noteText.trim()}
+              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-[#C5A059] hover:bg-[#B48F48] disabled:opacity-40 text-white text-xs font-bold uppercase tracking-wider rounded-xl shadow-xs hover:shadow transition-all cursor-pointer"
+            >
+              <Save className="w-3.5 h-3.5" />
+              <span>Save Note</span>
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

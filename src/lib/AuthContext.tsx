@@ -49,6 +49,8 @@ interface AuthContextType {
   clearKickedNotice: () => void;
   login: (email: string, pass: string) => Promise<void>;
   register: (data: SignUpData) => Promise<{ isNewAccount: boolean } | void>;
+  unlockRememberedUser: (userToUnlock?: UserProfile) => Promise<void>;
+  getRememberedUser: () => UserProfile | null;
   continueAsGuest: () => void;
   logout: () => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
@@ -187,40 +189,24 @@ function isFirebaseAuthUnavailable(err: any): boolean {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  // Synchronously restore active session or stored user on mount to eliminate initial loading delays
-  const [currentUser, setCurrentUser] = useState<FirebaseUser | AppUser | null>(() => {
-    try {
-      const active = getSavedSession();
-      if (active?.user && !Storage.isUserRevoked(active.user.uid, active.user.email)) {
-        return active.user;
-      }
-      const existingUser = Storage.getUser();
-      if (existingUser && existingUser.id !== DEFAULT_USER.id && !Storage.isUserRevoked(existingUser.id, existingUser.email)) {
-        return {
-          uid: existingUser.id,
-          email: existingUser.email,
-          displayName: existingUser.name,
-          photoURL: existingUser.avatarUrl
-        };
-      }
-    } catch {}
-    return null;
-  });
+export function getRememberedUser(): UserProfile | null {
+  try {
+    const active = getSavedSession();
+    if (active?.profile && !Storage.isUserRevoked(active.profile.id, active.profile.email)) {
+      return active.profile;
+    }
+    const existingUser = Storage.getUser();
+    if (existingUser && existingUser.id !== DEFAULT_USER.id && !Storage.isUserRevoked(existingUser.id, existingUser.email)) {
+      return existingUser;
+    }
+  } catch {}
+  return null;
+}
 
-  const [userProfile, setUserProfile] = useState<UserProfile | null>(() => {
-    try {
-      const active = getSavedSession();
-      if (active?.profile && !Storage.isUserRevoked(active.profile.id, active.profile.email)) {
-        return active.profile;
-      }
-      const existingUser = Storage.getUser();
-      if (existingUser && existingUser.id !== DEFAULT_USER.id && !Storage.isUserRevoked(existingUser.id, existingUser.email)) {
-        return existingUser;
-      }
-    } catch {}
-    return null;
-  });
+export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  // Always take user straight to sign in screen on app entry, even if remembered in database
+  const [currentUser, setCurrentUser] = useState<FirebaseUser | AppUser | null>(null);
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
 
   // Zero-delay initial entry: no blocking screen on app start
   const [loading, setLoading] = useState(false);
@@ -306,7 +292,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, [currentUser?.uid, currentUser?.email]);
 
   useEffect(() => {
-    // 1. Immediately restore existing session or profile so UI is responsive and never locked
+    // 1. Maintain remembered user in storage/database without auto-bypassing the sign in gate
     const active = getSavedSession();
     if (active) {
       if (Storage.isUserRevoked(active.user?.uid, active.user?.email || active.profile?.email)) {
@@ -339,11 +325,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           active.profile.role = "user";
         }
         saveActiveSession(active);
+        Storage.setUser(active.profile);
       }
-      setCurrentUser(active.user);
-      setUserProfile(active.profile);
-      Storage.setUser(active.profile);
-      setLoading(false);
     } else {
       const existingUser = Storage.getUser();
       if (existingUser && existingUser.id !== DEFAULT_USER.id) {
@@ -352,18 +335,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           setLoading(false);
           return;
         }
-        const restoredUser: AppUser = {
-          uid: existingUser.id,
-          email: existingUser.email,
-          displayName: existingUser.name,
-          photoURL: existingUser.avatarUrl
-        };
-        setCurrentUser(restoredUser);
-        setUserProfile(existingUser);
-        saveActiveSession({ user: restoredUser, profile: existingUser });
-        setLoading(false);
       }
     }
+
+    // Check if the user already actively signed in during this browser session
+    const isSessionUnlocked = sessionStorage.getItem("gtc_session_unlocked") === "true";
+    if (isSessionUnlocked) {
+      if (active?.user && active?.profile) {
+        setCurrentUser(active.user);
+        setUserProfile(active.profile);
+      }
+    }
+    setLoading(false);
 
     // 2. Attach Firebase Auth observer with error resilience
     try {
@@ -380,7 +363,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               setLoading(false);
               return;
             }
-            setCurrentUser(firebaseUser);
+
+            // Only auto-attach user if they have actively unlocked in this session
+            const unlocked = sessionStorage.getItem("gtc_session_unlocked") === "true";
+            if (unlocked) {
+              setCurrentUser(firebaseUser);
+            }
             setLoading(false);
 
             // Fetch and sync Firestore in background without delaying UI load
@@ -475,6 +463,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } else if (Storage.isUserRevoked(undefined, cleanEmail)) {
       throw new Error("This account has been deleted by ministry leadership. Access is terminated.");
     }
+
+    try {
+      sessionStorage.setItem("gtc_session_unlocked", "true");
+    } catch {}
 
     if (isFounder) {
       let fbUser: any = null;
@@ -633,6 +625,37 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       throw fbErr;
     }
+  };
+
+  const unlockRememberedUser = async (userToUnlock?: UserProfile) => {
+    let target = userToUnlock;
+    if (!target) {
+      target = getRememberedUser();
+    }
+    if (!target || target.id === DEFAULT_USER.id) {
+      throw new Error("No remembered account found in database.");
+    }
+
+    if (Storage.isUserRevoked(target.id, target.email)) {
+      throw new Error("This account has been deleted by ministry leadership. Access is terminated.");
+    }
+
+    const appUser: AppUser = {
+      uid: target.id,
+      email: target.email,
+      displayName: target.name,
+      photoURL: target.avatarUrl,
+      emailVerified: true
+    };
+
+    try {
+      sessionStorage.setItem("gtc_session_unlocked", "true");
+    } catch {}
+
+    saveActiveSession({ user: appUser, profile: target });
+    Storage.setUser(target);
+    setCurrentUser(appUser);
+    setUserProfile(target);
   };
 
   const register = async (data: SignUpData) => {
@@ -803,6 +826,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const logout = async () => {
     try {
+      sessionStorage.removeItem("gtc_session_unlocked");
+    } catch {}
+    try {
       await fbSignOut(auth);
     } catch (e) {
       console.warn("Error signing out from Firebase Auth:", e);
@@ -937,6 +963,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         clearKickedNotice,
         login,
         register,
+        unlockRememberedUser,
+        getRememberedUser,
         continueAsGuest,
         logout,
         resetPassword,

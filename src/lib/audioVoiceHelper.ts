@@ -286,6 +286,22 @@ export function setSavedAudioVolume(volume: number) {
 // AudioContext & Hardware Unlocker (Guarantees Sound Output)
 // -------------------------------------------------------------
 let sharedAudioCtx: AudioContext | null = null;
+let sharedAudioElement: HTMLAudioElement | null = null;
+let hasSetupGlobalUnlock = false;
+
+export function getSharedAudioPlayer(): HTMLAudioElement | null {
+  if (typeof window === "undefined") return null;
+  if (!sharedAudioElement) {
+    try {
+      sharedAudioElement = new Audio();
+      sharedAudioElement.preload = "auto";
+      (sharedAudioElement as any).playsInline = true;
+    } catch (e) {
+      // ignore
+    }
+  }
+  return sharedAudioElement;
+}
 
 export function unlockAudio(): boolean {
   if (typeof window === "undefined") return false;
@@ -310,11 +326,25 @@ export function unlockAudio(): boolean {
       }
     }
 
+    // Prime HTMLAudioElement
+    const player = getSharedAudioPlayer();
+    if (player && player.paused && !player.src) {
+      // Brief data URI silent wav to prime audio engine
+      player.src = "data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA";
+      player.play().then(() => {
+        player.pause();
+      }).catch(() => {});
+    }
+
     if ("speechSynthesis" in window) {
       // Resume if paused
       if (window.speechSynthesis.paused) {
         window.speechSynthesis.resume();
       }
+      // Warm up voices
+      try {
+        window.speechSynthesis.getVoices();
+      } catch {}
     }
 
     console.log("[AudioVoiceHelper] Audio pipeline unlocked on user gesture.");
@@ -323,6 +353,17 @@ export function unlockAudio(): boolean {
     console.warn("[AudioVoiceHelper] Audio unlock exception:", e);
     return false;
   }
+}
+
+// Auto-register global unlock on any user interaction in browser
+if (typeof window !== "undefined" && !hasSetupGlobalUnlock) {
+  hasSetupGlobalUnlock = true;
+  const userGestureTrigger = () => {
+    unlockAudio();
+  };
+  window.addEventListener("pointerdown", userGestureTrigger, { passive: true });
+  window.addEventListener("keydown", userGestureTrigger, { passive: true });
+  window.addEventListener("touchstart", userGestureTrigger, { passive: true });
 }
 
 // Banned robotic voice names in browser SpeechSynthesis

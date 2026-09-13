@@ -46,6 +46,7 @@ import { useAuth } from "./lib/AuthContext";
 import { UserAvatar } from "./components/UserAvatar";
 import { LanguageSelector } from "./components/LanguageSelector";
 import { WebAppTopBar } from "./components/WebAppTopBar";
+import { ThemeToggle } from "./components/ThemeToggle";
 
 export default function App() {
   const { currentUser, userProfile, loading, updateProfileData } = useAuth();
@@ -217,6 +218,7 @@ export default function App() {
                 <span className="opacity-40">•</span>
                 <span>Victory</span>
               </div>
+              <ThemeToggle />
               <LanguageSelector
                 currentLanguage={language}
                 onLanguageChange={setLanguage}
@@ -334,6 +336,9 @@ export default function App() {
                 <Search className="w-3.5 h-3.5 text-[#C5A059]" />
                 <span className="hidden lg:inline text-xs font-medium">Search scriptures...</span>
               </button>
+
+              {/* Global Theme Toggle: Light / Midnight Sanctuary */}
+              <ThemeToggle />
 
               {/* Language Switcher */}
               <LanguageSelector
@@ -533,6 +538,11 @@ export default function App() {
               </div>
 
               <div className="pt-4 border-t border-[#E5E0D5] space-y-3">
+                {/* Mobile Theme Toggle */}
+                <div className="bg-white p-3.5 rounded-2xl border border-[#E5E0D5]">
+                  <ThemeToggle variant="switch" />
+                </div>
+
                 <div
                   onClick={() => {
                     setIsMobileMenuOpen(false);
@@ -581,7 +591,9 @@ export default function App() {
         {/* Dynamic Primary Workspace Canvas (Full Viewport Width) with Polished Motion Transitions */}
         <main
           ref={mainContentRef}
-          className="flex-1 w-full min-w-0 px-3 sm:px-6 lg:px-8 py-4 sm:py-6 pb-28 lg:pb-12 overflow-y-auto"
+          className={`flex-1 w-full min-w-0 px-3 sm:px-6 lg:px-8 py-4 sm:py-6 overflow-y-auto ${
+            currentAudioTrack ? "pb-64 sm:pb-52 lg:pb-28" : "pb-24 sm:pb-28 lg:pb-12"
+          }`}
         >
           <AnimatePresence mode="wait" initial={false}>
             <motion.div
@@ -736,7 +748,7 @@ export default function App() {
 
       {/* Mobile Bottom Navigation Bar with Safe Area Bottom Support */}
       <nav
-        className="lg:hidden fixed bottom-0 left-0 right-0 z-30 bg-white/95 backdrop-blur-md border-t border-[#E5E0D5] px-2 pt-1.5 flex items-center justify-around shadow-md"
+        className="lg:hidden fixed bottom-0 left-0 right-0 z-30 bg-white/95 backdrop-blur-md border-t border-[#E5E0D5] px-1 sm:px-2 pt-1.5 flex items-center justify-around shadow-md"
         style={{ paddingBottom: 'max(0.375rem, env(safe-area-inset-bottom, 0px))' }}
       >
         {[
@@ -754,12 +766,12 @@ export default function App() {
             <button
               key={btn.id}
               onClick={() => handleNavigate(btn.id)}
-              className={`flex flex-col items-center gap-0.5 p-1 rounded-xl text-[10px] font-bold transition-all cursor-pointer ${
+              className={`flex-1 min-w-0 flex flex-col items-center justify-center py-1 px-0.5 rounded-xl text-[10px] font-bold transition-all cursor-pointer select-none ${
                 isActive ? "text-[#C5A059]" : "text-[#8A8478] hover:text-[#2D2D2D]"
               }`}
             >
-              <Icon className={`w-5 h-5 ${isActive ? "text-[#C5A059]" : ""}`} />
-              <span>{btn.label}</span>
+              <Icon className={`w-4 h-4 xs:w-5 xs:h-5 ${isActive ? "text-[#C5A059] scale-105" : ""} transition-transform shrink-0`} />
+              <span className="truncate max-w-full leading-tight mt-0.5">{btn.label}</span>
             </button>
           );
         })}

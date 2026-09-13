@@ -118,7 +118,8 @@ export const WebAppTopBar: React.FC<WebAppTopBarProps> = ({ className = '' }) =>
                 <Sparkles className="w-2.5 h-2.5 text-current opacity-90" />
               </span>
               <span className={`font-serif tracking-widest text-[11px] sm:text-xs font-bold uppercase truncate ${themeConfig.textClass}`}>
-                Global Tower of Christ
+                <span className="hidden xs:inline">Global Tower of Christ</span>
+                <span className="xs:hidden">Global Tower</span>
               </span>
             </div>
 
@@ -203,18 +204,20 @@ export const WebAppTopBar: React.FC<WebAppTopBarProps> = ({ className = '' }) =>
                     className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1 rounded-full text-[10px] sm:text-xs font-bold uppercase tracking-wider transition-all cursor-pointer ${themeConfig.buttonClass}`}
                     title="Install Global Tower as a Web App on your home screen"
                   >
-                    <Download className="w-3 h-3" />
-                    <span>Make Web App</span>
+                    <Download className="w-3 h-3 shrink-0" />
+                    <span className="hidden xs:inline">Make Web App</span>
+                    <span className="xs:hidden">Install</span>
                   </button>
                 ) : isIOS ? (
                   <button
                     type="button"
                     onClick={() => setShowIOSModal(true)}
-                    className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1 rounded-full text-[10px] sm:text-xs font-bold uppercase tracking-wider transition-all cursor-pointer ${themeConfig.buttonClass}`}
+                    className={`flex items-center gap-1.5 px-2 sm:px-3 py-1 rounded-full text-[10px] sm:text-xs font-bold uppercase tracking-wider transition-all cursor-pointer ${themeConfig.buttonClass}`}
                     title="Install on iPhone / iPad"
                   >
-                    <Smartphone className="w-3 h-3" />
-                    <span>Make Web App</span>
+                    <Smartphone className="w-3 h-3 shrink-0" />
+                    <span className="hidden xs:inline">Make Web App</span>
+                    <span className="xs:hidden">Install</span>
                   </button>
                 ) : (
                   <button

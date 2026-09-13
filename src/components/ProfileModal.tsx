@@ -33,6 +33,8 @@ import { UserAvatar, getInitials } from "./UserAvatar";
 import { usePWAInstall } from "../lib/usePWAInstall";
 import { Language, SUPPORTED_LANGUAGES } from "../lib/translations";
 import { DeleteAccountModal } from "./DeleteAccountModal";
+import { ThemeToggle, SanctuaryColorPicker } from "./ThemeToggle";
+import { UserFriendlyMetrics } from "./UserFriendlyMetrics";
 
 interface ProfileModalProps {
   isOpen: boolean;
@@ -238,7 +240,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
   return (
     <>
       <div
-        className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#1C1B18]/60 backdrop-blur-xs animate-fadeIn"
+        className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-[#1C1B18]/60 backdrop-blur-xs animate-fadeIn"
         onClick={(e) => {
           if (e.target === e.currentTarget) {
             onClose();
@@ -246,7 +248,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
         }}
       >
         <div
-          className="relative w-full max-w-lg bg-white rounded-[32px] p-6 sm:p-8 shadow-2xl border border-[#E5E0D5] max-h-[90vh] overflow-y-auto"
+          className="relative w-full max-w-lg bg-white rounded-2xl sm:rounded-[32px] p-4 sm:p-8 shadow-2xl border border-[#E5E0D5] max-h-[88vh] max-h-[88dvh] overflow-y-auto overflow-x-hidden"
           onClick={(e) => e.stopPropagation()}
         >
         {/* Header */}
@@ -504,6 +506,42 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
                 className="w-4 h-4 text-[#C5A059] accent-[#C5A059] rounded cursor-pointer"
               />
             </label>
+          </div>
+
+          {/* Spiritual Journey & Activity Summary */}
+          <div className="pt-4 border-t border-[#E5E0D5] space-y-2.5">
+            <div className="flex items-center justify-between">
+              <span className="font-bold text-[#2D2D2D] block font-serif">Spiritual Walk & Activity Summary</span>
+              <span className="text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider bg-[#C5A059]/15 text-[#8C6B2D] border border-[#C5A059]/30">
+                Live Walk
+              </span>
+            </div>
+            <UserFriendlyMetrics
+              compact
+              onNavigate={(view, data) => {
+                onClose();
+                if (onNavigate) onNavigate(view);
+              }}
+            />
+          </div>
+
+          {/* Global Application Theme: Light vs Midnight Sanctuary */}
+          <div className="pt-4 border-t border-[#E5E0D5] space-y-2.5">
+            <div className="flex items-center justify-between">
+              <span className="font-bold text-[#2D2D2D] block font-serif">Sanctuary Appearance & Global Theme</span>
+              <span className="text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider bg-[#C5A059]/15 text-[#8C6B2D] border border-[#C5A059]/30">
+                System Wide
+              </span>
+            </div>
+            <p className="text-xs text-[#7A7468]">
+              Switch between the daytime Sacred Ivory Linen theme and the reverent Midnight Sanctuary dark theme with deep navy and charcoal tones.
+            </p>
+            <div className="pt-1 space-y-4">
+              <ThemeToggle variant="cards" />
+              <div className="pt-3 border-t border-[#F2EFE8] dark:border-slate-800">
+                <SanctuaryColorPicker />
+              </div>
+            </div>
           </div>
 
           {/* Web App & Status Bar Configuration */}

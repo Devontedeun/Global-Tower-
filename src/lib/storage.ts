@@ -13,7 +13,9 @@ import {
   VideoWatchProgress,
   BibleStudyPlan,
   LiveEvent,
-  CommunityPost
+  CommunityPost,
+  SpiritualJourneyMetrics,
+  DayActivityStatus
 } from "../types";
 import {
   SERMONS_DATABASE,
@@ -446,12 +448,18 @@ export const Storage = {
     const list = this.getNotes();
     const updated = [note, ...(Array.isArray(list) ? list.filter(n => n && n.id !== note.id) : [])];
     localStorage.setItem(STORAGE_KEYS.NOTES, JSON.stringify(updated));
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("gtc_notes_updated", { detail: updated }));
+    }
     return updated;
   },
   deleteNote(id: string) {
     const list = this.getNotes();
     const updated = Array.isArray(list) ? list.filter(n => n && n.id !== id) : [];
     localStorage.setItem(STORAGE_KEYS.NOTES, JSON.stringify(updated));
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("gtc_notes_updated", { detail: updated }));
+    }
     return updated;
   },
 
@@ -1081,5 +1089,207 @@ export const Storage = {
     } catch (e) {
       console.error(e);
     }
+  },
+
+  recordActivity(activity: string): void {
+    try {
+      const today = new Date().toISOString().split("T")[0];
+      const raw = localStorage.getItem("gtc_activity_days_log");
+      const log: Record<string, string[]> = raw ? JSON.parse(raw) : {};
+      
+      if (!log[today]) {
+        log[today] = [];
+      }
+      if (!log[today].includes(activity)) {
+        log[today].unshift(activity);
+      }
+      localStorage.setItem("gtc_activity_days_log", JSON.stringify(log));
+
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("gtc_metrics_updated"));
+      }
+    } catch (e) {
+      console.error("Error recording daily activity:", e);
+    }
+  },
+
+  recordChapterRead(book: string, chapter: number): void {
+    try {
+      const key = `${book} ${chapter}`;
+      const raw = localStorage.getItem("gtc_chapters_read_set");
+      const chapters: string[] = raw ? JSON.parse(raw) : [];
+      if (!chapters.includes(key)) {
+        chapters.push(key);
+        localStorage.setItem("gtc_chapters_read_set", JSON.stringify(chapters));
+      }
+      this.recordActivity(`Read ${key}`);
+    } catch (e) {
+      console.error("Error recording chapter read:", e);
+    }
+  },
+
+  recordAudioMinutes(additionalMinutes: number): void {
+    try {
+      const current = parseFloat(localStorage.getItem("gtc_audio_minutes_total") || "0");
+      const updated = Math.round((current + additionalMinutes) * 10) / 10;
+      localStorage.setItem("gtc_audio_minutes_total", updated.toString());
+      this.recordActivity(`Listened to Scripture Audio (${additionalMinutes}m)`);
+    } catch (e) {
+      console.error("Error recording audio minutes:", e);
+    }
+  },
+
+  getSpiritualMetrics(): SpiritualJourneyMetrics {
+    const isCleared = this.isMockDataCleared();
+
+    // 1. Chapters Read
+    let chaptersList: string[] = [];
+    try {
+      const raw = localStorage.getItem("gtc_chapters_read_set");
+      if (raw) {
+        chaptersList = JSON.parse(raw);
+      } else if (!isCleared) {
+        chaptersList = ["Genesis 1", "Psalms 23", "Proverbs 3", "Matthew 5", "John 1", "Romans 8", "Hebrews 11"];
+      }
+    } catch {
+      chaptersList = [];
+    }
+    const totalChaptersRead = chaptersList.length;
+
+    // 2. Audio Minutes
+    let audioListeningMinutes = 0;
+    try {
+      const raw = localStorage.getItem("gtc_audio_minutes_total");
+      if (raw) {
+        audioListeningMinutes = Math.round(parseFloat(raw));
+      } else if (!isCleared) {
+        audioListeningMinutes = 48;
+      }
+    } catch {
+      audioListeningMinutes = 0;
+    }
+
+    // 3. User Notes, Bookmarks, Highlights, Dreams & Visions
+    const notes = this.getNotes();
+    const bookmarks = this.getBookmarks();
+    const highlights = this.getHighlights();
+    const dreams = this.getDreams();
+    const visions = this.getVisions();
+    const prayers = this.getPrayers();
+    const studyPlans = this.getStudyPlans();
+
+    const studyNotesCount = notes.length;
+    const bookmarksCount = bookmarks.length;
+    const highlightsCount = highlights.length;
+    const dreamsVisionsLoggedCount = dreams.length + visions.length;
+
+    // 4. Intercessory & Personal Prayers Offered
+    const prayersOfferedCount = prayers.reduce((acc, p) => {
+      return acc + (p.hasUserPrayed ? 1 : 0) + (p.prayedCount ? 1 : 0);
+    }, isCleared ? 0 : 7);
+
+    // 5. Study Plans Progress
+    const enrolledPlans = studyPlans.filter((p) => p.isEnrolled || (p.completedDays && p.completedDays > 0));
+    const studyPlansEnrolledCount = enrolledPlans.length > 0 ? enrolledPlans.length : (isCleared ? 0 : 1);
+    const studyPlanDaysCompleted = studyPlans.reduce((acc, p) => acc + (p.completedDays || 0), isCleared ? 0 : 4);
+
+    // 6. Activity log & streak calculation
+    let activityLog: Record<string, string[]> = {};
+    try {
+      const raw = localStorage.getItem("gtc_activity_days_log");
+      if (raw) {
+        activityLog = JSON.parse(raw);
+      }
+    } catch {}
+
+    const now = new Date();
+    const todayStr = now.toISOString().split("T")[0];
+
+    if (!activityLog[todayStr] && !isCleared) {
+      activityLog[todayStr] = ["Daily Manna & Scripture Devotional"];
+    }
+
+    const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+    const weeklyRhythm: DayActivityStatus[] = [];
+
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date(now);
+      d.setDate(d.getDate() - i);
+      const dateStr = d.toISOString().split("T")[0];
+      const isToday = i === 0;
+      const acts = activityLog[dateStr] || [];
+      const hasActs = acts.length > 0 || (!isCleared && i <= 3);
+
+      weeklyRhythm.push({
+        dayName: dayNames[d.getDay()],
+        dayLetter: dayNames[d.getDay()].charAt(0),
+        dateString: dateStr,
+        isToday,
+        hasActivity: hasActs,
+        activities: acts.length > 0 ? acts : (hasActs ? ["Daily Word Meditation"] : [])
+      });
+    }
+
+    let streak = 0;
+    for (let i = 0; i < 30; i++) {
+      const checkDate = new Date(now);
+      checkDate.setDate(checkDate.getDate() - i);
+      const checkStr = checkDate.toISOString().split("T")[0];
+      if (activityLog[checkStr] && activityLog[checkStr].length > 0) {
+        streak++;
+      } else if (i === 0 && !isCleared) {
+        streak = 5;
+        break;
+      } else {
+        break;
+      }
+    }
+    const currentStreakDays = Math.max(streak, isCleared ? 0 : 5);
+    const longestStreakDays = Math.max(currentStreakDays, isCleared ? 0 : 12);
+
+    // 7. Overall Spiritual Milestone
+    const totalEngagementScore =
+      totalChaptersRead * 3 +
+      studyNotesCount * 2 +
+      prayersOfferedCount * 2 +
+      studyPlanDaysCompleted * 4 +
+      currentStreakDays * 2;
+
+    let milestoneTitle = "Spiritual Disciple (Tier I)";
+    let milestoneProgressPercent = 35;
+    let nextMilestoneGoal = "Read 3 more chapters or pray to reach Tier II";
+
+    if (totalEngagementScore >= 80) {
+      milestoneTitle = "Kingdom Conqueror (Dominion & Victory)";
+      milestoneProgressPercent = Math.min(100, Math.round((totalEngagementScore / 120) * 100));
+      nextMilestoneGoal = "Maintaining spiritual authority & discipling the brethren";
+    } else if (totalEngagementScore >= 45) {
+      milestoneTitle = "Watchman on the Wall (Tier III)";
+      milestoneProgressPercent = Math.min(95, Math.round(((totalEngagementScore - 45) / 35) * 100));
+      nextMilestoneGoal = "Log 3 more study notes to achieve Kingdom Conqueror";
+    } else if (totalEngagementScore >= 20) {
+      milestoneTitle = "Scripture Scribe (Tier II)";
+      milestoneProgressPercent = Math.min(95, Math.round(((totalEngagementScore - 20) / 25) * 100));
+      nextMilestoneGoal = "Reach 7-day reading streak to reach Watchman on the Wall";
+    }
+
+    return {
+      currentStreakDays,
+      longestStreakDays,
+      totalChaptersRead,
+      audioListeningMinutes,
+      studyNotesCount,
+      bookmarksCount,
+      highlightsCount,
+      prayersOfferedCount,
+      studyPlansEnrolledCount,
+      studyPlanDaysCompleted,
+      dreamsVisionsLoggedCount,
+      weeklyRhythm,
+      milestoneTitle,
+      milestoneProgressPercent,
+      nextMilestoneGoal,
+      lastActiveFormatted: "Today, Active"
+    };
   }
 };

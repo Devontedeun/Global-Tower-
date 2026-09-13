@@ -272,9 +272,23 @@ export interface PracticalTheologicalGuidance {
   actionStep: string;
 }
 
+export interface ScannedBiblicalPoint {
+  pointNumber: number;
+  title: string;
+  scriptureRef: string;
+  scriptureText: string;
+  theologicalPrinciple: string;
+  practicalApplication: string;
+  testament: "Old Testament" | "New Testament" | "Cross-Canonical";
+  covenantTheme: string;
+}
+
 export interface SpiritualInsightResult {
   summary: string;
   biblicalThemes: string[];
+  scannedBiblicalPoints?: ScannedBiblicalPoint[];
+  scannerNotice?: string;
+  sourceEngine?: string;
   extractedEventsAndSymbols?: {
     events: string[];
     symbols: string[];
@@ -652,4 +666,32 @@ export interface PlatformAnalytics {
     lastActive: string;
     totalActivity: number;
   }[];
+}
+
+export interface DayActivityStatus {
+  dayName: string;
+  dayLetter: string;
+  dateString: string;
+  isToday: boolean;
+  hasActivity: boolean;
+  activities: string[];
+}
+
+export interface SpiritualJourneyMetrics {
+  currentStreakDays: number;
+  longestStreakDays: number;
+  totalChaptersRead: number;
+  audioListeningMinutes: number;
+  studyNotesCount: number;
+  bookmarksCount: number;
+  highlightsCount: number;
+  prayersOfferedCount: number;
+  studyPlansEnrolledCount: number;
+  studyPlanDaysCompleted: number;
+  dreamsVisionsLoggedCount: number;
+  weeklyRhythm: DayActivityStatus[];
+  milestoneTitle: string;
+  milestoneProgressPercent: number;
+  nextMilestoneGoal: string;
+  lastActiveFormatted: string;
 }

@@ -83,44 +83,44 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({
   return (
     <div
       id="global-search-overlay"
-      className="fixed inset-0 z-50 flex items-start justify-center pt-16 sm:pt-24 px-4 bg-[#1C1B18]/60 backdrop-blur-xs animate-fadeIn"
+      className="fixed inset-0 z-50 flex items-start justify-center pt-8 sm:pt-24 px-3 sm:px-4 bg-[#1C1B18]/60 backdrop-blur-xs animate-fadeIn"
       onClick={onClose}
     >
       <div
         id="global-search-modal"
-        className="relative w-full max-w-2xl bg-white rounded-[32px] shadow-2xl border border-[#E5E0D5] overflow-hidden"
+        className="relative w-full max-w-2xl bg-white rounded-2xl sm:rounded-[32px] shadow-2xl border border-[#E5E0D5] overflow-hidden max-h-[85vh] max-h-[85dvh] flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Search Header */}
-        <div className="flex items-center px-5 py-4 border-b border-[#E5E0D5] bg-[#FDFCF9]">
-          <Search className="w-5 h-5 text-[#C5A059] shrink-0 mr-3" />
+        <div className="flex items-center px-4 sm:px-5 py-3.5 sm:py-4 border-b border-[#E5E0D5] bg-[#FDFCF9] shrink-0">
+          <Search className="w-5 h-5 text-[#C5A059] shrink-0 mr-2.5 sm:mr-3" />
           <input
             id="global-search-input"
             type="text"
-            placeholder="Search Scriptures, words of encouragement, study plans, or spiritual questions..."
+            placeholder="Search Scriptures, words of encouragement..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             autoFocus
-            className="w-full bg-transparent border-none text-[#2D2D2D] placeholder-[#AAA498] focus:outline-none text-base font-medium font-sans"
+            className="w-full bg-transparent border-none text-[#2D2D2D] placeholder-[#AAA498] focus:outline-none text-sm sm:text-base font-medium font-sans"
           />
           {searchTerm && (
             <button
               onClick={() => setSearchTerm("")}
-              className="p-1 hover:bg-[#E5E0D5]/50 rounded-full text-[#8A8478] hover:text-[#2D2D2D] mr-2 cursor-pointer transition-colors"
+              className="p-1 hover:bg-[#E5E0D5]/50 rounded-full text-[#8A8478] hover:text-[#2D2D2D] mr-2 cursor-pointer transition-colors shrink-0"
             >
               <X className="w-4 h-4" />
             </button>
           )}
           <button
             onClick={onClose}
-            className="px-3 py-1 text-xs font-semibold text-[#7A7468] bg-[#F9F7F2] hover:bg-[#E5E0D5] rounded-full border border-[#E5E0D5] cursor-pointer"
+            className="px-2.5 sm:px-3 py-1 text-xs font-semibold text-[#7A7468] bg-[#F9F7F2] hover:bg-[#E5E0D5] rounded-full border border-[#E5E0D5] cursor-pointer shrink-0"
           >
-            ESC
+            Close
           </button>
         </div>
 
         {/* Search Body / Results */}
-        <div className="max-h-[70vh] overflow-y-auto p-5 space-y-4">
+        <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-4">
           {/* Quick AI Search Callout if user entered text */}
           {searchTerm.trim().length > 2 && (
             <div

@@ -17,6 +17,7 @@ import { DEVOTIONAL_TODAY } from "../data/mockData";
 import { INITIAL_ENCOURAGEMENTS } from "../data/encouragementsData";
 import { UserProfile } from "../types";
 import { AudioTrack } from "./AudioPlayerBar";
+import { UserFriendlyMetrics } from "./UserFriendlyMetrics";
 
 interface HomeDashboardProps {
   user: UserProfile;
@@ -103,61 +104,64 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
 
   return (
     <div id="home-dashboard-container" className="w-full space-y-6 sm:space-y-8">
-      {/* Quick Ministry Pulse Metrics (Interactive Full-Width Bar) */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
+      {/* 0. User Friendly Spiritual Journey & Fellowship Metrics */}
+      <UserFriendlyMetrics onNavigate={onNavigate} />
+
+      {/* Quick Ministry Pulse Shortcuts */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 sm:gap-4">
         <div
           onClick={() => onNavigate("bible", { book: "Romans", chapter: 8 })}
-          className="bg-white p-4 sm:p-5 rounded-[24px] border border-[#E5E0D5] hover:border-[#C5A059] shadow-2xs cursor-pointer transition-all flex items-center justify-between group"
+          className="bg-white p-3 sm:p-5 rounded-2xl sm:rounded-[24px] border border-[#E5E0D5] hover:border-[#C5A059] shadow-2xs cursor-pointer transition-all flex flex-col xs:flex-row xs:items-center justify-between gap-2 group"
         >
-          <div>
-            <span className="text-[10px] font-bold uppercase tracking-wider text-[#8A8478]">Daily Scripture</span>
-            <h4 className="font-serif font-bold text-[#2D2D2D] text-lg group-hover:text-[#C5A059] transition-colors">Romans 8</h4>
-            <span className="text-[11px] text-[#C5A059] font-medium">Continue Reading →</span>
+          <div className="min-w-0">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-[#8A8478] truncate block">Daily Scripture</span>
+            <h4 className="font-serif font-bold text-[#2D2D2D] text-base sm:text-lg group-hover:text-[#C5A059] transition-colors truncate">Romans 8</h4>
+            <span className="text-[10px] sm:text-[11px] text-[#C5A059] font-medium truncate block">Continue →</span>
           </div>
-          <div className="w-10 h-10 rounded-full bg-[#FDFCF9] border border-[#E5E0D5] flex items-center justify-center text-[#C5A059]">
-            <BookOpen className="w-5 h-5" />
+          <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-[#FDFCF9] border border-[#E5E0D5] flex items-center justify-center text-[#C5A059] shrink-0 self-end xs:self-auto">
+            <BookOpen className="w-4 h-4 sm:w-5 sm:h-5" />
           </div>
         </div>
 
         <div
           onClick={() => onNavigate("encouragements")}
-          className="bg-white p-4 sm:p-5 rounded-[24px] border border-[#E5E0D5] hover:border-[#C5A059] shadow-2xs cursor-pointer transition-all flex items-center justify-between group"
+          className="bg-white p-3 sm:p-5 rounded-2xl sm:rounded-[24px] border border-[#E5E0D5] hover:border-[#C5A059] shadow-2xs cursor-pointer transition-all flex flex-col xs:flex-row xs:items-center justify-between gap-2 group"
         >
-          <div>
-            <span className="text-[10px] font-bold uppercase tracking-wider text-[#C5A059]">Daily Encouragement</span>
-            <h4 className="font-serif font-bold text-[#2D2D2D] text-lg group-hover:text-[#C5A059] transition-colors">Word of Peace</h4>
-            <span className="text-[11px] text-[#C5A059] font-medium">Read Today's Word →</span>
+          <div className="min-w-0">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-[#C5A059] truncate block">Encouragement</span>
+            <h4 className="font-serif font-bold text-[#2D2D2D] text-base sm:text-lg group-hover:text-[#C5A059] transition-colors truncate">Word of Peace</h4>
+            <span className="text-[10px] sm:text-[11px] text-[#C5A059] font-medium truncate block">Read Today →</span>
           </div>
-          <div className="w-10 h-10 rounded-full bg-[#FAF6EE] border border-[#E5E0D5] flex items-center justify-center text-[#C5A059]">
-            <MessageCircle className="w-5 h-5" />
+          <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-[#FAF6EE] border border-[#E5E0D5] flex items-center justify-center text-[#C5A059] shrink-0 self-end xs:self-auto">
+            <MessageCircle className="w-4 h-4 sm:w-5 sm:h-5" />
           </div>
         </div>
 
         <div
           onClick={() => onNavigate("prayers")}
-          className="bg-white p-4 sm:p-5 rounded-[24px] border border-[#E5E0D5] hover:border-[#C5A059] shadow-2xs cursor-pointer transition-all flex items-center justify-between group"
+          className="bg-white p-3 sm:p-5 rounded-2xl sm:rounded-[24px] border border-[#E5E0D5] hover:border-[#C5A059] shadow-2xs cursor-pointer transition-all flex flex-col xs:flex-row xs:items-center justify-between gap-2 group"
         >
-          <div>
-            <span className="text-[10px] font-bold uppercase tracking-wider text-[#8A8478]">Prayer Wall</span>
-            <h4 className="font-serif font-bold text-[#2D2D2D] text-lg group-hover:text-[#C5A059] transition-colors">Intercession</h4>
-            <span className="text-[11px] text-[#C5A059] font-medium">Pray for Saints →</span>
+          <div className="min-w-0">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-[#8A8478] truncate block">Prayer Wall</span>
+            <h4 className="font-serif font-bold text-[#2D2D2D] text-base sm:text-lg group-hover:text-[#C5A059] transition-colors truncate">Intercession</h4>
+            <span className="text-[10px] sm:text-[11px] text-[#C5A059] font-medium truncate block">Pray for Saints →</span>
           </div>
-          <div className="w-10 h-10 rounded-full bg-[#FDFCF9] border border-[#E5E0D5] flex items-center justify-center text-[#C5A059]">
-            <Heart className="w-5 h-5" />
+          <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-[#FDFCF9] border border-[#E5E0D5] flex items-center justify-center text-[#C5A059] shrink-0 self-end xs:self-auto">
+            <Heart className="w-4 h-4 sm:w-5 sm:h-5" />
           </div>
         </div>
 
         <div
           onClick={() => onNavigate("study-plans")}
-          className="bg-white p-4 sm:p-5 rounded-[24px] border border-[#E5E0D5] hover:border-[#C5A059] shadow-2xs cursor-pointer transition-all flex items-center justify-between group"
+          className="bg-white p-3 sm:p-5 rounded-2xl sm:rounded-[24px] border border-[#E5E0D5] hover:border-[#C5A059] shadow-2xs cursor-pointer transition-all flex flex-col xs:flex-row xs:items-center justify-between gap-2 group"
         >
-          <div>
-            <span className="text-[10px] font-bold uppercase tracking-wider text-[#8A8478]">Study Plans</span>
-            <h4 className="font-serif font-bold text-[#2D2D2D] text-lg group-hover:text-[#C5A059] transition-colors">Dominion Walk</h4>
-            <span className="text-[11px] text-[#C5A059] font-medium">Daily Journey →</span>
+          <div className="min-w-0">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-[#8A8478] truncate block">Study Plans</span>
+            <h4 className="font-serif font-bold text-[#2D2D2D] text-base sm:text-lg group-hover:text-[#C5A059] transition-colors truncate">Dominion Walk</h4>
+            <span className="text-[10px] sm:text-[11px] text-[#C5A059] font-medium truncate block">Daily Journey →</span>
           </div>
-          <div className="w-10 h-10 rounded-full bg-[#FDFCF9] border border-[#E5E0D5] flex items-center justify-center text-[#C5A059]">
-            <BookMarked className="w-5 h-5" />
+          <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-[#FDFCF9] border border-[#E5E0D5] flex items-center justify-center text-[#C5A059] shrink-0 self-end xs:self-auto">
+            <BookMarked className="w-4 h-4 sm:w-5 sm:h-5" />
           </div>
         </div>
       </div>

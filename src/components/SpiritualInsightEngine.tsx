@@ -17,12 +17,13 @@ import {
   AlertTriangle,
   FileText,
   ScanLine,
-  Columns
+  Columns,
+  Compass
 } from "lucide-react";
 import { SpiritualInsightResult, DreamEntry, VisionEntry, BibleTranslation, HostVersionComparisonItem } from "../types";
 import { Storage } from "../lib/storage";
 import { verifyScriptureIntegrity } from "../lib/bibleService";
-import { HOST_BIBLE_VERSIONS, buildHostVersionComparison } from "../lib/theologicalEngine";
+import { HOST_BIBLE_VERSIONS, buildHostVersionComparison, analyzeSpiritualInquiry } from "../lib/theologicalEngine";
 
 interface SpiritualInsightEngineProps {
   initialQuery?: string;
@@ -107,57 +108,10 @@ export const SpiritualInsightEngine: React.FC<SpiritualInsightEngineProps> = ({
         throw new Error("Failed to generate insight");
       }
     } catch (err) {
-      console.error(err);
-      // Canonical fallback with verified scriptures
-      setResult({
-        summary: `Biblical analysis regarding "${searchQuery}". Anchored in Christian doctrine and Scripture.`,
-        biblicalThemes: ["Faith & Trust", "Divine Direction", "Spiritual Renewal"],
-        relevantScriptures: [
-          {
-            reference: "Proverbs 3:5-6",
-            text: "Trust in the LORD with all your heart, and do not lean on your own understanding. In all your ways acknowledge him, and he will make straight your paths.",
-            context: "A universal biblical exhortation to surrender all questions and experiences to God in humble prayer.",
-            translation: "ESV",
-            source: "Crossway Bibles / Canonical Text",
-            license: "Authorized Educational Quotation",
-            verified: true,
-            verificationNotice: "Verified Canonical Scripture"
-          },
-          {
-            reference: "1 Thessalonians 5:21",
-            text: "Test everything; hold fast what is good.",
-            context: "The core apostolic guideline for testing dreams, impressions, and spiritual experiences against God's written Word.",
-            translation: "ESV",
-            source: "Crossway Bibles / Canonical Text",
-            license: "Authorized Educational Quotation",
-            verified: true,
-            verificationNotice: "Verified Canonical Scripture"
-          }
-        ],
-        biblicalContextExplanation: {
-          historicalSetting: "Wisdom literature and Pauline apostolic epistles.",
-          originalAudience: "The covenant people of God and the early Christian church.",
-          theologicalTheme: "The sovereign clarity and supremacy of God's Word."
-        },
-        possibleInterpretations: [
-          {
-            angle: "A Call to Prayer & Alignment with Scripture",
-            explanation: "In biblical history, God drew believers deeper into prayer when they experienced spiritual prompts or questions.",
-            symbolicMeaning: "Seeking Christ Jesus first and discerning His peace in all things.",
-            scripturalBasis: "Proverbs 3:5-6; 1 Thessalonians 5:21"
-          }
-        ],
-        questionsForReflection: [
-          "How does this experience align with the written Word of God and the fruit of the Spirit?",
-          "What practical step of prayer, worship, or repentance is God highlighting?",
-          "Have you discussed this with trusted pastors or spiritually mature mentors?"
-        ],
-        relatedTeachings: [
-          "Worship, Dominion & Victory in Christ Jesus",
-          "Discerning God's Voice in Dreams and Visions"
-        ],
-        disclaimer: "This spiritual insight is provided for biblical study and reflection only. Interpretations of dreams, visions, and spiritual experiences are not infallible revelations and should always be tested against Scripture (1 Thess 5:21, 1 John 4:1) and prayerfully discerned with pastoral guidance."
-      });
+      console.warn("[Insight Engine] API unavailable or failed, utilizing canonical Bible scanner:", err);
+      // Canonical fallback with verified scripture scan and structured godly points
+      const fallbackResult = analyzeSpiritualInquiry(searchQuery, queryType);
+      setResult(fallbackResult);
     } finally {
       setIsLoading(false);
     }
@@ -406,6 +360,106 @@ export const SpiritualInsightEngine: React.FC<SpiritualInsightEngineProps> = ({
                 {result.pastoralComfortMessage ||
                   "Dreams involving death, fear, or conflict can feel unsettling. In biblical pastoral discernment, dreams are not automatic prophecies of physical harm. Scripture anchors believers in God's peace: 'For God gave us a spirit not of fear but of power and love and self-control' (2 Timothy 1:7), and nothing can separate us from Christ's love (Romans 8:38-39)."}
               </p>
+            </div>
+          )}
+
+          {/* 🕊️ Godly Structured Biblical Points (Canonical Bible Scan) */}
+          {result.scannedBiblicalPoints && result.scannedBiblicalPoints.length > 0 && (
+            <div className="p-6 bg-gradient-to-b from-[#FDFCF9] to-white border-2 border-[#C5A059]/30 rounded-3xl space-y-5 shadow-xs">
+              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#E5E0D5] pb-4">
+                <div>
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-xl bg-[#C5A059]/15 flex items-center justify-center text-[#C5A059]">
+                      <BookOpen className="w-4 h-4" />
+                    </div>
+                    <h3 className="font-serif font-bold text-lg text-[#2D2D2D]">
+                      Biblical Scan: Structured Godly Points
+                    </h3>
+                  </div>
+                  <p className="text-xs text-[#7A7468] mt-1 font-sans">
+                    Scanned across the 66-book biblical canon and arranged into neat, godly doctrinal principles and practical faith applications.
+                  </p>
+                </div>
+                {result.scannerNotice && (
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-[#F9F7F2] text-[#8A8478] border border-[#E5E0D5] rounded-full text-[11px] font-semibold">
+                    <ShieldCheck className="w-3.5 h-3.5 text-[#C5A059]" />
+                    Canonical Scanner Active
+                  </span>
+                )}
+              </div>
+
+              <div className="grid grid-cols-1 gap-4">
+                {result.scannedBiblicalPoints.map((pt) => (
+                  <div
+                    key={pt.pointNumber}
+                    className="p-5 bg-[#FDFCF9] border border-[#E5E0D5] hover:border-[#C5A059]/60 rounded-2xl transition-all space-y-3.5 shadow-2xs"
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex items-center gap-2.5">
+                        <span className="w-7 h-7 rounded-full bg-[#C5A059] text-white flex items-center justify-center text-xs font-bold font-serif shadow-xs">
+                          {pt.pointNumber}
+                        </span>
+                        <h4 className="font-serif font-bold text-[#2D2D2D] text-base">
+                          {pt.title.replace(/^\d+\.\s*/, "")}
+                        </h4>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="px-2.5 py-0.5 bg-white border border-[#E5E0D5] text-[#8A8478] rounded-md text-[11px] font-medium">
+                          {pt.testament}
+                        </span>
+                        <span className="px-2.5 py-0.5 bg-[#C5A059]/10 text-[#C5A059] font-bold rounded-md text-[11px]">
+                          {pt.covenantTheme}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Scripture Citation & Verbatim Text */}
+                    <div className="p-4 bg-white rounded-xl border border-[#E5E0D5] border-l-4 border-l-[#C5A059] space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <span className="font-serif font-bold text-xs text-[#C5A059] flex items-center gap-1.5">
+                          <BookOpen className="w-3.5 h-3.5 text-[#C5A059]" />
+                          {pt.scriptureRef}
+                        </span>
+                        <button
+                          onClick={() => {
+                            navigator.clipboard.writeText(`"${pt.scriptureText}" — ${pt.scriptureRef}`);
+                          }}
+                          className="text-[11px] text-[#8A8478] hover:text-[#C5A059] flex items-center gap-1 cursor-pointer transition-colors"
+                          title="Copy Scripture"
+                        >
+                          <Copy className="w-3 h-3" />
+                          <span>Copy</span>
+                        </button>
+                      </div>
+                      <p className="text-xs text-[#2D2D2D] italic font-serif leading-relaxed">
+                        "{pt.scriptureText}"
+                      </p>
+                    </div>
+
+                    {/* Theological Principle */}
+                    <div className="space-y-1 text-xs">
+                      <span className="font-bold text-[#2D2D2D] uppercase tracking-wider text-[10px] flex items-center gap-1.5 text-[#8A8478]">
+                        <Sparkles className="w-3 h-3 text-[#C5A059]" />
+                        Godly Theological Principle
+                      </span>
+                      <p className="text-[#2D2D2D] leading-relaxed font-sans pl-1">
+                        {pt.theologicalPrinciple}
+                      </p>
+                    </div>
+
+                    {/* Practical & Godly Application */}
+                    <div className="space-y-1 text-xs pt-2 border-t border-[#E5E0D5]/70">
+                      <span className="font-bold text-[#2D2D2D] uppercase tracking-wider text-[10px] flex items-center gap-1.5 text-emerald-800">
+                        <Compass className="w-3 h-3 text-emerald-600" />
+                        Practical Faith & Prayer Application
+                      </span>
+                      <p className="text-[#4E483E] leading-relaxed font-sans pl-1">
+                        {pt.practicalApplication}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
 

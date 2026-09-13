@@ -28,7 +28,10 @@ import {
   AlertTriangle,
   ExternalLink,
   Info,
-  CheckCircle2
+  CheckCircle2,
+  Plus,
+  Trash2,
+  Save
 } from "lucide-react";
 import { BibleTranslation, VerseBookmark, VerseHighlight, StudyNote, BibleSourceConfig, VerifiedScriptureItem } from "../types";
 import { BIBLE_BOOKS } from "../data/mockData";
@@ -98,6 +101,10 @@ export const BibleHub: React.FC<BibleHubProps> = ({
   const [notes, setNotes] = useState<StudyNote[]>([]);
   const [noteDraft, setNoteDraft] = useState("");
   const [isNoteDrawerOpen, setIsNoteDrawerOpen] = useState(false);
+  const [noteTargetVerse, setNoteTargetVerse] = useState<number | null>(null);
+  const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
+  const [noteSelectedCategory, setNoteSelectedCategory] = useState<string>("Scripture Study");
+  const [noteSavedFeedback, setNoteSavedFeedback] = useState(false);
   const [copiedVerseNum, setCopiedVerseNum] = useState<number | null>(null);
 
   // Reader Settings
@@ -138,6 +145,19 @@ export const BibleHub: React.FC<BibleHubProps> = ({
     };
     window.addEventListener("gtc_audio_mute_changed", handleMuteChange);
     return () => window.removeEventListener("gtc_audio_mute_changed", handleMuteChange);
+  }, []);
+
+  // Synchronize study notes across views and playback sessions
+  useEffect(() => {
+    const handleNotesSync = (e: any) => {
+      if (e?.detail && Array.isArray(e.detail)) {
+        setNotes(e.detail);
+      } else {
+        setNotes(Storage.getNotes());
+      }
+    };
+    window.addEventListener("gtc_notes_updated", handleNotesSync);
+    return () => window.removeEventListener("gtc_notes_updated", handleNotesSync);
   }, []);
 
   // Update initial props when changed
@@ -227,6 +247,7 @@ export const BibleHub: React.FC<BibleHubProps> = ({
     setHighlights(Storage.getHighlights());
     setNotes(Storage.getNotes());
     Storage.setRecentReading({ book: selectedBook, chapter: selectedChapter });
+    Storage.recordChapterRead(selectedBook, selectedChapter);
 
     // Stop previous audio on chapter change
     stopAudio();
@@ -580,23 +601,51 @@ export const BibleHub: React.FC<BibleHubProps> = ({
     }
   };
 
+  const handleOpenNoteDrawer = (verseNum?: number) => {
+    const target = verseNum ?? activeVerseNum ?? audioVerseNum ?? 1;
+    setNoteTargetVerse(target);
+    const existing = notes.find(
+      (n) => n.scriptureRef === `${selectedBook} ${selectedChapter}:${target}`
+    );
+    if (existing) {
+      setNoteDraft(existing.content);
+      setEditingNoteId(existing.id);
+      if (existing.tags && existing.tags.length > 0) {
+        setNoteSelectedCategory(existing.tags[0]);
+      }
+    } else {
+      setNoteDraft("");
+      setEditingNoteId(null);
+    }
+    setIsNoteDrawerOpen(true);
+  };
+
   const handleSaveNote = () => {
-    if (!noteDraft.trim() || !activeVerseNum) return;
+    if (!noteDraft.trim()) return;
+    const targetVerse = noteTargetVerse ?? activeVerseNum ?? audioVerseNum ?? 1;
+    const ref = `${selectedBook} ${selectedChapter}:${targetVerse}`;
     const newNote: StudyNote = {
-      id: `note-${Date.now()}`,
-      title: `${selectedBook} ${selectedChapter}:${activeVerseNum} Study Note`,
-      content: noteDraft,
-      scriptureRef: `${selectedBook} ${selectedChapter}:${activeVerseNum}`,
-      tags: ["Scripture Study", selectedBook],
+      id: editingNoteId || `note-${Date.now()}`,
+      title: `${selectedBook} ${selectedChapter}:${targetVerse} Study Note`,
+      content: noteDraft.trim(),
+      scriptureRef: ref,
+      tags: [noteSelectedCategory, selectedBook],
       folder: "Bible Hub",
       isPrivate: true,
-      createdAt: new Date().toISOString(),
+      createdAt: editingNoteId
+        ? (notes.find((n) => n.id === editingNoteId)?.createdAt || new Date().toISOString())
+        : new Date().toISOString(),
       updatedAt: new Date().toISOString()
     };
     const updated = Storage.saveNote(newNote);
     setNotes(updated);
-    setNoteDraft("");
-    setIsNoteDrawerOpen(false);
+    setNoteSavedFeedback(true);
+    setTimeout(() => {
+      setNoteSavedFeedback(false);
+      setIsNoteDrawerOpen(false);
+      setNoteDraft("");
+      setEditingNoteId(null);
+    }, 800);
   };
 
   const handleCopyVerse = (verseNum: number, text: string) => {
@@ -641,8 +690,8 @@ export const BibleHub: React.FC<BibleHubProps> = ({
 
   return (
     <div id="bible-hub-container" className="w-full grid grid-cols-1 lg:grid-cols-12 gap-5 sm:gap-6">
-      {/* 1. Left Column: Book & Chapter Navigator (3 cols on desktop) */}
-      <div className="lg:col-span-3 space-y-4">
+      {/* 1. Left Column: Book & Chapter Navigator (3 cols on desktop, order-2 on mobile) */}
+      <div id="bible-navigator-column" className="lg:col-span-3 space-y-4 order-2 lg:order-1">
         <div className="bg-white border border-[#E5E0D5] rounded-[28px] p-5 shadow-xs space-y-3.5">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
@@ -869,42 +918,53 @@ export const BibleHub: React.FC<BibleHubProps> = ({
         </div>
       </div>
 
-      {/* 2. Middle Column: Primary Scripture Reader Canvas (6 cols on desktop) */}
-      <div className="lg:col-span-6 space-y-4">
-        <div className="bg-white border border-[#E5E0D5] rounded-[32px] p-5 sm:p-8 shadow-xs space-y-5">
+      {/* 2. Middle Column: Primary Scripture Reader Canvas (6 cols on desktop, order-1 on mobile) */}
+      <div className="lg:col-span-6 space-y-4 order-1 lg:order-2">
+        <div className="bg-white border border-[#E5E0D5] rounded-2xl sm:rounded-[32px] p-4 sm:p-8 shadow-xs space-y-4 sm:space-y-5">
           {/* Header Action Bar */}
-          <div className="flex flex-wrap items-center justify-between gap-3 pb-4 border-b border-[#E5E0D5]">
-            <div className="flex items-center gap-2 sm:gap-3">
+          <div className="flex flex-wrap items-center justify-between gap-2.5 sm:gap-3 pb-3.5 sm:pb-4 border-b border-[#E5E0D5]">
+            <div className="flex items-center gap-2 sm:gap-3 min-w-0">
               <button
                 onClick={handlePrevChapter}
                 disabled={selectedChapter <= 1 && selectedBook === "Genesis"}
-                className="w-8 h-8 rounded-full bg-[#FDFCF9] hover:bg-white text-[#7A7468] hover:text-[#C5A059] border border-[#E5E0D5] disabled:opacity-30 transition-all flex items-center justify-center cursor-pointer shadow-2xs"
+                className="w-8 h-8 rounded-full bg-[#FDFCF9] hover:bg-white text-[#7A7468] hover:text-[#C5A059] border border-[#E5E0D5] disabled:opacity-30 transition-all flex items-center justify-center cursor-pointer shadow-2xs shrink-0"
                 title="Previous chapter"
               >
                 <ChevronLeft className="w-4 h-4" />
               </button>
 
-              <div>
+              <div className="min-w-0">
                 <div className="flex items-center gap-2">
-                  <h1 className="text-xl sm:text-2xl font-serif font-bold text-[#2D2D2D]">
+                  <h1 className="text-lg sm:text-2xl font-serif font-bold text-[#2D2D2D] truncate">
                     {selectedBook} <span className="text-[#C5A059] italic">{selectedChapter}</span>
                   </h1>
                   {isVerified && (
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 shrink-0">
                       <CheckCircle2 className="w-3 h-3 text-emerald-600" />
                       Verified
                     </span>
                   )}
                 </div>
-                <p className="text-[11px] font-medium text-[#8A8478] tracking-wide mt-0.5">
-                  {translation} • {currentBookData.category} • {versesList.length} Verified Verses
-                </p>
+                <div className="flex items-center gap-2 flex-wrap mt-0.5">
+                  <p className="text-[10px] sm:text-[11px] font-medium text-[#8A8478] tracking-wide">
+                    {translation} • {currentBookData.category} • {versesList.length} Verified Verses
+                  </p>
+                  <button
+                    onClick={() => {
+                      const el = document.getElementById("bible-navigator-column");
+                      if (el) el.scrollIntoView({ behavior: "smooth" });
+                    }}
+                    className="lg:hidden text-[10px] sm:text-[11px] text-[#C5A059] font-bold hover:underline inline-flex items-center gap-0.5 cursor-pointer"
+                  >
+                    <span>Change Book ▾</span>
+                  </button>
+                </div>
               </div>
 
               <button
                 onClick={handleNextChapter}
                 disabled={selectedChapter >= currentBookData.chaptersCount && selectedBook === "Revelation"}
-                className="w-8 h-8 rounded-full bg-[#FDFCF9] hover:bg-white text-[#7A7468] hover:text-[#C5A059] border border-[#E5E0D5] disabled:opacity-30 transition-all flex items-center justify-center cursor-pointer shadow-2xs"
+                className="w-8 h-8 rounded-full bg-[#FDFCF9] hover:bg-white text-[#7A7468] hover:text-[#C5A059] border border-[#E5E0D5] disabled:opacity-30 transition-all flex items-center justify-center cursor-pointer shadow-2xs shrink-0"
                 title="Next chapter"
               >
                 <ChevronRight className="w-4 h-4" />
@@ -1311,7 +1371,7 @@ export const BibleHub: React.FC<BibleHubProps> = ({
 
                 {/* Add Note */}
                 <button
-                  onClick={() => setIsNoteDrawerOpen(true)}
+                  onClick={() => handleOpenNoteDrawer(activeVerseNum || undefined)}
                   className="inline-flex items-center gap-1 px-2.5 py-1 bg-white hover:bg-[#F9F7F2] text-[#7A7468] hover:text-[#C5A059] border border-[#E5E0D5] rounded-xl text-xs font-semibold transition-colors cursor-pointer"
                 >
                   <Edit3 className="w-3 h-3 text-[#C5A059]" />
@@ -1588,47 +1648,6 @@ export const BibleHub: React.FC<BibleHubProps> = ({
             </div>
           </div>
         </div>
-
-        {/* Note Creation Drawer */}
-        {isNoteDrawerOpen && activeVerseNum !== null && (
-          <div className="bg-white border border-[#E5E0D5] rounded-[28px] p-5 shadow-md animate-fadeIn space-y-3">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2 text-xs font-bold text-[#2D2D2D] uppercase tracking-wider">
-                <FileText className="w-4 h-4 text-[#C5A059]" />
-                <span>Create Study Note for {selectedBook} {selectedChapter}:{activeVerseNum}</span>
-              </div>
-              <button
-                onClick={() => setIsNoteDrawerOpen(false)}
-                className="text-[#8A8478] hover:text-[#2D2D2D] cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <textarea
-              rows={3}
-              placeholder="Write your personal study reflection, cross references, or prayer insights..."
-              value={noteDraft}
-              onChange={(e) => setNoteDraft(e.target.value)}
-              className="w-full p-3 bg-[#F9F7F2] border border-[#E5E0D5] rounded-xl text-xs focus:outline-none focus:border-[#C5A059] focus:bg-white transition-all placeholder:text-[#AAA498]"
-            />
-
-            <div className="flex justify-end gap-2">
-              <button
-                onClick={() => setIsNoteDrawerOpen(false)}
-                className="px-3 py-1.5 text-xs text-[#7A7468] hover:bg-[#F9F7F2] rounded-lg cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleSaveNote}
-                className="px-4 py-1.5 bg-[#C5A059] hover:bg-[#B48F48] text-white text-xs font-bold uppercase tracking-wider rounded-lg shadow-xs cursor-pointer transition-colors"
-              >
-                Save Note
-              </button>
-            </div>
-          </div>
-        )}
       </div>
 
       {/* 3. Right Column: Dedicated Context & Study Tools Panel (3 cols on desktop) */}
@@ -1790,12 +1809,15 @@ export const BibleHub: React.FC<BibleHubProps> = ({
           {activeStudyTab === "notes" && (
             <div className="space-y-2 text-xs">
               <div className="flex justify-between items-center">
-                <span className="text-[10px] font-bold uppercase tracking-wider text-[#8A8478]">This Chapter ({chapterNotes.length + chapterBookmarks.length})</span>
+                <span className="text-[10px] font-bold uppercase tracking-wider text-[#8A8478]">
+                  This Chapter ({chapterNotes.length + chapterBookmarks.length})
+                </span>
                 <button
-                  onClick={() => setIsNoteDrawerOpen(true)}
-                  className="text-[11px] text-[#C5A059] font-bold hover:underline cursor-pointer"
+                  type="button"
+                  onClick={() => handleOpenNoteDrawer(audioVerseNum || activeVerseNum || 1)}
+                  className="text-[11px] text-[#C5A059] font-bold hover:underline cursor-pointer flex items-center gap-1"
                 >
-                  + Add Note
+                  <Plus className="w-3 h-3" /> Add Note
                 </button>
               </div>
 
@@ -1804,7 +1826,7 @@ export const BibleHub: React.FC<BibleHubProps> = ({
                   No bookmarks or notes in this chapter yet. Highlight or click a verse to save.
                 </p>
               ) : (
-                <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                <div className="space-y-1.5 max-h-56 overflow-y-auto pr-1">
                   {chapterBookmarks.map((b) => (
                     <div key={b.id} className="p-2 bg-[#FDFCF9] border border-[#E5E0D5] rounded-xl flex items-center justify-between">
                       <div>
@@ -1814,18 +1836,224 @@ export const BibleHub: React.FC<BibleHubProps> = ({
                       <Bookmark className="w-3.5 h-3.5 text-[#C5A059] fill-[#C5A059]" />
                     </div>
                   ))}
-                  {chapterNotes.map((n) => (
-                    <div key={n.id} className="p-2 bg-white border border-[#E5E0D5] rounded-xl">
-                      <span className="font-bold text-[#2D2D2D] block">{n.title}</span>
-                      <p className="text-[10px] text-[#7A7468] leading-tight">{n.content}</p>
-                    </div>
-                  ))}
+                  {chapterNotes.map((n) => {
+                    const verseMatch = n.scriptureRef?.match(/:(\d+)$/);
+                    const vNum = verseMatch ? parseInt(verseMatch[1], 10) : undefined;
+                    return (
+                      <div key={n.id} className="p-2.5 bg-white border border-[#E5E0D5] rounded-xl hover:border-[#C5A059] transition-colors space-y-1">
+                        <div className="flex items-center justify-between">
+                          <span className="font-bold text-[#2D2D2D] text-xs truncate max-w-[130px]">{n.title}</span>
+                          <div className="flex items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                handleOpenNoteDrawer(vNum);
+                                setNoteDraft(n.content);
+                                setEditingNoteId(n.id);
+                              }}
+                              className="p-1 text-[#8A8478] hover:text-[#C5A059] rounded cursor-pointer transition-colors"
+                              title="Edit Note"
+                            >
+                              <Edit3 className="w-3 h-3" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const updated = Storage.deleteNote(n.id);
+                                setNotes(updated);
+                              }}
+                              className="p-1 text-[#8A8478] hover:text-rose-600 rounded cursor-pointer transition-colors"
+                              title="Delete Note"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                            </button>
+                          </div>
+                        </div>
+                        <p className="text-[11px] text-[#7A7468] leading-tight line-clamp-3">{n.content}</p>
+                        {n.tags && n.tags.length > 0 && (
+                          <div className="flex flex-wrap gap-1 pt-0.5">
+                            {n.tags.map((t, idx) => (
+                              <span key={idx} className="text-[9px] px-1.5 py-0.5 bg-[#F9F7F2] text-[#8A8478] rounded border border-[#E5E0D5]">
+                                {t}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </div>
           )}
         </div>
       </div>
+
+      {/* 4. Dedicated Floating Study Note Modal (Never interrupts running Bible audio) */}
+      {isNoteDrawerOpen && (
+        <div
+          id="study-note-modal-overlay"
+          className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/40 backdrop-blur-xs animate-fadeIn"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setIsNoteDrawerOpen(false);
+              setEditingNoteId(null);
+            }
+          }}
+        >
+          <div
+            id="study-note-modal-card"
+            className="relative w-full max-w-lg bg-white border border-[#E5E0D5] rounded-[28px] p-5 sm:p-6 shadow-2xl space-y-4 max-h-[92vh] overflow-y-auto"
+          >
+            {/* Modal Header */}
+            <div className="flex items-center justify-between pb-3 border-b border-[#E5E0D5]">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-full bg-[#C5A059]/15 text-[#C5A059] flex items-center justify-center font-bold">
+                  <FileText className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="font-serif font-bold text-[#2D2D2D] text-sm sm:text-base">
+                    {editingNoteId ? "Edit Study Note" : "Create Study Note"}
+                  </h3>
+                  <p className="text-[11px] text-[#7A7468]">
+                    {selectedBook} Chapter {selectedChapter} • Verse {noteTargetVerse ?? 1}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsNoteDrawerOpen(false);
+                  setEditingNoteId(null);
+                }}
+                className="p-1 text-[#8A8478] hover:text-[#2D2D2D] rounded-lg cursor-pointer transition-colors"
+                title="Close"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Background Audio Running Indicator */}
+            {(isAudioPlaying || audioVerseNum !== null) && (
+              <div className="p-2.5 bg-amber-50/90 border border-amber-200/90 rounded-xl flex items-center gap-2.5 text-xs text-amber-950">
+                <Volume2 className="w-4 h-4 text-[#C5A059] animate-pulse shrink-0" />
+                <div className="leading-tight">
+                  <span className="font-bold">Audio Bible Running: </span>
+                  <span className="text-[11px] text-amber-900">
+                    Reciting verse {audioVerseNum || noteTargetVerse || 1}. Narration continues smoothly while you jot down reflections.
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {/* Verse Context Snippet */}
+            <div className="p-3 bg-[#FDFCF9] border border-[#E5E0D5] rounded-xl space-y-1.5">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-bold text-[#C5A059] uppercase tracking-wider">
+                  Scripture Citation ({translation})
+                </span>
+                <div className="flex items-center gap-1.5">
+                  <label className="text-[10px] text-[#8A8478] font-semibold">Attached Verse:</label>
+                  <select
+                    value={noteTargetVerse ?? 1}
+                    onChange={(e) => setNoteTargetVerse(parseInt(e.target.value, 10))}
+                    className="text-[10px] font-bold bg-white border border-[#E5E0D5] rounded-lg px-2 py-0.5 text-[#2D2D2D] cursor-pointer"
+                  >
+                    {versesList.map((v) => (
+                      <option key={v.num} value={v.num}>
+                        Verse {v.num} {audioVerseNum === v.num ? "(Current Audio)" : ""}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              <p className="text-xs text-[#4A4438] font-serif italic line-clamp-2">
+                "{versesList.find((v) => v.num === (noteTargetVerse ?? 1))?.text || ""}"
+              </p>
+            </div>
+
+            {/* Category / Topic Tags */}
+            <div className="space-y-1.5">
+              <label className="text-[10px] font-bold uppercase tracking-wider text-[#8A8478]">
+                Study Category
+              </label>
+              <div className="flex flex-wrap gap-1.5">
+                {[
+                  "Scripture Study",
+                  "Rhema / Revelation",
+                  "Prayer & Intercession",
+                  "Personal Application",
+                  "Prophetic Promise"
+                ].map((tag) => (
+                  <button
+                    key={tag}
+                    type="button"
+                    onClick={() => setNoteSelectedCategory(tag)}
+                    className={`px-2.5 py-1 rounded-xl text-[10px] font-bold border transition-all cursor-pointer ${
+                      noteSelectedCategory === tag
+                        ? "bg-[#C5A059] text-white border-[#C5A059] shadow-2xs"
+                        : "bg-[#F9F7F2] text-[#7A7468] border-[#E5E0D5] hover:border-[#C5A059]"
+                    }`}
+                  >
+                    {tag}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Note Input */}
+            <div className="space-y-1.5">
+              <label className="text-[10px] font-bold uppercase tracking-wider text-[#8A8478]">
+                Personal Study Reflection
+              </label>
+              <textarea
+                rows={4}
+                autoFocus
+                placeholder="Write your personal study reflection, cross references, or prayer insights as you listen..."
+                value={noteDraft}
+                onChange={(e) => setNoteDraft(e.target.value)}
+                className="w-full p-3 bg-[#F9F7F2] border border-[#E5E0D5] rounded-xl text-xs focus:outline-none focus:border-[#C5A059] focus:bg-white transition-all placeholder:text-[#AAA498]"
+              />
+            </div>
+
+            {/* Saved Feedback Confirmation */}
+            {noteSavedFeedback && (
+              <div className="p-2.5 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-800 font-bold flex items-center gap-1.5 animate-fadeIn">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                <span>Note saved to your Study Library!</span>
+              </div>
+            )}
+
+            {/* Modal Actions */}
+            <div className="flex items-center justify-between pt-2 border-t border-[#E5E0D5]">
+              <span className="text-[10px] text-[#8A8478]">
+                Saved locally & to your study archive
+              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsNoteDrawerOpen(false);
+                    setEditingNoteId(null);
+                  }}
+                  className="px-3.5 py-2 text-xs text-[#7A7468] hover:bg-[#F9F7F2] rounded-xl cursor-pointer transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveNote}
+                  disabled={!noteDraft.trim()}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 bg-[#C5A059] hover:bg-[#B48F48] disabled:opacity-40 text-white text-xs font-bold uppercase tracking-wider rounded-xl shadow-xs hover:shadow transition-all cursor-pointer"
+                >
+                  <Save className="w-3.5 h-3.5" />
+                  <span>{editingNoteId ? "Update Note" : "Save Note"}</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

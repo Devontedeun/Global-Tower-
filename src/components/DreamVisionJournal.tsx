@@ -25,6 +25,7 @@ import {
 import { DreamEntry, VisionEntry, SpiritualInsightResult } from "../types";
 import { Storage } from "../lib/storage";
 import { BIBLICAL_SYMBOLS, BiblicalSymbol } from "../data/biblicalSymbolsData";
+import { analyzeSpiritualInquiry } from "../lib/theologicalEngine";
 
 interface DreamVisionJournalProps {
   onAnalyzeWithAI?: (text: string) => void;
@@ -227,9 +228,14 @@ export const DreamVisionJournal: React.FC<DreamVisionJournalProps> = ({
       const data = await res.json();
       if (data.success && data.data) {
         setAiInterpretResult(data.data);
+      } else {
+        const fallback = analyzeSpiritualInquiry(text, t);
+        setAiInterpretResult(fallback);
       }
     } catch (e) {
-      console.error("AI Interpretation error:", e);
+      console.warn("AI Interpretation API unavailable, scanning Bible fallback:", e);
+      const fallback = analyzeSpiritualInquiry(text, t);
+      setAiInterpretResult(fallback);
     } finally {
       setIsAiInterpreting(false);
     }
@@ -755,6 +761,60 @@ export const DreamVisionJournal: React.FC<DreamVisionJournalProps> = ({
                   {aiInterpretResult.summary}
                 </p>
               </div>
+
+              {/* 🕊️ Godly Structured Biblical Points */}
+              {aiInterpretResult.scannedBiblicalPoints && aiInterpretResult.scannedBiblicalPoints.length > 0 && (
+                <div className="p-5 sm:p-6 bg-gradient-to-b from-[#FDFCF9] to-white border-2 border-[#C5A059]/30 rounded-2xl space-y-4">
+                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#E5E0D5] pb-3">
+                    <div className="flex items-center gap-2">
+                      <BookOpen className="w-4 h-4 text-[#C5A059]" />
+                      <h4 className="font-serif font-bold text-[#2D2D2D] text-base">
+                        Structured Biblical Points & Principles
+                      </h4>
+                    </div>
+                    {aiInterpretResult.scannerNotice && (
+                      <span className="text-[11px] text-[#8A8478] bg-[#FAF6EE] px-2.5 py-0.5 rounded-full border border-[#C5A059]/30">
+                        Canonical Scan Active
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-3.5">
+                    {aiInterpretResult.scannedBiblicalPoints.map((pt) => (
+                      <div
+                        key={pt.pointNumber}
+                        className="p-4 bg-white border border-[#E5E0D5] rounded-xl space-y-2.5"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-2">
+                            <span className="w-6 h-6 rounded-full bg-[#C5A059] text-white flex items-center justify-center text-xs font-bold font-serif">
+                              {pt.pointNumber}
+                            </span>
+                            <span className="font-serif font-bold text-sm text-[#2D2D2D]">
+                              {pt.title.replace(/^\d+\.\s*/, "")}
+                            </span>
+                          </div>
+                          <span className="text-[10px] text-[#C5A059] bg-[#C5A059]/10 font-bold px-2 py-0.5 rounded">
+                            {pt.covenantTheme}
+                          </span>
+                        </div>
+
+                        {/* Scripture */}
+                        <div className="p-3 bg-[#FDFCF9] rounded-lg border-l-3 border-l-[#C5A059] border border-[#E5E0D5] space-y-1">
+                          <div className="text-xs font-bold font-serif text-[#C5A059]">{pt.scriptureRef}</div>
+                          <p className="text-xs text-[#2D2D2D] italic leading-relaxed">"{pt.scriptureText}"</p>
+                        </div>
+
+                        {/* Principle & Application */}
+                        <div className="text-xs text-[#555046] leading-relaxed space-y-1">
+                          <p><strong className="text-[#2D2D2D]">Theological Truth:</strong> {pt.theologicalPrinciple}</p>
+                          <p><strong className="text-emerald-800">Godly Application:</strong> {pt.practicalApplication}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {/* Extracted Symbols & Motifs */}
               {aiInterpretResult.extractedEventsAndSymbols && (

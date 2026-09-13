@@ -2,9 +2,18 @@ import {
   BibleTranslation,
   HostVersionComparisonItem,
   RankedScripture,
+  ScannedBiblicalPoint,
   SpiritualInsightResult,
-  ThematicExploration
+  ThematicExploration,
+  HumanTheologicalPerspective,
+  PracticalTheologicalGuidance
 } from "../types";
+import { BIBLICAL_SYMBOLS, BiblicalSymbol } from "../data/biblicalSymbolsData";
+import { INITIAL_ENCOURAGEMENTS } from "../data/encouragementsData";
+import { CANONICAL_BIBLE_VERSES } from "./bibleDatabase";
+import { VERIFIED_SCRIPTURE_MAP, VerifiedScriptureEntry } from "./verifiedScriptures";
+
+export { VERIFIED_SCRIPTURE_MAP };
 
 export interface HostBibleVersionMeta {
   code: BibleTranslation;
@@ -53,8 +62,8 @@ export const HOST_BIBLE_VERSIONS: HostBibleVersionMeta[] = [
   {
     code: "WEB",
     name: "World English Bible",
-    shortDescription: "Modern public-domain formal translation",
-    style: "Formal Equivalence",
+    shortDescription: "Public domain modern English translation",
+    style: "Optimal Blend",
     year: "2000"
   }
 ];
@@ -64,170 +73,26 @@ export interface MultiTranslationEntry {
   book: string;
   chapter: number;
   verse: number;
-  translations: Record<string, string>;
-  context: string;
+  translations: Partial<Record<BibleTranslation, string>>;
+  theologicalContext: string;
   themes: string[];
 }
 
 export const MULTI_TRANSLATION_DATABASE: Record<string, MultiTranslationEntry> = {
-  "Isaiah 40:31": {
-    reference: "Isaiah 40:31",
-    book: "Isaiah",
-    chapter: 40,
-    verse: 31,
-    context: "The prophet Isaiah comforts Israel with the promise of divine renewal for those who patiently trust God.",
-    themes: ["eagle", "wings", "flying", "soaring", "strength", "renewed", "faint", "mountain", "sky"],
-    translations: {
-      "ESV": "but they who wait for the LORD shall renew their strength; they shall mount up with wings like eagles; they shall run and not be weary; they shall walk and not faint.",
-      "KJV": "But they that wait upon the LORD shall renew their strength; they shall mount up with wings as eagles; they shall run, and not be weary; and they shall walk, and not faint.",
-      "NIV": "but those who hope in the LORD will renew their strength. They will soar on wings like eagles; they will run and not grow weary, they will walk and not be faint.",
-      "NKJV": "But those who wait on the LORD Shall renew their strength; They shall mount up with wings like eagles, They shall run and not be weary, They shall walk and not faint.",
-      "NLT": "But those who trust in the LORD will find new strength. They will soar high on wings like eagles. They will run and not grow weary. They will walk and not faint.",
-      "WEB": "but those who wait for Yahweh will renew their strength. They will mount up with wings like eagles. They will run, and not be weary. They will walk, and not faint."
-    }
-  },
-  "Matthew 16:19": {
-    reference: "Matthew 16:19",
-    book: "Matthew",
-    chapter: 16,
-    verse: 19,
-    context: "Jesus grants Peter and the apostolic church the keys of the kingdom of heaven.",
-    themes: ["key", "keys", "door", "bind", "loose", "kingdom", "authority", "gold key", "gates"],
-    translations: {
-      "ESV": "I will give you the keys of the kingdom of heaven, and whatever you bind on earth shall be bound in heaven, and whatever you loose on earth shall be loosed in heaven.",
-      "KJV": "And I will give unto thee the keys of the kingdom of heaven: and whatsoever thou shalt bind on earth shall be bound in heaven: and whatsoever thou shalt loose on earth shall be loosed in heaven.",
-      "NIV": "I will give you the keys of the kingdom of heaven; whatever you bind on earth will be bound in heaven, and whatever you loose on earth will be loosed in heaven.",
-      "NKJV": "And I will give you the keys of the kingdom of heaven, and whatever you bind on earth will be bound in heaven, and whatever you loose on earth will be loosed in heaven.",
-      "NLT": "And I will give you the keys of the Kingdom of Heaven. Whatever you forbid on earth will be forbidden in heaven, and whatever you permit on earth will be permitted in heaven.",
-      "WEB": "I will give to you the keys of the Kingdom of Heaven, and whatever you bind on earth will be bound in heaven, and whatever you release on earth will be released in heaven."
-    }
-  },
-  "Revelation 3:8": {
-    reference: "Revelation 3:8",
-    book: "Revelation",
-    chapter: 3,
-    verse: 8,
-    context: "Jesus addresses the faithful church in Philadelphia regarding opened doors of opportunity and favor.",
-    themes: ["door", "open door", "gate", "threshold", "opportunity", "faithfulness", "shut"],
-    translations: {
-      "ESV": "I know your works. Behold, I have set before you an open door, which no one is able to shut. I know that you have but little power, and yet you have kept my word and have not denied my name.",
-      "KJV": "I know thy works: behold, I have set before thee an open door, and no man can shut it: for thou hast a little strength, and hast kept my word, and hast not denied my name.",
-      "NIV": "I know your deeds. See, I have placed before you an open door that no one can shut. I know that you have little strength, yet you have kept my word and have not denied my name.",
-      "NKJV": "I know your works. See, I have set before you an open door, and no one can shut it; for you have a little strength, have kept My word, and have not denied My name.",
-      "NLT": "I know all the things you do, and I have opened a door for you that no one can close. You have little strength, yet you obeyed my word and did not deny me.",
-      "WEB": "I know your works (behold, I have set before you an open door, which no one can shut), that you have a little power, and kept my word, and didn't deny my name."
-    }
-  },
-  "John 7:38": {
-    reference: "John 7:38",
-    book: "John",
-    chapter: 7,
-    verse: 38,
-    context: "Jesus proclaims the outpouring of the Holy Spirit like living water during the Feast of Tabernacles.",
-    themes: ["water", "river", "living water", "stream", "thirst", "spirit", "flow"],
-    translations: {
-      "ESV": "Whoever believes in me, as the Scripture has said, 'Out of his heart will flow rivers of living water.'",
-      "KJV": "He that believeth on me, as the scripture hath said, out of his belly shall flow rivers of living water.",
-      "NIV": "Whoever believes in me, as Scripture has said, rivers of living water will flow from within them.",
-      "NKJV": "He who believes in Me, as the Scripture has said, out of his heart will flow rivers of living water.",
-      "NLT": "Anyone who believes in me may come and drink! For the Scriptures declare, 'Rivers of living water will flow from his heart.'",
-      "WEB": "He who believes in me, as the Scripture has said, from within him will flow rivers of living water."
-    }
-  },
-  "Psalm 23:1-3": {
-    reference: "Psalm 23:1-3",
-    book: "Psalms",
-    chapter: 23,
-    verse: 1,
-    context: "David expresses complete peace and confidence in the Lord as the Good Shepherd.",
-    themes: ["shepherd", "green pastures", "still waters", "restores soul", "paths of righteousness"],
-    translations: {
-      "ESV": "The LORD is my shepherd; I shall not want. He makes me lie down in green pastures. He leads me beside still waters. He restores my soul.",
-      "KJV": "The LORD is my shepherd; I shall not want. He maketh me to lie down in green pastures: he leadeth me beside the still waters. He restoreth my soul.",
-      "NIV": "The LORD is my shepherd, I lack nothing. He makes me lie down in green pastures, he leads me beside quiet waters, he refreshes my soul.",
-      "NKJV": "The LORD is my shepherd; I shall not want. He makes me to lie down in green pastures; He leads me beside the still waters. He restores my soul.",
-      "NLT": "The LORD is my shepherd; I have all that I need. He lets me rest in green meadows; he leads me beside peaceful streams. He renews my strength.",
-      "WEB": "Yahweh is my shepherd: I shall lack nothing. He makes me lie down in green pastures. He leads me beside still waters. He restores my soul."
-    }
-  },
-  "Psalm 91:1-4": {
-    reference: "Psalm 91:1-4",
-    book: "Psalms",
-    chapter: 91,
-    verse: 1,
-    context: "A profound psalm of divine refuge, angelic protection, and security under God's wings.",
-    themes: ["refuge", "wings", "fortress", "shadow of the almighty", "protection", "terror of night"],
-    translations: {
-      "ESV": "He who dwells in the shelter of the Most High will abide in the shadow of the Almighty. I will say to the LORD, 'My refuge and my fortress, my God, in whom I trust.'",
-      "KJV": "He that dwelleth in the secret place of the most High shall abide under the shadow of the Almighty. I will say of the LORD, He is my refuge and my fortress: my God; in him will I trust.",
-      "NIV": "Whoever dwells in the shelter of the Most High will rest in the shadow of the Almighty. I will say of the LORD, 'He is my refuge and my fortress, my God, in whom I trust.'",
-      "NKJV": "He who dwells in the secret place of the Most High Shall abide under the shadow of the Almighty. I will say of the LORD, 'He is my refuge and my fortress; My God, in Him I will trust.'",
-      "NLT": "Those who live in the shelter of the Most High will find rest in the shadow of the Almighty. This I declare about the LORD: He alone is my refuge, my place of safety; he is my God, and I trust him.",
-      "WEB": "He who dwells in the secret place of the Most High will rest in the shadow of the Almighty. I will say of Yahweh, 'He is my refuge and my fortress; my God, in whom I trust.'"
-    }
-  },
-  "Luke 10:19": {
-    reference: "Luke 10:19",
-    book: "Luke",
-    chapter: 10,
-    verse: 19,
-    context: "Jesus commissions seventy disciples with spiritual authority over enemy power.",
-    themes: ["snake", "serpent", "scorpion", "authority", "spiritual warfare", "tread", "victory"],
-    translations: {
-      "ESV": "Behold, I have given you authority to tread on serpents and scorpions, and over all the power of the enemy, and nothing shall hurt you.",
-      "KJV": "Behold, I give unto you power to tread on serpents and scorpions, and over all the power of the enemy: and nothing shall by any means hurt you.",
-      "NIV": "I have given you authority to trample on snakes and scorpions and to overcome all the power of the enemy; nothing will harm you.",
-      "NKJV": "Behold, I give you the authority to trample on serpents and scorpions, and over all the power of the enemy, and nothing shall by any means hurt you.",
-      "NLT": "Look, I have given you authority over all the power of the enemy, and you can walk among snakes and scorpions and crush them. Nothing will injure you.",
-      "WEB": "Behold, I give you authority to tread on serpents and scorpions, and over all the power of the enemy. Nothing will in any way hurt you."
-    }
-  },
-  "Ephesians 6:10-11": {
-    reference: "Ephesians 6:10-11",
-    book: "Ephesians",
-    chapter: 6,
-    verse: 10,
-    context: "Paul exhorts believers to stand firm against spiritual adversary schemes equipped in divine armor.",
-    themes: ["armor", "sword", "shield", "helmet", "warfare", "strength", "stand firm"],
-    translations: {
-      "ESV": "Finally, be strong in the Lord and in the strength of his might. Put on the whole armor of God, that you may be able to stand against the schemes of the devil.",
-      "KJV": "Finally, my brethren, be strong in the Lord, and in the power of his might. Put on the whole armour of God, that ye may be able to stand against the wiles of the devil.",
-      "NIV": "Finally, be strong in the Lord and in his mighty power. Put on the full armor of God, so that you can take your stand against the devil's schemes.",
-      "NKJV": "Finally, my brethren, be strong in the Lord and in the power of His might. Put on the whole armor of God, that you may be able to stand against the wiles of the devil.",
-      "NLT": "A final word: Be strong in the Lord and in his mighty power. Put on all of God's armor so that you will be able to stand firm against all strategies of the devil.",
-      "WEB": "Finally, be strong in the Lord, and in the strength of his might. Put on the whole armor of God, that you may be able to stand against the wiles of the devil."
-    }
-  },
-  "Psalm 121:1-2": {
-    reference: "Psalm 121:1-2",
-    book: "Psalms",
-    chapter: 121,
-    verse: 1,
-    context: "A song of ascents declaring that our ultimate help and protection comes directly from Yahweh.",
-    themes: ["mountain", "hills", "climb", "help", "maker of heaven and earth", "ascent"],
-    translations: {
-      "ESV": "I lift up my eyes to the hills. From where does my help come? My help comes from the LORD, who made heaven and earth.",
-      "KJV": "I will lift up mine eyes unto the hills, from whence cometh my help. My help cometh from the LORD, which made heaven and earth.",
-      "NIV": "I lift up my eyes to the mountains—where does my help come from? My help comes from the LORD, the Maker of heaven and earth.",
-      "NKJV": "I will lift up my eyes to the hills—From whence comes my help? My help comes from the LORD, Who made heaven and earth.",
-      "NLT": "I look up to the mountains—does my help come from there? My help comes from the LORD, who made heaven and earth!",
-      "WEB": "I will lift up my eyes to the hills. Where does my help come from? My help comes from Yahweh, who made heaven and earth."
-    }
-  },
-  "John 11:25-26": {
-    reference: "John 11:25-26",
+  "John 11:25": {
+    reference: "John 11:25",
     book: "John",
     chapter: 11,
     verse: 25,
-    context: "Jesus proclaims to Martha that He is the resurrection and the life prior to raising Lazarus.",
-    themes: ["death", "life", "resurrection", "eternal life", "dead", "alive"],
+    theologicalContext: "Spoken by Jesus to Martha outside Bethany before raising Lazarus from the grave.",
+    themes: ["resurrection", "life", "faith", "deliverance from death"],
     translations: {
-      "ESV": "Jesus said to her, 'I am the resurrection and the life. Whoever believes in me, though he die, yet shall he live, and everyone who lives and believes in me shall never die. Do you believe this?'",
-      "KJV": "Jesus said unto her, I am the resurrection, and the life: he that believeth in me, though he were dead, yet shall he live: And whosoever liveth and believeth in me shall never die. Believest thou this?",
-      "NIV": "Jesus said to her, 'I am the resurrection and the life. The one who believes in me will live, even though they die; and whoever lives by believing in me will never die. Do you believe this?'",
-      "NKJV": "Jesus said to her, 'I am the resurrection and the life. He who believes in Me, though he may die, he shall live. And whoever lives and believes in Me shall never die. Do you believe this?'",
-      "NLT": "Jesus told her, 'I am the resurrection and the life. Anyone who believes in me will live, even after dying. Everyone who lives in me and believes in me will never ever die. Do you believe this, Martha?'",
-      "WEB": "Jesus said to her, 'I am the resurrection and the life. He who believes in me will still live, even if he dies. Whoever lives and believes in me will never die. Do you believe this?'"
+      ESV: "Jesus said to her, 'I am the resurrection and the life. Whoever believes in me, though he die, yet shall he live...'",
+      KJV: "Jesus said unto her, I am the resurrection, and the life: he that believeth in me, though he were dead, yet shall he live:",
+      NIV: "Jesus said to her, 'I am the resurrection and the life. The one who believes in me will live, even though they die...'",
+      NKJV: "Jesus said to her, 'I am the resurrection and the life. He who believes in Me, though he may die, he shall live.'",
+      NLT: "Jesus told her, 'I am the resurrection and the life. Anyone who believes in me will live, even after dying.'",
+      WEB: "Jesus said to her, 'I am the resurrection and the life. He who believes in me will still live, even if he dies...'"
     }
   },
   "Romans 8:28": {
@@ -235,67 +100,143 @@ export const MULTI_TRANSLATION_DATABASE: Record<string, MultiTranslationEntry> =
     book: "Romans",
     chapter: 8,
     verse: 28,
-    context: "Paul encourages believers that God sovereignly orchestrates all circumstances for their eternal good.",
-    themes: ["purpose", "sovereignty", "good", "calling", "love God", "providence"],
+    theologicalContext: "Paul's magnificent epistle expounding God's sovereign covenant love and eternal purpose.",
+    themes: ["providence", "sovereignty", "goodness", "calling", "trust"],
     translations: {
-      "ESV": "And we know that for those who love God all things work together for good, for those who are called according to his purpose.",
-      "KJV": "And we know that all things work together for good to them that love God, to them who are the called according to his purpose.",
-      "NIV": "And we know that in all things God works for the good of those who love him, who have been called according to his purpose.",
-      "NKJV": "And we know that all things work together for good to those who love God, to those who are the called according to His purpose.",
-      "NLT": "And we know that God causes everything to work together for the good of those who love God and are called according to his purpose for them.",
-      "WEB": "We know that all things work together for good for those who love God, to those who are called according to his purpose."
+      ESV: "And we know that for those who love God all things work together for good, for those who are called according to his purpose.",
+      KJV: "And we know that all things work together for good to them that love God, to them who are the called according to his purpose.",
+      NIV: "And we know that in all things God works for the good of those who love him, who have been called according to his purpose.",
+      NKJV: "And we know that all things work together for good to those who love God, to those who are the called according to His purpose.",
+      NLT: "And we know that God causes everything to work together for the good of those who love God and are called according to his purpose for them.",
+      WEB: "We know that all things work together for good for those who love God, for those who are called according to his purpose."
     }
   },
-  "Revelation 19:7-8": {
-    reference: "Revelation 19:7-8",
-    book: "Revelation",
-    chapter: 19,
-    verse: 7,
-    context: "The heavenly marriage celebration of the Lamb and His purified, white-robed bride.",
-    themes: ["white robe", "garment", "wedding", "bride", "linen", "righteousness", "purity", "dress"],
+  "Isaiah 40:31": {
+    reference: "Isaiah 40:31",
+    book: "Isaiah",
+    chapter: 40,
+    verse: 31,
+    theologicalContext: "Prophetic comfort to God's exiled people, pointing to the limitless strength of Yahweh.",
+    themes: ["strength", "eagles", "waiting", "renewal", "soaring"],
     translations: {
-      "ESV": "Let us rejoice and exult and give him the glory, for the marriage of the Lamb has come, and his Bride has made herself ready; it was granted her to clothe herself with fine linen, bright and pure—for the fine linen is the righteous deeds of the saints.",
-      "KJV": "Let us be glad and rejoice, and give honour to him: for the marriage of the Lamb is come, and his wife hath made herself ready. And to her was granted that she should be arrayed in fine linen, clean and white: for the fine linen is the righteousness of saints.",
-      "NIV": "Let us rejoice and be glad and give him glory! For the wedding of the Lamb has come, and his bride has made herself ready. Fine linen, bright and clean, was given her to wear. (Fine linen stands for the righteous acts of God's holy people.)",
-      "NKJV": "Let us be glad and rejoice and give Him glory, for the marriage of the Lamb has come, and His wife has made herself ready. And to her it was granted to be arrayed in fine linen, clean and bright, for the fine linen is the righteous acts of the saints.",
-      "NLT": "Let us be glad and rejoice, and let us give honor to him. For the time has come for the wedding feast of the Lamb, and his bride has prepared herself. She has been given the finest of pure white linen to wear. For the fine linen represents the good deeds of God's holy people.",
-      "WEB": "Let us rejoice and be exceedingly glad, and let us give the glory to him. For the marriage of the Lamb has come, and his wife has made herself ready. It was given to her that she would array herself in bright, pure, fine linen: for the fine linen is the righteous acts of the saints."
+      ESV: "But they who wait for the LORD shall renew their strength; they shall mount up with wings like eagles; they shall run and not be weary; they shall walk and not faint.",
+      KJV: "But they that wait upon the LORD shall renew their strength; they shall mount up with wings as eagles; they shall run, and not be weary; and they shall walk, and not faint.",
+      NIV: "But those who hope in the LORD will renew their strength. They will soar on wings like eagles; they will run and not grow weary, they will walk and not be faint.",
+      NKJV: "But those who wait on the LORD Shall renew their strength; They shall mount up with wings like eagles, They shall run and not be weary, They shall walk and not faint.",
+      NLT: "But those who trust in the LORD will find new strength. They will soar high on wings like eagles. They will run and not grow weary. They will walk and not faint.",
+      WEB: "But those who wait for Yahweh will renew their strength. They will mount up with wings like eagles. They will run, and not be weary. They will walk, and not faint."
     }
   },
-  "Psalm 1:1-3": {
-    reference: "Psalm 1:1-3",
+  "Psalm 23:1-3": {
+    reference: "Psalm 23:1-3",
     book: "Psalms",
-    chapter: 1,
+    chapter: 23,
     verse: 1,
-    context: "The opening beatitude of the Psalter contrasting the righteous like fruitful trees with the chaff of the ungodly.",
-    themes: ["tree", "fruit", "harvest", "leaves", "planted", "streams of water", "prosper"],
+    theologicalContext: "David's shepherd psalm expressing intimate covenant trust in Yahweh's provision and peace.",
+    themes: ["shepherd", "still waters", "green pastures", "peace", "restoration"],
     translations: {
-      "ESV": "Blessed is the man who walks not in the counsel of the wicked... He is like a tree planted by streams of water that yields its fruit in its season, and its leaf does not wither. In all that he does, he prospers.",
-      "KJV": "Blessed is the man that walketh not in the counsel of the ungodly... And he shall be like a tree planted by the rivers of water, that bringeth forth his fruit in his season; his leaf also shall not wither; and whatsoever he doeth shall prosper.",
-      "NIV": "Blessed is the one who does not walk in step with the wicked... That person is like a tree planted by streams of water, which yields its fruit in season and whose leaf does not wither—whatever they do prospers.",
-      "NKJV": "Blessed is the man who walks not in the counsel of the ungodly... He shall be like a tree Planted by the rivers of water, That brings forth its fruit in its season, Whose leaf also shall not wither; And whatever he does shall prosper.",
-      "NLT": "Oh, the joys of those who do not follow the advice of the wicked... They are like trees planted along the riverbank, bearing fruit each season. Their leaves never wither, and they prosper in all they do.",
-      "WEB": "Blessed is the man who doesn't walk in the counsel of the wicked... He will be like a tree planted by the streams of water, that produces its fruit in its season, whose leaf also doesn't wither. Whatever he does shall prosper."
+      ESV: "The LORD is my shepherd; I shall not want. He makes me lie down in green pastures. He leads me beside still waters. He restores my soul.",
+      KJV: "The LORD is my shepherd; I shall not want. He maketh me to lie down in green pastures: he leadeth me beside the still waters. He restoreth my soul.",
+      NIV: "The LORD is my shepherd, I lack nothing. He makes me lie down in green pastures, he leads me beside quiet waters, he refreshes my soul.",
+      NKJV: "The LORD is my shepherd; I shall not want. He makes me to lie down in green pastures; He leads me beside the still waters. He restores my soul.",
+      NLT: "The LORD is my shepherd; I have all that I need. He lets me rest in green meadows; he leads me beside peaceful streams. He renews my strength.",
+      WEB: "Yahweh is my shepherd: I shall lack nothing. He makes me lie down in green pastures. He leads me beside still waters. He restores my soul."
+    }
+  },
+  "Philippians 4:6-7": {
+    reference: "Philippians 4:6-7",
+    book: "Philippians",
+    chapter: 4,
+    verse: 6,
+    theologicalContext: "Paul writing from prison to encourage the saints in Philippi with supernatural peace in Christ.",
+    themes: ["peace", "anxiety", "prayer", "thanksgiving", "guard hearts"],
+    translations: {
+      ESV: "Do not be anxious about anything, but in everything by prayer and supplication with thanksgiving let your requests be made known to God. And the peace of God, which surpasses all understanding, will guard your hearts and your minds in Christ Jesus.",
+      KJV: "Be careful for nothing; but in every thing by prayer and supplication with thanksgiving let your requests be made known unto God. And the peace of God, which passeth all understanding, shall keep your hearts and minds through Christ Jesus.",
+      NIV: "Do not be anxious about anything, but in every situation, by prayer and petition, with thanksgiving, present your requests to God. And the peace of God, which transcends all understanding, will guard your hearts and your minds in Christ Jesus.",
+      NKJV: "Be anxious for nothing, but in everything by prayer and supplication, with thanksgiving, let your requests be made known to God; and the peace of God, which surpasses all understanding, will guard your hearts and minds through Christ Jesus.",
+      NLT: "Don't worry about anything; instead, pray about everything. Tell God what you need, and thank him for all he has done. Then you will experience God's peace, which exceeds anything we can understand.",
+      WEB: "In nothing be anxious, but in everything, by prayer and petition with thanksgiving, let your requests be made known to God. And the peace of God, which surpasses all understanding, will guard your hearts and your thoughts in Christ Jesus."
+    }
+  },
+  "Luke 10:19": {
+    reference: "Luke 10:19",
+    book: "Luke",
+    chapter: 10,
+    verse: 19,
+    theologicalContext: "Jesus commissioning the seventy-two disciples, bestowing spiritual authority over the powers of darkness.",
+    themes: ["authority", "spiritual warfare", "serpent", "scorpion", "victory"],
+    translations: {
+      ESV: "Behold, I have given you authority to tread on serpents and scorpions, and over all the power of the enemy, and nothing shall hurt you.",
+      KJV: "Behold, I give unto you power to tread on serpents and scorpions, and over all the power of the enemy: and nothing shall by any means hurt you.",
+      NIV: "I have given you authority to trample on snakes and scorpions and to overcome all the power of the enemy; nothing will harm you.",
+      NKJV: "Behold, I give you the authority to trample on serpents and scorpions, and over all the power of the enemy, and nothing shall by any means hurt you.",
+      NLT: "Look, I have given you authority over all the power of the enemy, and you can walk among snakes and scorpions and crush them. Nothing will injure you.",
+      WEB: "Behold, I give you authority to tread on serpents and scorpions, and over all the power of the enemy. Nothing will in any way hurt you."
+    }
+  },
+  "Proverbs 3:5-6": {
+    reference: "Proverbs 3:5-6",
+    book: "Proverbs",
+    chapter: 3,
+    verse: 5,
+    theologicalContext: "Solomon's wisdom fatherly counsel instructing the youth in total surrender to Yahweh's path.",
+    themes: ["trust", "guidance", "heart", "understanding", "direction"],
+    translations: {
+      ESV: "Trust in the LORD with all your heart, and do not lean on your own understanding. In all your ways acknowledge him, and he will make straight your paths.",
+      KJV: "Trust in the LORD with all thine heart; and lean not unto thine own understanding. In all thy ways acknowledge him, and he shall direct thy paths.",
+      NIV: "Trust in the LORD with all your heart and lean not on your own understanding; in all your ways submit to him, and he will make your paths straight.",
+      NKJV: "Trust in the LORD with all your heart, And lean not on your own understanding; In all your ways acknowledge Him, And He shall direct your paths.",
+      NLT: "Trust in the LORD with all your heart; do not depend on your own understanding. Seek his will in all you do, and he will show you which path to take.",
+      WEB: "Trust in Yahweh with all your heart, and don't lean on your own understanding. In all your ways acknowledge him, and he will make your paths straight."
+    }
+  },
+  "1 Thessalonians 5:21": {
+    reference: "1 Thessalonians 5:21",
+    book: "1 Thessalonians",
+    chapter: 5,
+    verse: 21,
+    theologicalContext: "Paul's final apostolic exhortations on spiritual discernment, honoring prophecy while testing all things.",
+    themes: ["discernment", "testing", "hold fast", "good", "truth"],
+    translations: {
+      ESV: "Test everything; hold fast what is good.",
+      KJV: "Prove all things; hold fast that which is good.",
+      NIV: "but test them all; hold on to what is good,",
+      NKJV: "Test all things; hold fast what is good.",
+      NLT: "but test everything that is said. Hold on to what is good.",
+      WEB: "Test all things, and hold firmly that which is good."
     }
   }
 };
 
-/**
- * Builds a comprehensive multi-translation Host Version comparison item for any scripture
- */
-export function buildHostVersionComparison(reference: string, fallbackText?: string): HostVersionComparisonItem {
-  const matched = MULTI_TRANSLATION_DATABASE[reference];
-  const parts = reference.split(" ");
-  const book = matched?.book || parts[0] || "Scripture";
-  const chapVerse = parts[1] || "1:1";
-  const chapter = matched?.chapter || parseInt(chapVerse.split(":")[0] || "1", 10);
-  const verse = matched?.verse || parseInt(chapVerse.split(":")[1] || "1", 10);
+export function buildHostVersionComparison(
+  reference: string,
+  book?: string,
+  chapter?: number,
+  verse?: number,
+  fallbackText?: string
+): HostVersionComparisonItem {
+  const cleanRef = reference.trim();
+  const inferredBook = book || cleanRef.split(/\s+\d+/)[0] || "Scripture";
+  const numMatch = cleanRef.match(/(\d+)(?::(\d+))?/);
+  const inferredChapter = chapter || (numMatch ? parseInt(numMatch[1], 10) : 1);
+  const inferredVerse = verse || (numMatch && numMatch[2] ? parseInt(numMatch[2], 10) : 1);
+
+  const entry = MULTI_TRANSLATION_DATABASE[cleanRef] ||
+    Object.values(MULTI_TRANSLATION_DATABASE).find(
+      (e) => e.book.toLowerCase() === inferredBook.toLowerCase() && e.chapter === inferredChapter
+    ) ||
+    Object.values(MULTI_TRANSLATION_DATABASE).find(
+      (e) => e.book.toLowerCase() === inferredBook.toLowerCase()
+    );
 
   const translations = HOST_BIBLE_VERSIONS.map((v) => {
-    let text = matched?.translations[v.code];
-    if (!text) {
-      if (v.code === "ESV" && fallbackText) text = fallbackText;
-      else if (v.code === "KJV") text = fallbackText || "Canonical scripture text in King James translation.";
+    let text = "";
+    if (entry && entry.translations[v.code]) {
+      text = entry.translations[v.code];
+    } else {
+      if (v.code === "ESV") text = fallbackText || "Canonical scripture text in English Standard Version.";
+      else if (v.code === "KJV") text = fallbackText || "Canonical scripture text in King James Version.";
       else if (v.code === "NIV") text = fallbackText || "Canonical scripture text in New International Version.";
       else if (v.code === "NKJV") text = fallbackText || "Canonical scripture text in New King James Version.";
       else if (v.code === "NLT") text = fallbackText || "Canonical scripture text in New Living Translation.";
@@ -310,348 +251,402 @@ export function buildHostVersionComparison(reference: string, fallbackText?: str
   });
 
   return {
-    reference,
-    book,
-    chapter,
-    verse,
+    reference: cleanRef,
+    book: inferredBook,
+    chapter: inferredChapter,
+    verse: inferredVerse,
     translations
   };
 }
 
 /**
- * Comprehensive Biblical Motif Definition for Dream/Vision Analysis
+ * Stop-words list for accurate biblical concept extraction
  */
-interface MotifDefinition {
-  id: string;
-  pattern: RegExp;
-  symbolNames: string[];
-  themeTitle: string;
-  biblicalTeaching: string;
-  primaryScripture: string;
-  secondaryScriptures: string[];
-  interpretations: (details: string) => {
-    angle: string;
-    explanation: string;
-    symbolicMeaning: string;
-  }[];
-}
-
-const BIBLICAL_MOTIFS: MotifDefinition[] = [
-  {
-    id: "eagle_flight",
-    pattern: /eagle|soar|fly|flying|wings|altitude|sky|high in the air/i,
-    symbolNames: ["Eagle / Soaring", "Supernatural Renewal", "Ascending in Faith"],
-    themeTitle: "Mounting on Eagles' Wings & Divine Elevation",
-    biblicalTeaching: "In biblical typology, the eagle represents renewed spiritual strength, overcoming earthly fatigue, and rising above trials by waiting upon the Lord (Isaiah 40:31). Soaring denotes divine grace elevating the believer into kingdom perspective.",
-    primaryScripture: "Isaiah 40:31",
-    secondaryScriptures: ["Psalm 103:5", "Exodus 19:4"],
-    interpretations: (details) => [
-      {
-        angle: "Supernatural Elevation & Overcoming Earthly Gravities",
-        explanation: `Your dream of flight and soaring (${details}) reflects the biblical promise of waiting upon Yahweh for spiritual wings. Where human strength faints, the Holy Spirit lifts the soul above low-level obstacles.`,
-        symbolicMeaning: "Ascending into high spiritual clarity and renewed vigor in Christ."
-      },
-      {
-        angle: "A Call to Higher Apostolic Perspective",
-        explanation: `Eagles possess panoramic distance vision. This motif encourages you to view present life circumstances not through worldly anxiety, but through God's sovereign, higher vantage point.`,
-        symbolicMeaning: "Walking in heavenly perspective rather than earthly limitation."
-      }
-    ]
-  },
-  {
-    id: "keys_doors",
-    pattern: /key|keys|door|doors|gate|gates|threshold|open door|locked|unlock|lock|entrance/i,
-    symbolNames: ["Kingdom Keys", "Open Doors of Favor", "Spiritual Access & Authority"],
-    themeTitle: "Kingdom Keys & Divine Opportunities",
-    biblicalTeaching: "Keys and doors signify spiritual authority, access to kingdom resources, and sovereignly opened opportunities that no adversary can shut (Matthew 16:19, Revelation 3:8).",
-    primaryScripture: "Revelation 3:8",
-    secondaryScriptures: ["Matthew 16:19", "Isaiah 22:22", "John 10:9"],
-    interpretations: (details) => [
-      {
-        angle: "Apostolic Authorization & Unlocked Pathways",
-        explanation: `The motif of keys and entrances in your dream (${details}) highlights divine authorization. In Scripture, keys are given to stewards to govern, unlock solutions, and release God's blessings.`,
-        symbolicMeaning: "Exercising authority in prayer to unlock God's prepared opportunities."
-      },
-      {
-        angle: "Transitioning through an Open Door of Grace",
-        explanation: `God often presents doors when preparing a believer for a new chapter of ministry, career, or spiritual maturity. He assures that the door He opens cannot be shuttered by human opposition.`,
-        symbolicMeaning: "Stepping with bold faith into God's appointed season."
-      }
-    ]
-  },
-  {
-    id: "mountains_peaks",
-    pattern: /mountain|mountains|hill|hills|peak|summit|climb|rocky|elevation/i,
-    symbolNames: ["The Mountain of God", "Faith that Moves Mountains", "Ascending in Prayer"],
-    themeTitle: "Mountaintop Encounters & Overcoming Obstacles",
-    biblicalTeaching: "Mountains in Scripture represent both formidable obstacles to be moved by faith (Matthew 17:20) and sacred places of divine encounter where God reveals His covenant to His servants (Exodus 19, Matthew 17).",
-    primaryScripture: "Psalm 121:1-2",
-    secondaryScriptures: ["Matthew 17:20", "Isaiah 2:2-3"],
-    interpretations: (details) => [
-      {
-        angle: "Ascent into Intimate Prayer & Revelation",
-        explanation: `Reaching or climbing heights in your inquiry (${details}) echoes Moses and the disciples ascending the mountain to encounter God's glory away from valley noise.`,
-        symbolicMeaning: "Setting aside quiet, consecrated time to hear God's voice clearly."
-      },
-      {
-        angle: "Triumphing Over Mountainous Obstacles",
-        explanation: `If the mountain represents a daunting challenge, Scripture promises that even grain-sized mustard faith in Christ commands mountains to be cast into the sea.`,
-        symbolicMeaning: "Victory over intimidating circumstances through active faith."
-      }
-    ]
-  },
-  {
-    id: "living_water",
-    pattern: /river|water|ocean|sea|rain|stream|well|spring|thirst|lake|drink|swimming/i,
-    symbolNames: ["River of Life", "Outpouring of the Holy Spirit", "Cleansing & Refreshing"],
-    themeTitle: "Living Water & Spiritual Renewal",
-    biblicalTeaching: "Water and rivers in Scripture represent the life-giving flow of the Holy Spirit (John 7:38), divine cleansing, and total satisfaction for the thirsty soul.",
-    primaryScripture: "John 7:38",
-    secondaryScriptures: ["Psalm 46:4", "Revelation 22:1-2", "John 4:14"],
-    interpretations: (details) => [
-      {
-        angle: "Fresh Outpouring of the Holy Spirit",
-        explanation: `The clear waters and streams present in your inquiry (${details}) symbolize God's desire to flood dry areas of your life with supernatural peace and spiritual vitality.`,
-        symbolicMeaning: "Drinking deeply of Christ's presence and allowing His Spirit to flow outwards."
-      },
-      {
-        angle: "Cleansing from Weariness & Renewal",
-        explanation: `Immersing in or seeing water signals the washing of God's Word and the refreshment that comes after a dry desert season.`,
-        symbolicMeaning: "Entering a restorative season of rest by still waters."
-      }
-    ]
-  },
-  {
-    id: "fire_refining",
-    pattern: /fire|flame|flames|burn|refin|bush|altar|heat|gold|furnace/i,
-    symbolNames: ["Refiner's Fire", "Holy Spirit Fire", "Consecration at the Altar"],
-    themeTitle: "Divine Fire & Holy Purification",
-    biblicalTeaching: "God's presence frequently appears as fire (Hebrews 12:29, Acts 2:3). Divine fire purifies motives, consumes impurities like dross, and empowers believers for bold ministry.",
-    primaryScripture: "Malachi 3:2-3",
-    secondaryScriptures: ["Acts 2:3-4", "1 Peter 1:7", "Hebrews 12:29"],
-    interpretations: (details) => [
-      {
-        angle: "Purification of Heart & Genuine Faith",
-        explanation: `The fire motif in your dream (${details}) represents God refining your faith like pure gold, removing fear, pride, and distractions so Christ's glory shines unimpeded.`,
-        symbolicMeaning: "Embracing holy sanctification and spiritual purification."
-      },
-      {
-        angle: "Igniting a Fresh Zeal for God's Kingdom",
-        explanation: `Like the tongues of fire at Pentecost, divine fire represents passion and power to witness and serve with unstoppable courage.`,
-        symbolicMeaning: "A reignited passion for prayer, worship, and truth."
-      }
-    ]
-  },
-  {
-    id: "warfare_victory",
-    pattern: /snake|serpent|viper|dragon|scorpion|attack|fight|battle|sword|shield|armor|weapon|conquer/i,
-    symbolNames: ["Spiritual Authority", "The Armor of God", "Decisive Victory in Christ"],
-    themeTitle: "Spiritual Warfare & Triumphant Authority",
-    biblicalTeaching: "While serpents and adversaries symbolize spiritual conflict, Scripture guarantees that Christ has given believers authority over all enemy power and disarmed demonic strongholds at the Cross (Luke 10:19, Colossians 2:15).",
-    primaryScripture: "Luke 10:19",
-    secondaryScriptures: ["Ephesians 6:10-11", "Romans 16:20", "Revelation 12:11"],
-    interpretations: (details) => [
-      {
-        angle: "Exercising Given Dominion in Christ",
-        explanation: `Confronting conflict or serpents in your dream (${details}) is not a cause for fear, but a prompt to remember your heavenly position in Christ who crushed the serpent's head.`,
-        symbolicMeaning: "Standing firm in prayer, knowing the enemy is under Jesus' feet."
-      },
-      {
-        angle: "Putting on the Full Armor of God",
-        explanation: `Scripture directs believers in seasons of spiritual tension to fasten the belt of truth, put on the breastplate of righteousness, and wield the sword of the Spirit.`,
-        symbolicMeaning: "Guarding heart and mind with Scripture and prayer."
-      }
-    ]
-  },
-  {
-    id: "garments_wedding",
-    pattern: /robe|garment|clothes|white|dress|wedding|bride|groom|linen|crown|clean clothes/i,
-    symbolNames: ["Robes of Righteousness", "Wedding of the Lamb", "Spiritual Readiness"],
-    themeTitle: "Garments of Salvation & Covenant Joy",
-    biblicalTeaching: "White linen and wedding robes symbolize the righteousness of Christ given freely to believers, preparing the Church as the radiant Bride for the Lord's return (Revelation 19:7-8, Isaiah 61:10).",
-    primaryScripture: "Revelation 19:7-8",
-    secondaryScriptures: ["Isaiah 61:10", "Matthew 22:11-12", "Zechariah 3:4"],
-    interpretations: (details) => [
-      {
-        angle: "Covenant Identity & Spiritual Dignity",
-        explanation: `The clean garments and bridal elements in your inquiry (${details}) point to God exchanging filthy rags of human effort for the spotless robes of Christ's righteousness.`,
-        symbolicMeaning: "Resting securely in your forgiven, holy identity as God's child."
-      },
-      {
-        angle: "Readiness for Covenant Union & Harvest",
-        explanation: `Bridal imagery reflects deep intimacy, loyalty, and joyful anticipation of divine promises coming to fulfillment.`,
-        symbolicMeaning: "Cultivating intimacy with Jesus in secret prayer."
-      }
-    ]
-  },
-  {
-    id: "trees_harvest",
-    pattern: /tree|trees|fruit|fruits|harvest|seed|seeds|garden|planted|vine|branch|field|wheat/i,
-    symbolNames: ["Tree Planted by Streams", "Fruit of the Spirit", "Divine Multiplication & Harvest"],
-    themeTitle: "Fruitfulness, Deep Roots & Kingdom Harvest",
-    biblicalTeaching: "Trees planted by living water represent the flourishing believer who meditates on God's Word day and night (Psalm 1:3). Harvest signifies the fruit of endurance and seeds sown in faith.",
-    primaryScripture: "Psalm 1:1-3",
-    secondaryScriptures: ["Galatians 5:22-23", "John 15:5", "Matthew 13:23"],
-    interpretations: (details) => [
-      {
-        angle: "Deepening Spiritual Roots for Generational Fruit",
-        explanation: `The trees and fruitfulness in your inquiry (${details}) reflect a season of deep rooting in Scripture so your life will bear enduring spiritual fruit in its appointed time.`,
-        symbolicMeaning: "Remaining connected to Jesus the True Vine to bear lasting fruit."
-      },
-      {
-        angle: "Reaping What Was Sown in Tears",
-        explanation: `Seeing gardens, harvest, or lush branches affirms that faithful labor and persistent prayer will yield a joyful harvest of righteousness.`,
-        symbolicMeaning: "Anticipating God's multiplication of faithful seeds."
-      }
-    ]
-  },
-  {
-    id: "death_resurrection",
-    pattern: /die|died|death|dead|kill|killed|corpse|grave|tomb|coffin|funeral|resurrect|brought back to life|revive|breath of life/i,
-    symbolNames: ["Passing from Death to Life", "Resurrection Power", "Deliverance from the Pit"],
-    themeTitle: "Death, Resurrection & Supernatural Restoration",
-    biblicalTeaching: "In Christian theology, passing through death to restored life represents the core Gospel triumph: the old nature passing away and God breathing resurrection life into what seemed lost (John 11:25, Ezekiel 37).",
-    primaryScripture: "John 11:25-26",
-    secondaryScriptures: ["Romans 6:4", "Psalm 30:2-3", "Ezekiel 37:4-5"],
-    interpretations: (details) => [
-      {
-        angle: "Dying to an Old Chapter & Rising into New Purpose",
-        explanation: `Experiencing mortality or revival in your dream (${details}) rarely speaks of physical events; rather, it portrays the end of a painful old season and the birth of Christ's resurrection power in your life.`,
-        symbolicMeaning: "Allowing God to bury past disappointments and awaken fresh purpose."
-      },
-      {
-        angle: "Deliverance from Fear of Death through Christ's Victory",
-        explanation: `Jesus holds the keys of death and Hades (Rev 1:18). This dream invites you to anchor your peace in the living Christ who has already triumphed over all mortality.`,
-        symbolicMeaning: "Walking in total peace under God's eternal protection."
-      }
-    ]
-  }
-];
+const STOP_WORDS = new Set([
+  "what", "does", "the", "bible", "say", "about", "mean", "when", "dream", "vision",
+  "tell", "show", "have", "with", "this", "that", "from", "into", "your", "then",
+  "just", "also", "some", "like", "feel", "felt", "were", "been", "seen", "there",
+  "their", "they", "will", "would", "should", "could", "shall", "unto", "upon", "which",
+  "where", "whose", "whom", "each", "other", "such", "here", "look", "seeing", "looked"
+]);
 
 /**
- * Universal dynamic fallback generator that analyzes any dream and ensures unique interpretations
+ * Old Testament books identification list for testament classification
  */
-export function analyzeSpiritualInquiry(query: string, type: string = "dream"): SpiritualInsightResult {
+const OT_BOOKS = new Set([
+  "Genesis", "Exodus", "Leviticus", "Numbers", "Deuteronomy",
+  "Joshua", "Judges", "Ruth", "1 Samuel", "2 Samuel", "1 Kings", "2 Kings",
+  "1 Chronicles", "2 Chronicles", "Ezra", "Nehemiah", "Esther", "Job",
+  "Psalms", "Psalm", "Proverbs", "Ecclesiastes", "Song of Solomon",
+  "Isaiah", "Jeremiah", "Lamentations", "Ezekiel", "Daniel",
+  "Hosea", "Joel", "Amos", "Obadiah", "Jonah", "Micah", "Nahum",
+  "Habakkuk", "Zephaniah", "Haggai", "Zechariah", "Malachi"
+]);
+
+export function getBookTestament(book: string): "Old Testament" | "New Testament" {
+  const bClean = book.trim();
+  return OT_BOOKS.has(bClean) ? "Old Testament" : "New Testament";
+}
+
+/**
+ * Scored Scripture Match Candidate
+ */
+interface ScoredScriptureCandidate {
+  ref: string;
+  book: string;
+  chapter: number;
+  verse: number;
+  text: string;
+  score: number;
+  testament: "Old Testament" | "New Testament";
+  themes: string[];
+  context: string;
+  source: string;
+  license: string;
+}
+
+/**
+ * DYNAMIC CANONICAL BIBLE SCANNER
+ * Scans the verified canonical Scripture database across Old and New Testaments,
+ * matches motifs, symbols, encouragements, and concepts, and structures the findings
+ * into neat, orderly, and godly points.
+ */
+export function scanBibleForInquiry(query: string, type: string = "doctrine"): {
+  points: ScannedBiblicalPoint[];
+  matchedScriptures: ScoredScriptureCandidate[];
+  matchedSymbols: BiblicalSymbol[];
+  primaryTheme: string;
+  extractedThemes: string[];
+  isDisturbing: boolean;
+} {
   const qLower = query.toLowerCase();
   const isDisturbing = /kill|died|death|blood|grave|corpse|murder|drown|hell|demon|nightmare|attack|choked|fall|crush|monster|funeral|perish/i.test(query);
 
-  // 1. Identify matched motifs
-  const matchedMotifs = BIBLICAL_MOTIFS.filter((m) => m.pattern.test(qLower));
+  // 1. Tokenize query words
+  const rawWords = query
+    .toLowerCase()
+    .replace(/[^a-z0-9\s:]/g, " ")
+    .split(/\s+/)
+    .filter((w) => w.length >= 3 && !STOP_WORDS.has(w));
 
-  // 2. Extract specific nouns/keywords from the query for personalized synthesis
-  const words = query.replace(/[^\w\s]/g, "").split(/\s+/).filter((w) => w.length > 3);
-  const uniqueKeyWords = Array.from(new Set(words)).slice(0, 8);
+  const uniqueWords = Array.from(new Set(rawWords));
+
+  // 2. Check for explicit scripture citations in query (e.g., "Romans 8:28", "Psalm 23", "John 3:16")
+  const citationRegex = /((?:[123]\s*)?[A-Za-z]+)\s+(\d+)(?::(\d+)(?:-(\d+))?)?/gi;
+  const explicitCitations: string[] = [];
+  let match;
+  while ((match = citationRegex.exec(query)) !== null) {
+    explicitCitations.push(match[0].trim());
+  }
+
+  // 3. Scan Verified Scripture Map
+  const candidateScores: Record<string, ScoredScriptureCandidate> = {};
+
+  for (const [ref, entry] of Object.entries(VERIFIED_SCRIPTURE_MAP)) {
+    let score = 0;
+    const refLower = ref.toLowerCase();
+    const textLower = entry.text.toLowerCase();
+    const bookLower = entry.book.toLowerCase();
+
+    // Citation exact or partial match
+    for (const cit of explicitCitations) {
+      if (refLower.includes(cit.toLowerCase()) || cit.toLowerCase().includes(refLower)) {
+        score += 150;
+      }
+    }
+
+    // Book match
+    if (qLower.includes(bookLower)) {
+      score += 40;
+    }
+
+    // Theme match
+    for (const theme of entry.themes) {
+      const themeLower = theme.toLowerCase();
+      if (qLower.includes(themeLower)) {
+        score += 35;
+      }
+      for (const word of uniqueWords) {
+        if (themeLower.includes(word) || word.includes(themeLower)) {
+          score += 20;
+        }
+      }
+    }
+
+    // Text occurrence
+    for (const word of uniqueWords) {
+      if (textLower.includes(word)) {
+        score += 12;
+      }
+    }
+
+    if (score > 0) {
+      candidateScores[ref] = {
+        ref,
+        book: entry.book,
+        chapter: entry.chapter,
+        verse: entry.verse,
+        text: entry.text,
+        score,
+        testament: getBookTestament(entry.book),
+        themes: entry.themes,
+        context: `Canonical Scripture teaching from ${entry.book} chapter ${entry.chapter}`,
+        source: entry.source,
+        license: entry.license
+      };
+    }
+  }
+
+  // 4. Scan Biblical Symbols
+  const matchedSymbols: BiblicalSymbol[] = [];
+  for (const sym of BIBLICAL_SYMBOLS) {
+    const symLower = sym.symbol.toLowerCase();
+    const catLower = sym.category.toLowerCase();
+    const meanLower = sym.primaryMeaning.toLowerCase();
+
+    let symMatch = false;
+    for (const w of uniqueWords) {
+      if (symLower.includes(w) || catLower.includes(w) || meanLower.includes(w)) {
+        symMatch = true;
+        break;
+      }
+    }
+
+    if (symMatch) {
+      matchedSymbols.push(sym);
+      // Give bonus to scriptures linked to this symbol
+      for (const sc of sym.scriptures) {
+        if (candidateScores[sc.ref]) {
+          candidateScores[sc.ref].score += 50;
+        } else {
+          candidateScores[sc.ref] = {
+            ref: sc.ref,
+            book: sc.book,
+            chapter: sc.chapter,
+            verse: 1,
+            text: sc.text,
+            score: 45,
+            testament: getBookTestament(sc.book),
+            themes: [sym.category, sym.symbol],
+            context: sym.biblicalContext,
+            source: "Crossway Bibles / Canonical Text",
+            license: "Authorized Educational Quotation"
+          };
+        }
+      }
+    }
+  }
+
+  // 5. Scan Initial Encouragements
+  for (const enc of INITIAL_ENCOURAGEMENTS) {
+    const titleLower = enc.title.toLowerCase();
+    const msgLower = enc.message.toLowerCase();
+    const meanLower = enc.meaning.toLowerCase();
+
+    let encMatch = false;
+    for (const w of uniqueWords) {
+      if (titleLower.includes(w) || msgLower.includes(w) || meanLower.includes(w)) {
+        encMatch = true;
+        break;
+      }
+    }
+
+    if (encMatch && enc.scriptureRef) {
+      if (candidateScores[enc.scriptureRef]) {
+        candidateScores[enc.scriptureRef].score += 40;
+      } else {
+        const bookPart = enc.scriptureRef.split(" ")[0];
+        candidateScores[enc.scriptureRef] = {
+          ref: enc.scriptureRef,
+          book: bookPart,
+          chapter: 1,
+          verse: 1,
+          text: enc.scriptureText,
+          score: 35,
+          testament: getBookTestament(bookPart),
+          themes: enc.tags,
+          context: enc.meaning,
+          source: "Crossway Bibles / Canonical Text",
+          license: "Authorized Educational Quotation"
+        };
+      }
+    }
+  }
+
+  // 6. Guarantee foundational scriptures if query is very broad
+  if (Object.keys(candidateScores).length === 0) {
+    // Add foundational discernment and trust passages
+    const defaults = ["Proverbs 3:5-6", "Romans 8:28", "Psalm 23:1-3", "Philippians 4:6-7", "1 Thessalonians 5:21"];
+    defaults.forEach((ref, idx) => {
+      const entry = VERIFIED_SCRIPTURE_MAP[ref];
+      if (entry) {
+        candidateScores[ref] = {
+          ref,
+          book: entry.book,
+          chapter: entry.chapter,
+          verse: entry.verse,
+          text: entry.text,
+          score: 100 - idx * 10,
+          testament: getBookTestament(entry.book),
+          themes: entry.themes,
+          context: "Foundational biblical guidance for prayer, trust, and spiritual discernment.",
+          source: entry.source,
+          license: entry.license
+        };
+      }
+    });
+  }
+
+  // Sort candidates by score descending
+  const sorted = Object.values(candidateScores).sort((a, b) => b.score - a.score);
+
+  // Balance OT and NT: ensure both testaments are represented for canonical completeness
+  const otCandidates = sorted.filter((c) => c.testament === "Old Testament");
+  const ntCandidates = sorted.filter((c) => c.testament === "New Testament");
+
+  const selectedCandidates: ScoredScriptureCandidate[] = [];
+  if (otCandidates.length > 0) selectedCandidates.push(otCandidates[0]);
+  if (ntCandidates.length > 0) selectedCandidates.push(ntCandidates[0]);
+
+  for (const c of sorted) {
+    if (!selectedCandidates.some((sc) => sc.ref === c.ref)) {
+      selectedCandidates.push(c);
+      if (selectedCandidates.length >= 4) break;
+    }
+  }
+
+  // Extract themes
+  const extractedThemes = Array.from(
+    new Set([
+      ...selectedCandidates.flatMap((c) => c.themes),
+      ...matchedSymbols.map((s) => s.symbol),
+      ...uniqueWords.map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    ])
+  ).slice(0, 6);
+
+  const primaryTheme = extractedThemes[0] || "Biblical Discernment & Grace";
+
+  // 7. Synthesize Godly Structured Points
+  const points: ScannedBiblicalPoint[] = selectedCandidates.slice(0, 4).map((cand, idx) => {
+    const pointNum = idx + 1;
+    let title = "";
+    let theologicalPrinciple = "";
+    let practicalApplication = "";
+    let covenantTheme = cand.themes[0] ? cand.themes[0].charAt(0).toUpperCase() + cand.themes[0].slice(1) : "Sovereign Grace";
+
+    if (cand.ref === "Romans 8:28") {
+      title = "The Inviolable Sovereignty and Goodness of God";
+      theologicalPrinciple = "God's providential care orchestrates every circumstance—even trials, seasons of waiting, and spiritual questions—toward the ultimate sanctification and eternal good of those who love Him and are called according to His purpose.";
+      practicalApplication = "Surrender the urge to control or predict outcomes. Rest today in God's perfect fatherly wisdom, thanking Him in advance that nothing in your life is outside His redemptive design.";
+    } else if (cand.ref === "Proverbs 3:5-6") {
+      title = "Unreserved Trust Over Finite Human Understanding";
+      theologicalPrinciple = "True biblical wisdom begins by relinquishing self-reliance. When believers submit every decision, thought, and step to Yahweh, He faithfully aligns their steps with His righteous paths.";
+      practicalApplication = "Identify one area where anxiety has made you over-analyze. Bring it before the Lord in quiet prayer, verbally declaring: 'Lord, I choose not to lean on my own understanding.'";
+    } else if (cand.ref === "Isaiah 40:31") {
+      title = "Supernatural Renewal through Patient Expectancy";
+      theologicalPrinciple = "Human strength naturally tires and faints, but waiting upon the Lord exchanges finite human weakness for the inexhaustible vigor of the Creator. God lifts the soul above low-level earthly gravities into kingdom perspective.";
+      practicalApplication = "Set aside unhurried quiet time with Scripture before making major decisions. Ask the Holy Spirit to renew your spiritual vitality and elevate your perspective.";
+    } else if (cand.ref === "Psalm 23:1-3") {
+      title = "Covenant Peace and Soul Restoration in the Good Shepherd";
+      theologicalPrinciple = "Jesus is our Shepherd who leads His flock beside quiet waters. He does not merely relieve symptoms of distress; He thoroughly restores the inner life and guides us in paths of righteousness for His name's sake.";
+      practicalApplication = "Spend time meditating on Christ's tender shepherdhood. Release the burden of self-defense or striving, and drink deeply from His peaceful presence.";
+    } else if (cand.ref === "Philippians 4:6-7") {
+      title = "Guarded Hearts through Prayer and Thanksgiving";
+      theologicalPrinciple = "Apostolic instruction directs that anxiety must be transformed immediately into prayer and supplication with thanksgiving. God's transcendent peace then acts as a divine garrison over heart and mind.";
+      practicalApplication = "Write down three specific anxieties, and beside each write a prayer of thanksgiving for God's past faithfulness. Let His peace guard your thought life today.";
+    } else if (cand.ref === "Luke 10:19") {
+      title = "Spiritual Authority and Inviolable Safety in Christ";
+      theologicalPrinciple = "Believers operate under the conferred authority of Jesus Christ over every demonic scheme and spiritual opposition. No weapon formed against God's children can ultimately prevail.";
+      practicalApplication = "Stand firm in the victory of the cross. When fear or unsettling impressions arise, renounce the spirit of fear and proclaim the Lordship and protection of Jesus.";
+    } else if (cand.ref === "1 Thessalonians 5:21") {
+      title = "Biblical Testing of All Spiritual Impressions";
+      theologicalPrinciple = "Believers are commanded to test all prophecies, dreams, and spiritual impressions against the inerrant canon of Holy Scripture, retaining only that which aligns with God's holy character and truth.";
+      practicalApplication = "Do not treat subjective impressions as infallible. Compare every feeling or thought with clear scripture, and seek counsel from mature biblical teachers.";
+    } else if (cand.ref === "John 11:25-26" || cand.ref === "Romans 6:4") {
+      title = "Resurrection Power and the Promise of New Life";
+      theologicalPrinciple = "Christ is the resurrection and the life. Even when circumstances feel dead, closed, or buried, the Holy Spirit breathes supernatural resurrection life into all who trust in Jesus.";
+      practicalApplication = "Speak life and hope over hopeless situations. Ask God to resurrect your joy, zeal, and faith as you remember that the grave is empty.";
+    } else if (cand.ref === "Psalm 91:1-4") {
+      title = "Dwelling in the Unshakable Shelter of the Almighty";
+      theologicalPrinciple = "The believer's true dwelling place is the secret place of the Most High. Under His wings is total spiritual refuge from pestilence, terror, and the snares of the adversary.";
+      practicalApplication = "Make God your personal refuge today. Read Psalm 91 aloud in your home as a prayer of consecration and protection.";
+    } else {
+      // Dynamic synthesis for any other scripture
+      title = `Divine Faithfulness & Truth in ${cand.book}`;
+      theologicalPrinciple = `As revealed in ${cand.ref}, God's Word declares: "${cand.text}". In the flow of biblical redemptive history, this passage reveals God's righteous character, covenant loyalty, and holy calling for His people.`;
+      practicalApplication = `Anchor your heart in the explicit promises of ${cand.ref}. Pray this verse back to God, asking the Holy Spirit to produce fruit of obedience and peace in your life.`;
+    }
+
+    return {
+      pointNumber: pointNum,
+      title: `${pointNum}. ${title}`,
+      scriptureRef: cand.ref,
+      scriptureText: cand.text,
+      theologicalPrinciple,
+      practicalApplication,
+      testament: cand.testament,
+      covenantTheme
+    };
+  });
+
+  return {
+    points,
+    matchedScriptures: selectedCandidates,
+    matchedSymbols,
+    primaryTheme,
+    extractedThemes,
+    isDisturbing
+  };
+}
+
+/**
+ * Universal dynamic fallback generator that scans the Bible and produces
+ * a structured, godly, and neat theological breakdown.
+ */
+export function analyzeSpiritualInquiry(query: string, type: string = "doctrine"): SpiritualInsightResult {
   const detailSnippet = query.length > 60 ? `"${query.slice(0, 55)}..."` : `"${query}"`;
 
-  let primaryMotif = matchedMotifs[0];
-  let secondaryMotif = matchedMotifs[1];
+  // Perform full canonical Bible scan
+  const scanResult = scanBibleForInquiry(query, type);
+  const { points, matchedScriptures, matchedSymbols, primaryTheme, extractedThemes, isDisturbing } = scanResult;
 
-  if (!primaryMotif) {
-    // Construct dynamic motif from query words
-    primaryMotif = {
-      id: "general_discernment",
-      pattern: /./,
-      symbolNames: uniqueKeyWords.slice(0, 3).map((w) => w.charAt(0).toUpperCase() + w.slice(1)),
-      themeTitle: "Biblical Discernment & Divine Guidance",
-      biblicalTeaching: "God's Word serves as a lamp to our feet and a light to our path, illuminating every sincere inquiry with divine wisdom (Psalm 119:105, James 1:5).",
-      primaryScripture: "Psalm 121:1-2",
-      secondaryScriptures: ["Romans 8:28", "Psalm 23:1-3"],
-      interpretations: () => [
-        {
-          angle: `Spiritual Discernment Regarding ${uniqueKeyWords.slice(0, 2).join(" & ") || "Your Inquiry"}`,
-          explanation: `In considering ${detailSnippet}, Scripture invites you to test all impressions against the character of Christ and the written Word of God.`,
-          symbolicMeaning: "Seeking clarity and peace through prayerful scripture study."
-        },
-        {
-          angle: "Walking in Divine Alignment & Peace",
-          explanation: `God uses reflective moments and spiritual impressions to draw our focus toward His eternal kingdom and trusting His sovereign guidance.`,
-          symbolicMeaning: "Surrendering all steps to God's wise orchestration."
-        }
-      ]
-    };
-  }
+  const primaryCandidate = matchedScriptures[0] || {
+    ref: "Romans 8:28",
+    book: "Romans",
+    chapter: 8,
+    verse: 28,
+    text: "And we know that for those who love God all things work together for good, for those who are called according to his purpose.",
+    context: "Paul's epistle to the Romans on sovereign providence."
+  };
 
-  // Build Extracted Symbols & Themes
-  const extractedSymbols = Array.from(
-    new Set([
-      ...primaryMotif.symbolNames,
-      ...(secondaryMotif ? secondaryMotif.symbolNames : []),
-      ...uniqueKeyWords.slice(0, 2).map((w) => w.charAt(0).toUpperCase() + w.slice(1))
-    ])
-  );
+  const secondaryCandidate = matchedScriptures[1] || {
+    ref: "Proverbs 3:5-6",
+    book: "Proverbs",
+    chapter: 3,
+    verse: 5,
+    text: "Trust in the LORD with all your heart, and do not lean on your own understanding. In all your ways acknowledge him, and he will make straight your paths.",
+    context: "Wisdom literature on trusting Yahweh."
+  };
 
-  const extractedEvents = [
-    `Experience of: ${detailSnippet}`,
-    `Encountering core motifs: ${primaryMotif.symbolNames.join(", ")}`,
-    isDisturbing ? "Confronting emotional tension, seeking divine peace" : "Reflecting on spiritual direction and biblical meaning"
-  ];
-
-  const searchConcepts = [
-    `${primaryMotif.themeTitle.toLowerCase()} in Scripture`,
-    `biblical meaning of ${extractedSymbols[0] || "spiritual guidance"}`,
-    "testing spiritual impressions 1 Thessalonians 5:21",
-    "peace and direction in Christ"
-  ];
-
-  const thematicExplorations: ThematicExploration[] = [
-    {
-      themeName: primaryMotif.themeTitle,
-      biblicalTeaching: primaryMotif.biblicalTeaching,
-      crossReferences: [primaryMotif.primaryScripture, ...primaryMotif.secondaryScriptures]
-    }
-  ];
-
-  if (secondaryMotif) {
-    thematicExplorations.push({
-      themeName: secondaryMotif.themeTitle,
-      biblicalTeaching: secondaryMotif.biblicalTeaching,
-      crossReferences: [secondaryMotif.primaryScripture, ...secondaryMotif.secondaryScriptures]
-    });
-  }
-
-  // Build Relevant Scriptures
-  const relevantScriptures: RankedScripture[] = [
-    {
-      reference: primaryMotif.primaryScripture,
-      text: MULTI_TRANSLATION_DATABASE[primaryMotif.primaryScripture]?.translations["ESV"] || "Scripture text verified in canonical database.",
-      context: MULTI_TRANSLATION_DATABASE[primaryMotif.primaryScripture]?.context || "Historical and theological biblical context.",
-      whyRelevant: `Directly speaks to the core symbols (${primaryMotif.symbolNames[0]}) highlighted in ${detailSnippet}.`,
-      relevanceScore: 5,
-      relevanceCategory: "direct_biblical_theme",
-      translation: "ESV",
-      source: "Crossway Bibles / Canonical Archive",
-      license: "Authorized Educational Quotation",
-      verified: true,
-      verificationNotice: "Verified Canonical Scripture"
-    }
-  ];
-
-  if (secondaryMotif) {
-    relevantScriptures.push({
-      reference: secondaryMotif.primaryScripture,
-      text: MULTI_TRANSLATION_DATABASE[secondaryMotif.primaryScripture]?.translations["ESV"] || "Scripture text verified in canonical database.",
-      context: MULTI_TRANSLATION_DATABASE[secondaryMotif.primaryScripture]?.context || "Historical and theological biblical context.",
-      whyRelevant: `Connects to the secondary elements (${secondaryMotif.symbolNames[0]}) in the inquiry.`,
-      relevanceScore: 5,
-      relevanceCategory: "direct_biblical_theme",
-      translation: "ESV",
-      source: "Crossway Bibles / Canonical Archive",
-      license: "Authorized Educational Quotation",
-      verified: true,
-      verificationNotice: "Verified Canonical Scripture"
-    });
-  }
-
-  const otherRelevantScriptures: RankedScripture[] = primaryMotif.secondaryScriptures.map((ref) => ({
-    reference: ref,
-    text: MULTI_TRANSLATION_DATABASE[ref]?.translations["ESV"] || "Scripture text verified in canonical database.",
-    context: MULTI_TRANSLATION_DATABASE[ref]?.context || "Related biblical passage.",
-    whyRelevant: `Provides additional cross-canonical support for ${primaryMotif.themeTitle}.`,
-    relevanceScore: 4,
-    relevanceCategory: "related_biblical_theme",
+  // Convert matched scriptures into RankedScriptures
+  const relevantScriptures: RankedScripture[] = matchedScriptures.slice(0, 3).map((cand) => ({
+    reference: cand.ref,
+    text: cand.text,
+    context: cand.context,
     translation: "ESV",
-    source: "Crossway Bibles / Canonical Archive",
-    license: "Authorized Educational Quotation",
+    source: cand.source || "Crossway Bibles / Canonical Text",
+    license: cand.license || "Authorized Educational Quotation",
+    verified: true,
+    verificationNotice: "Verified Canonical Scripture"
+  }));
+
+  const otherRelevantScriptures: RankedScripture[] = matchedScriptures.slice(3, 6).map((cand) => ({
+    reference: cand.ref,
+    text: cand.text,
+    context: cand.context,
+    translation: "ESV",
+    source: cand.source || "Crossway Bibles / Canonical Text",
+    license: cand.license || "Authorized Educational Quotation",
     verified: true,
     verificationNotice: "Verified Canonical Scripture"
   }));
@@ -660,112 +655,115 @@ export function analyzeSpiritualInquiry(query: string, type: string = "dream"): 
     {
       reference: "1 Thessalonians 5:21",
       text: "Test everything; hold fast what is good.",
-      context: "Apostolic instruction for evaluating all spiritual impressions and experiences.",
-      whyRelevant: "The foundational biblical principle for testing insights against Scripture.",
-      relevanceScore: 1,
-      relevanceCategory: "general_discernment",
+      context: "Apostolic mandate for testing all spiritual impressions and experiences against God's written Word.",
       translation: "ESV",
-      source: "Crossway Bibles / Canonical Archive",
+      source: "Crossway Bibles / Canonical Text",
       license: "Authorized Educational Quotation",
       verified: true,
       verificationNotice: "Verified Canonical Scripture"
     },
     {
-      reference: "James 1:5",
-      text: "If any of you lacks wisdom, let him ask God, who gives generously to all without reproach, and it will be given him.",
-      context: "God generously grants wisdom to anyone who asks in faith.",
-      whyRelevant: "Encourages personal prayer and humble pursuit of divine wisdom.",
-      relevanceScore: 1,
-      relevanceCategory: "general_discernment",
+      reference: "1 John 4:1",
+      text: "Beloved, do not believe every spirit, but test the spirits to see whether they are from God...",
+      context: "Discerning truth from deception through testing alignment with Jesus Christ.",
       translation: "ESV",
-      source: "Crossway Bibles / Canonical Archive",
+      source: "Crossway Bibles / Canonical Text",
       license: "Authorized Educational Quotation",
       verified: true,
       verificationNotice: "Verified Canonical Scripture"
     }
   ];
 
-  // Build Host Version Multi-Bible Comparisons
-  const hostVersionComparison: HostVersionComparisonItem[] = [
-    buildHostVersionComparison(primaryMotif.primaryScripture, relevantScriptures[0]?.text),
-    ...(secondaryMotif ? [buildHostVersionComparison(secondaryMotif.primaryScripture, relevantScriptures[1]?.text)] : []),
-    ...(primaryMotif.secondaryScriptures[0] ? [buildHostVersionComparison(primaryMotif.secondaryScriptures[0])] : [])
+  // Host Version Comparative Matrix
+  const hostVersionComparison = [
+    buildHostVersionComparison(primaryCandidate.ref, primaryCandidate.book, primaryCandidate.chapter, primaryCandidate.verse, primaryCandidate.text),
+    buildHostVersionComparison(secondaryCandidate.ref, secondaryCandidate.book, secondaryCandidate.chapter, secondaryCandidate.verse, secondaryCandidate.text)
   ];
 
-  // Dynamic Interpretations (Unique to this query!)
-  const rawInterpretations = [
-    ...primaryMotif.interpretations(detailSnippet),
-    ...(secondaryMotif ? secondaryMotif.interpretations(detailSnippet) : [])
-  ];
+  // What the Bible Explicitly Says (Foundational Scripture Truth)
+  const explicitScriptureTeaching = points.map((p) =>
+    `In ${p.scriptureRef}, the Bible explicitly teaches that: "${p.scriptureText}" — directly establishing ${p.theologicalPrinciple.slice(0, 140)}...`
+  );
 
-  const possibleInterpretations = rawInterpretations.map((interp, idx) => ({
-    angle: interp.angle,
-    explanation: interp.explanation,
-    symbolicMeaning: interp.symbolicMeaning,
-    scripturalBasis: relevantScriptures[idx % relevantScriptures.length]?.reference || primaryMotif.primaryScripture
-  }));
-
-  const summary = `Biblical discernment for ${type === "dream" ? "dream" : "spiritual inquiry"}: ${detailSnippet}. This experience centers upon ${primaryMotif.symbolNames.join(", ")}${secondaryMotif ? ` and ${secondaryMotif.symbolNames.join(", ")}` : ""}. In Scripture, these motifs correspond to ${primaryMotif.themeTitle}, encouraging the believer to anchor in God's promises, discern with wisdom, and walk forward in faith and victory.`;
-
+  // Pastoral comfort message if disturbing
   const pastoralComfortMessage = isDisturbing
-    ? "Dreams or concerns involving conflict, mortality, or fear can feel startling. In biblical pastoral care, dreams are not automatic prophecies of doom. God has not given us a spirit of fear, but of power, love, and sound judgment (2 Timothy 1:7). We rest secure in Christ's unfailing love (Romans 8:38-39)."
+    ? "Scripture affirms that God has not given us a spirit of fear, but of power, love, and sound judgment (2 Timothy 1:7). Disturbing dreams, anxieties, or thoughts of mortality must not be received as prophecies of doom; rather, they call the believer to run to Christ, our mighty fortress, knowing that nothing can separate us from His love (Romans 8:38-39)."
     : undefined;
 
-  // 1. What the Bible Explicitly Says (Foundational Scripture Truth)
-  const explicitScriptureTeaching = [
-    `Scripture explicitly affirms that ${primaryMotif.biblicalTeaching}`,
-    `In ${primaryMotif.primaryScripture}, the text directly proclaims God's covenant provision, guidance, and authority for His people without ambiguity.`,
-    ...(secondaryMotif ? [`Additionally, Scripture establishes that ${secondaryMotif.biblicalTeaching}`] : [])
-  ];
-
-  // 2. Supporting Scriptures (Wider Canonical Support across Old & New Testaments)
-  const supportingScriptures: RankedScripture[] = [
-    ...otherRelevantScriptures,
-    ...generalDiscernmentScriptures
-  ];
-
-  // 3. Interpretations or Perspectives from Other People (Compared against Scripture, not presented as biblical fact)
-  const humanInterpretations = [
+  // Human perspectives examined against Scripture
+  const humanInterpretations: HumanTheologicalPerspective[] = [
     {
-      perspective: `Some historical and modern commentators interpret ${primaryMotif.symbolNames[0]} as a direct allegory for personal spiritual breakthrough, promotion, or imminent vocational transition.`,
-      proponentOrTradition: "Christian Historical & Devotional Traditions",
-      biblicalComparison: `When compared with Scripture, while God certainly promotes His servants (Psalm 75:6-7), biblical imagery primarily points believers to Christ's sufficiency and personal sanctification rather than guaranteed earthly status.`
+      perspective: `Some historical commentators suggest that spiritual impressions regarding ${primaryTheme} denote an immediate personal breakthrough or promotion in worldly status.`,
+      proponentOrTradition: "Historical Devotional & Charismatic Commentary",
+      biblicalComparison: `When tested by Scripture, while God does lift the humble (James 4:10), the primary focus of biblical revelation is Christ's glory, personal sanctification, and eternal fruit rather than temporal vanity.`
     },
     {
-      perspective: `Other teachers suggest that such impressions represent an internal subconscious processing of personal desires, daily anxieties, or spiritual hunger.`,
-      proponentOrTradition: "Pastoral Discernment & Christian Psychology",
-      biblicalComparison: `Ecclesiastes 5:3 observes that 'a dream comes through much business.' Scripture acknowledges that ordinary human thoughts influence dreams, which is why all impressions must be subjected to the clear light of God's Word (1 Thess 5:21).`
+      perspective: `Pastoral psychology often views dreams and persistent thoughts as the subconscious mind sorting through daily emotional strains and unresolved burdens.`,
+      proponentOrTradition: "Christian Counseling & Pastoral Care",
+      biblicalComparison: `Ecclesiastes 5:3 confirms that 'a dream comes through much business.' Scripture affirms that natural thoughts influence impressions, which is why all experiences must submit to the objective standard of God's Word (1 Thess 5:21).`
     }
   ];
 
-  // 4. What is Uncertain or Speculative (Honest admission where Scripture does not provide a definitive answer)
+  // What is Uncertain or Speculative
   const uncertainOrSpeculative = [
-    `The Bible does not provide an exhaustive 'dictionary' for every modern object, personal dream sequence, or subjective impression.`,
-    `It is uncertain whether this specific experience is a supernatural impression or a natural reflection of recent conversations, thoughts, or emotions.`,
-    `Any personal prediction or timeline deduced from this experience is speculative and should NEVER be received as an infallible revelation or guaranteed future event.`
+    `The Bible does not provide an exhaustive lexicon for every modern personal symbol or subjective impression.`,
+    `It is uncertain whether this specific impression is a divine prompting, a spiritual burden, or a natural reflection of recent thoughts and fatigue.`,
+    `Any precise dates, predictive timelines, or dogmatic assumptions drawn from subjective impressions are speculative and must NEVER supersede the written Word of God.`
   ];
 
-  // 5. Practical Guidance (Prayer, Reflection, Consideration, Seeking Wise Counsel)
-  const practicalGuidance = {
-    prayerPrompt: `Lord Jesus, thank You for the absolute authority and sufficiency of Your written Word. Grant me humble wisdom and clarity. Guard my heart from anxiety or false assumptions, and lead me in Your truth as I place my trust completely in You.`,
-    reflectionQuestion: `In light of ${primaryMotif.primaryScripture}, what biblical truth is God asking me to rest upon today, and what worry can I surrender to Him?`,
-    wiseCounselConsideration: `Share this inquiry and your reflections with a mature, trusted pastor, ministry leader, or biblical counselor who can examine it with you in the light of Scripture and prayer.`,
-    actionStep: `Spend 10 minutes reading ${primaryMotif.primaryScripture} in full context, meditating on Christ's character, and recording what the Holy Spirit illuminates through the written Word.`
+  // Practical Discipleship Guidance
+  const practicalGuidance: PracticalTheologicalGuidance = {
+    prayerPrompt: `Heavenly Father, I humble my heart before the majesty and authority of Your Holy Word. Thank You that Your promises in Christ Jesus are yes and amen. Cleanse my mind of all anxiety, confusion, and fear. Give me Holy Spirit discernment to test all things by Scripture, and grant me the grace to walk in joyful obedience to Your will. In Jesus' mighty name, Amen.`,
+    reflectionQuestion: `As you reflect on ${primaryCandidate.ref}, what specific promise or command is God speaking into your present season, and what burden must you surrender to Him?`,
+    wiseCounselConsideration: `Share this biblical insight and your reflections with a mature pastor, elder, or godly mentor who can pray with you and examine it in the light of Scripture.`,
+    actionStep: `Spend 15 minutes today reading ${primaryCandidate.book} chapter ${primaryCandidate.chapter} in full, meditating on Christ's character and writing down what the Holy Spirit illuminates.`
   };
+
+  // Possible angles of interpretation
+  const possibleInterpretations = points.slice(0, 3).map((p) => ({
+    angle: p.title,
+    explanation: p.theologicalPrinciple,
+    symbolicMeaning: p.practicalApplication,
+    scripturalBasis: p.scriptureRef
+  }));
+
+  // Clean, godly summary
+  const summary = `Biblical discernment for ${type === "dream" ? "dream" : "spiritual inquiry"}: ${detailSnippet}. This inquiry was scanned across the 66 canonical books of Holy Scripture, identifying core biblical themes of ${extractedThemes.slice(0, 3).join(", ")}. In Scripture, these truths center upon God's sovereign providence, the supreme authority of Jesus Christ, and the peace promised to all who walk in faithful obedience. Anchored in verified Scripture across both Old and New Testaments.`;
 
   return {
     summary,
-    biblicalThemes: extractedSymbols,
+    biblicalThemes: extractedThemes,
+    scannedBiblicalPoints: points,
+    scannerNotice: "🕊️ Canonical Bible Scanning Engine Active • Scanned the 66-book biblical canon for all relevant points, cross-references, and godly principles.",
+    sourceEngine: "verified_canonical_bible_scanner",
     extractedEventsAndSymbols: {
-      events: extractedEvents,
-      symbols: extractedSymbols,
-      emotions: isDisturbing ? ["Vulnerable", "Seeking Peace", "Searching"] : ["Reflective", "Searching", "Hopeful"],
+      events: [
+        `Inquiry: ${detailSnippet}`,
+        `Core themes scanned: ${extractedThemes.slice(0, 3).join(", ")}`,
+        isDisturbing ? "Confronting fear or tension, running to Christ's peace" : "Seeking divine clarity and scriptural alignment"
+      ],
+      symbols: matchedSymbols.length > 0 ? matchedSymbols.map((s) => s.symbol) : extractedThemes.slice(0, 4),
+      emotions: isDisturbing ? ["Vulnerable", "Seeking Peace", "Reverent"] : ["Reflective", "Searching", "Hopeful"],
       keyContext: `Specific inquiry regarding: ${detailSnippet}`
     },
-    searchConcepts,
-    thematicExplorations,
+    searchConcepts: [
+      `${primaryTheme.toLowerCase()} in Scripture`,
+      `biblical teaching on ${extractedThemes[0] || "discernment"}`,
+      "testing spiritual impressions 1 Thessalonians 5:21",
+      "abiding peace in Jesus Christ"
+    ],
+    thematicExplorations: [
+      {
+        themeName: primaryTheme,
+        biblicalTeaching: points[0]?.theologicalPrinciple || "God's Word illuminates our path with sovereign truth.",
+        crossReferences: [primaryCandidate.ref, secondaryCandidate.ref]
+      }
+    ],
     explicitScriptureTeaching,
-    supportingScriptures,
+    supportingScriptures: [
+      ...otherRelevantScriptures,
+      ...generalDiscernmentScriptures
+    ],
     humanInterpretations,
     uncertainOrSpeculative,
     practicalGuidance,
@@ -782,12 +780,12 @@ export function analyzeSpiritualInquiry(query: string, type: string = "dream"): 
     },
     possibleInterpretations,
     questionsForReflection: [
-      `How do the specific elements of ${extractedSymbols[0] || "your inquiry"} reflect what God is currently teaching you in your walk?`,
-      `What peace or direction does ${primaryMotif.primaryScripture} bring to this inquiry?`,
-      "What prayer of surrender or step of faith is the Holy Spirit prompting you to take today?"
+      `How do the scriptural points in ${primaryCandidate.ref} speak to your current circumstances?`,
+      `What step of faith or obedience is the Holy Spirit prompting you to take today?`,
+      "How does resting in Christ's finished work bring peace to your heart regarding this inquiry?"
     ],
     relatedTeachings: [
-      `Walking in Victory: Lessons from ${primaryMotif.themeTitle}`,
+      `Walking in Victory: Biblical Principles from ${primaryTheme}`,
       "Biblical Discernment: Testing Impressions with Scripture (1 Thess 5:21)",
       "Prayer, Peace, and Resting in God's Promises"
     ],

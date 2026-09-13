@@ -25,6 +25,19 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400;1,600&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=Cinzel:wght@500;600;700;800&display=swap" rel="stylesheet">
+    
+    <!-- Instant Theme Bootstrap (Prevents White Flash in Midnight Sanctuary) -->
+    <script>
+      (function() {
+        try {
+          var mode = localStorage.getItem('gtc_theme_mode');
+          if (mode === 'midnight' || mode === 'dark' || (!mode && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+            document.documentElement.classList.add('dark');
+            document.documentElement.setAttribute('data-theme', 'midnight');
+          }
+        } catch (e) {}
+      })();
+    </script>
   </head>
   <body class="h-full bg-[#F9F7F2] text-[#2D2D2D] antialiased">
     <div id="root" class="h-full"></div>
