@@ -1,0 +1,81 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <defs>
+    <!-- Background Sanctuary Gradient -->
+    <linearGradient id="favBg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#241E15" />
+      <stop offset="45%" stop-color="#181510" />
+      <stop offset="100%" stop-color="#0E0C09" />
+    </linearGradient>
+
+    <!-- Artisanal Celestial Gold Gradient -->
+    <linearGradient id="favGold" x1="15%" y1="5%" x2="85%" y2="95%">
+      <stop offset="0%" stop-color="#FDF4D4" />
+      <stop offset="25%" stop-color="#E5C358" />
+      <stop offset="60%" stop-color="#C5A059" />
+      <stop offset="100%" stop-color="#8F6E2E" />
+    </linearGradient>
+
+    <!-- Deep Gold Shadow -->
+    <linearGradient id="favGoldDark" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#D4AF37" />
+      <stop offset="100%" stop-color="#7B5B20" />
+    </linearGradient>
+
+    <!-- Radial Radiance behind Emblem -->
+    <radialGradient id="favHaloGlow" cx="50%" cy="48%" r="48%">
+      <stop offset="0%" stop-color="#E5C358" stop-opacity="0.35" />
+      <stop offset="50%" stop-color="#C5A059" stop-opacity="0.12" />
+      <stop offset="100%" stop-color="#C5A059" stop-opacity="0" />
+    </radialGradient>
+  </defs>
+
+  <!-- Base App Icon Container (Squircle / Rounded Medallion) -->
+  <rect x="4" y="4" width="120" height="120" rx="28" ry="28" fill="url(#favBg)" stroke="#C5A059" stroke-width="2.5" />
+  
+  <!-- Subtle Inner Gold Filigree Inset -->
+  <rect x="8" y="8" width="112" height="112" rx="24" ry="24" fill="none" stroke="#E5C358" stroke-width="0.75" stroke-opacity="0.4" stroke-dasharray="2.5 1.5" />
+
+  <!-- Center Radiance behind Emblem -->
+  <circle cx="64" cy="64" r="46" fill="url(#favHaloGlow)" />
+
+  <!-- Outer Divine Halo / Radiance Ring -->
+  <circle cx="64" cy="64" r="50" fill="none" stroke="#C5A059" stroke-width="1" stroke-dasharray="3 2" opacity="0.5" />
+  <circle cx="64" cy="64" r="44" fill="none" stroke="#E5C358" stroke-width="0.75" opacity="0.3" />
+
+  <!-- ==================== GLOBE FOUNDATION ==================== -->
+  <g transform="translate(14, 2)">
+    <!-- Globe Sphere -->
+    <circle cx="50" cy="74" r="28" stroke="url(#favGold)" stroke-width="2" fill="#1C1812" fill-opacity="0.9" />
+    
+    <!-- Globe Latitude Lines -->
+    <ellipse cx="50" cy="74" rx="28" ry="11" stroke="#E5C358" stroke-width="1.2" stroke-dasharray="2 1.5" opacity="0.75" fill="none" />
+    <ellipse cx="50" cy="74" rx="28" ry="20" stroke="#C5A059" stroke-width="0.8" opacity="0.4" fill="none" />
+    
+    <!-- Equator & Prime Meridian -->
+    <line x1="22" y1="74" x2="78" y2="74" stroke="url(#favGold)" stroke-width="1.5" opacity="0.9" />
+    <line x1="50" y1="46" x2="50" y2="102" stroke="url(#favGold)" stroke-width="1.3" opacity="0.65" />
+
+    <!-- Continents Silhouettes -->
+    <path d="M38 66 Q44 61 48 67 Q52 73 47 79 Q40 81 38 66 Z" fill="#C5A059" opacity="0.35" />
+    <path d="M59 70 Q66 68 68 74 Q65 80 61 78 Z" fill="#C5A059" opacity="0.35" />
+
+    <!-- ==================== THE CROSS IN VICTORY ==================== -->
+    <!-- Drop Shadow / Glow for Cross -->
+    <path d="M45 18 H55 V35 H71 V45 H55 V86 H45 V45 H29 V35 H45 V18 Z" fill="#000000" opacity="0.4" />
+
+    <!-- Main Cross Body -->
+    <path d="M45 16 H55 V33 H71 V43 H55 V84 H45 V43 H29 V33 H45 V16 Z" fill="url(#favGold)" stroke="#8F6E2E" stroke-width="0.75" />
+    
+    <!-- Inner Cross Highlight (Light of the World) -->
+    <path d="M48 19 H52 V36 H68 V40 H52 V81 H48 V40 H32 V36 H48 V19 Z" fill="#FFFFFF" opacity="0.9" />
+
+    <!-- Cross Cornerstone Bevel Accent -->
+    <line x1="45" y1="16" x2="55" y2="16" stroke="#FFF" stroke-width="1" opacity="0.9" />
+    <line x1="29" y1="33" x2="29" y2="43" stroke="#FFF" stroke-width="0.75" opacity="0.8" />
+    <line x1="71" y1="33" x2="71" y2="43" stroke="#8F6E2E" stroke-width="0.75" opacity="0.8" />
+
+    <!-- Pinnacle Radiant Star / Lighthouse Light -->
+    <circle cx="50" cy="16" r="3.5" fill="#FFFDF5" stroke="#E5C358" stroke-width="1.2" />
+    <circle cx="50" cy="16" r="1.5" fill="#C5A059" />
+  </g>
+</svg>

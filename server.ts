@@ -60,6 +60,39 @@ app.get("/api/health", (req, res) => {
   res.json({ status: "ok", timestamp: new Date().toISOString() });
 });
 
+// Explicit favicon endpoint ensuring browsers receive the valid ICO binary
+app.get("/favicon.ico", (req, res) => {
+  const possiblePaths = [
+    path.join(process.cwd(), "public", "favicon.ico"),
+    path.join(process.cwd(), "dist", "favicon.ico"),
+  ];
+  for (const p of possiblePaths) {
+    if (fs.existsSync(p)) {
+      res.setHeader("Content-Type", "image/x-icon");
+      res.setHeader("Cache-Control", "public, max-age=86400");
+      return res.sendFile(p);
+    }
+  }
+  res.status(404).end();
+});
+
+// Deployment & Release Version Endpoint
+const APP_VERSION = process.env.npm_package_version || "1.0.1";
+const SERVER_BOOT_TIMESTAMP = new Date().toISOString();
+
+app.get("/api/version", (req, res) => {
+  res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate, max-age=0");
+  res.setHeader("Pragma", "no-cache");
+  res.setHeader("Expires", "0");
+  res.json({
+    name: "Global Tower of Christ",
+    version: APP_VERSION,
+    bootTime: SERVER_BOOT_TIMESTAMP,
+    env: process.env.NODE_ENV || "development",
+    status: "active"
+  });
+});
+
 // Helper to fetch resilient HTTP TTS if WebSocket Neural engine is unavailable in container/deployed environment
 async function fetchResilientWebTTS(text: string): Promise<Buffer | null> {
   try {
@@ -1171,8 +1204,28 @@ async function startServer() {
     app.use(vite.middlewares);
   } else {
     const distPath = path.join(process.cwd(), "dist");
-    app.use(express.static(distPath));
+    app.use(
+      express.static(distPath, {
+        setHeaders: (res, filePath) => {
+          if (filePath.endsWith(".html")) {
+            // Never cache HTML files so clients get the latest build bundle hashes immediately upon redeployment
+            res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate, max-age=0");
+            res.setHeader("Pragma", "no-cache");
+            res.setHeader("Expires", "0");
+          } else if (filePath.includes(path.sep + "assets" + path.sep) || filePath.includes("/assets/")) {
+            // Hashed Vite chunks can be cached safely for long periods
+            res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+          } else {
+            // Manifest, favicons, logos - revalidate
+            res.setHeader("Cache-Control", "no-cache, must-revalidate");
+          }
+        },
+      })
+    );
     app.get("*", (req, res) => {
+      res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate, max-age=0");
+      res.setHeader("Pragma", "no-cache");
+      res.setHeader("Expires", "0");
       res.sendFile(path.join(distPath, "index.html"));
     });
   }

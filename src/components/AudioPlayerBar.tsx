@@ -23,108 +23,17 @@ import {
   CheckCircle2
 } from "lucide-react";
 import {
-  getNaturalBibleVoice,
-  getSavedVoiceGender,
-  setSavedVoiceGender,
-  getSavedVoiceId,
-  setSavedVoiceId,
-  getSavedMuteState,
-  setSavedMuteState,
-  getSavedAudioVolume,
-  setSavedAudioVolume,
-  unlockAudio,
-  formatBibleTextForSpeech,
-  getAudioTTSUrl,
-  getMicrosoftTTSUrl,
+  globalAudioEngine,
+  GlobalAudioState,
   SERVER_VOICES,
-  VoiceOption
+  AudioTrack,
+  SpeechSegment
 } from "../lib/audioVoiceHelper";
 import { bluetoothAudioService, AudioOutputDevice } from "../lib/bluetoothAudioService";
 import { Storage } from "../lib/storage";
 import { VoiceGender, StudyNote } from "../types";
 
-export interface AudioTrack {
-  id: string;
-  title: string;
-  subtitle: string;
-  category?: string;
-  textToRead?: string;
-  audioSrc?: string;
-  verses?: { num: number; text: string }[];
-  book?: string;
-  chapter?: number;
-  voiceId?: string;
-  onVerseChange?: (verseNum: number) => void;
-  onChapterComplete?: () => void;
-  onPlaybackStateChange?: (isPlaying: boolean) => void;
-}
-
-interface SpeechSegment {
-  text: string;
-  verseNum?: number;
-}
-
-function splitTextIntoNaturalChunks(text: string, maxLen = 160): string[] {
-  if (!text || text.length <= maxLen) return text ? [text] : [];
-
-  const sentenceRegex = /[^.!?]+(?:[.!?]+(?:\s+|$)|$)/g;
-  const rawSentences = text.match(sentenceRegex) || [text];
-  const chunks: string[] = [];
-
-  for (const sentence of rawSentences) {
-    const trimmed = sentence.trim();
-    if (!trimmed) continue;
-    if (trimmed.length <= maxLen) {
-      chunks.push(trimmed);
-    } else {
-      const clauseRegex = /[^,;:—]+(?:[,;:—]+(?:\s+|$)|$)/g;
-      const clauses = trimmed.match(clauseRegex) || [trimmed];
-      let current = "";
-      for (const clause of clauses) {
-        const cTrimmed = clause.trim();
-        if (!cTrimmed) continue;
-        if ((current + " " + cTrimmed).trim().length <= maxLen) {
-          current = (current + " " + cTrimmed).trim();
-        } else {
-          if (current) chunks.push(current);
-          current = cTrimmed;
-        }
-      }
-      if (current) chunks.push(current);
-    }
-  }
-
-  return chunks.length > 0 ? chunks : [text];
-}
-
-function buildSegmentsFromTrack(track: AudioTrack): SpeechSegment[] {
-  if (track.verses && track.verses.length > 0) {
-    const segments: SpeechSegment[] = [];
-    track.verses.forEach((v, idx) => {
-      const intro = idx === 0 && track.book && track.chapter
-        ? `${track.book}, chapter ${track.chapter}. `
-        : "";
-      const fullVerse = formatBibleTextForSpeech(`${intro}${v.text}`);
-      if (fullVerse.length > 180) {
-        const sub = splitTextIntoNaturalChunks(fullVerse, 160);
-        sub.forEach((chunk) => {
-          segments.push({ text: chunk, verseNum: v.num });
-        });
-      } else {
-        segments.push({ text: fullVerse, verseNum: v.num });
-      }
-    });
-    return segments;
-  }
-
-  if (track.textToRead) {
-    const formatted = formatBibleTextForSpeech(track.textToRead);
-    const sub = splitTextIntoNaturalChunks(formatted, 160);
-    return sub.map((chunk) => ({ text: chunk }));
-  }
-
-  return [];
-}
+export type { AudioTrack, SpeechSegment };
 
 interface AudioPlayerBarProps {
   currentTrack: AudioTrack | null;
@@ -137,15 +46,7 @@ export const AudioPlayerBar: React.FC<AudioPlayerBarProps> = ({
   onClose,
   onAnalyzeWithAI,
 }) => {
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [isFinished, setIsFinished] = useState(false);
-  const [playbackRate, setPlaybackRate] = useState<number>(1.0);
-  const [progress, setProgress] = useState(0); // 0 to 100
-  const [voiceGender, setVoiceGender] = useState<VoiceGender>(getSavedVoiceGender());
-  const [selectedVoiceId, setSelectedVoiceId] = useState<string>(() => {
-    return currentTrack?.voiceId || getSavedVoiceId();
-  });
-  const [activeNarratorName, setActiveNarratorName] = useState<string>("");
+  const [engineState, setEngineState] = useState<GlobalAudioState>(() => globalAudioEngine.getState());
   const [availableDevices, setAvailableDevices] = useState<AudioOutputDevice[]>([]);
   const [activeOutput, setActiveOutput] = useState<{ deviceId: string; label: string; isBluetooth: boolean }>({
     deviceId: "default",
@@ -153,19 +54,62 @@ export const AudioPlayerBar: React.FC<AudioPlayerBarProps> = ({
     isBluetooth: false
   });
   const [showDeviceMenu, setShowDeviceMenu] = useState(false);
-  const [isMuted, setIsMuted] = useState<boolean>(() => getSavedMuteState());
-  const [volume, setVolume] = useState<number>(() => getSavedAudioVolume());
   const [showVolumeSlider, setShowVolumeSlider] = useState(false);
-  const [hasAutoplayBlock, setHasAutoplayBlock] = useState(false);
   const [showNotePopover, setShowNotePopover] = useState(false);
   const [noteText, setNoteText] = useState("");
   const [noteSavedFeedback, setNoteSavedFeedback] = useState(false);
 
-  const getCurrentPlayingVerse = (): number | undefined => {
-    if (segmentsRef.current && segmentsRef.current[currentSegmentIndexRef.current]?.verseNum) {
-      return segmentsRef.current[currentSegmentIndexRef.current].verseNum;
+  // Subscribe to GlobalAudioEngine state updates
+  useEffect(() => {
+    const unsubscribe = globalAudioEngine.subscribe((state) => {
+      setEngineState(state);
+    });
+    return unsubscribe;
+  }, []);
+
+  // Sync track with GlobalAudioEngine
+  useEffect(() => {
+    if (!currentTrack) {
+      globalAudioEngine.stop();
+      return;
     }
-    return undefined;
+    const engTrack = globalAudioEngine.getState().currentTrack;
+    if (!engTrack || engTrack.id !== currentTrack.id) {
+      globalAudioEngine.playTrack(currentTrack);
+    }
+  }, [currentTrack]);
+
+  // Subscribe to Bluetooth audio device changes
+  useEffect(() => {
+    bluetoothAudioService.init();
+    const unsubscribe = bluetoothAudioService.subscribe((devices, active) => {
+      setAvailableDevices(devices);
+      if (active) {
+        setActiveOutput(active);
+      }
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, []);
+
+  const {
+    isPlaying,
+    isFinished,
+    progress,
+    playbackRate,
+    activeGender: voiceGender,
+    activeVoiceId: selectedVoiceId,
+    narratorName: activeNarratorName,
+    isMuted,
+    volume,
+    hasAutoplayBlock,
+    currentVerseNum
+  } = engineState;
+
+  const getCurrentPlayingVerse = (): number | undefined => {
+    return currentVerseNum || undefined;
   };
 
   const handleSavePlayerNote = () => {
@@ -200,540 +144,53 @@ export const AudioPlayerBar: React.FC<AudioPlayerBarProps> = ({
     }, 1000);
   };
 
-  const synthRef = useRef<SpeechSynthesisUtterance | null>(null);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
-  const segmentsRef = useRef<SpeechSegment[]>([]);
-  const currentSegmentIndexRef = useRef<number>(0);
-  const keepAliveIntervalRef = useRef<number | null>(null);
-  const isPlayingRef = useRef<boolean>(false);
-  const isMutedRef = useRef<boolean>(isMuted);
-  const volumeRef = useRef<number>(volume);
-
-  useEffect(() => {
-    isMutedRef.current = isMuted;
-  }, [isMuted]);
-
-  useEffect(() => {
-    volumeRef.current = volume;
-  }, [volume]);
-
-  // Sync selected voice with currentTrack if specified
-  useEffect(() => {
-    if (currentTrack?.voiceId && currentTrack.voiceId !== selectedVoiceId) {
-      setSelectedVoiceId(currentTrack.voiceId);
-      setSavedVoiceId(currentTrack.voiceId);
-    }
-  }, [currentTrack?.voiceId]);
-
-  // Subscribe to external voice changes (e.g. from BibleHub settings or other views)
-  useEffect(() => {
-    const handleVoiceChange = (e: any) => {
-      const vId = e?.detail?.voiceId;
-      if (vId && vId !== selectedVoiceId) {
-        console.log(`[AudioPlayerBar] Received global voice change: "${vId}"`);
-        setSelectedVoiceId(vId);
-        const serverVoice = SERVER_VOICES.find((v) => v.id === vId);
-        if (serverVoice) {
-          setVoiceGender(serverVoice.gender);
-          setActiveNarratorName(serverVoice.name);
-        }
-        if (isPlayingRef.current) {
-          playSegment(currentSegmentIndexRef.current, undefined, undefined, vId);
-        }
-      }
-    };
-
-    window.addEventListener("gtc_voice_changed", handleVoiceChange);
-    return () => window.removeEventListener("gtc_voice_changed", handleVoiceChange);
-  }, [selectedVoiceId]);
-
-  // Subscribe to global mute and volume events
-  useEffect(() => {
-    const handleMuteEvent = (e: any) => {
-      if (typeof e?.detail?.isMuted === "boolean") {
-        const nextMute = e.detail.isMuted;
-        setIsMuted(nextMute);
-        isMutedRef.current = nextMute;
-        if (audioRef.current) {
-          audioRef.current.muted = nextMute;
-          audioRef.current.volume = nextMute ? 0 : (volumeRef.current || 1.0);
-          if (!nextMute && audioRef.current.paused && isPlayingRef.current) {
-            audioRef.current.play().catch(() => {});
-          }
-        }
-      }
-    };
-
-    const handleVolumeEvent = (e: any) => {
-      if (typeof e?.detail?.volume === "number") {
-        const nextVol = e.detail.volume;
-        setVolume(nextVol);
-        volumeRef.current = nextVol;
-        if (audioRef.current) {
-          audioRef.current.volume = isMutedRef.current ? 0 : nextVol;
-        }
-      }
-    };
-
-    const handleStopEvent = () => {
-      console.log("[AudioPlayerBar] Received global stop audio event");
-      if (audioRef.current) {
-        audioRef.current.pause();
-      }
-      if (typeof window !== "undefined" && "speechSynthesis" in window) {
-        window.speechSynthesis.cancel();
-      }
-      stopKeepAlive();
-      setIsPlaying(false);
-      isPlayingRef.current = false;
-      onClose();
-    };
-
-    window.addEventListener("gtc_audio_mute_changed", handleMuteEvent);
-    window.addEventListener("gtc_audio_volume_changed", handleVolumeEvent);
-    window.addEventListener("gtc_stop_audio", handleStopEvent);
-    return () => {
-      window.removeEventListener("gtc_audio_mute_changed", handleMuteEvent);
-      window.removeEventListener("gtc_audio_volume_changed", handleVolumeEvent);
-      window.removeEventListener("gtc_stop_audio", handleStopEvent);
-    };
-  }, [onClose]);
-
-  // Subscribe to Bluetooth audio device changes
-  useEffect(() => {
-    bluetoothAudioService.init();
-    const unsubscribe = bluetoothAudioService.subscribe((devices, active) => {
-      setAvailableDevices(devices);
-      if (active) {
-        setActiveOutput(active);
-      }
-    });
-
-    return () => {
-      unsubscribe();
-    };
-  }, []);
-
-  const startKeepAlive = () => {
-    stopKeepAlive();
-    keepAliveIntervalRef.current = window.setInterval(() => {
-      if (typeof window !== "undefined" && "speechSynthesis" in window) {
-        if (window.speechSynthesis.speaking && !window.speechSynthesis.paused) {
-          window.speechSynthesis.pause();
-          window.speechSynthesis.resume();
-        }
-      }
-    }, 9000);
-  };
-
-  const stopKeepAlive = () => {
-    if (keepAliveIntervalRef.current !== null) {
-      clearInterval(keepAliveIntervalRef.current);
-      keepAliveIntervalRef.current = null;
-    }
-  };
-
-  const playSegment = (
-    index: number,
-    genderToUse?: VoiceGender,
-    customRate?: number,
-    voiceToUse?: string
-  ) => {
-    const segments = segmentsRef.current;
-    if (index >= segments.length) {
-      // Reached the end of the chapter!
-      if (audioRef.current) {
-        audioRef.current.pause();
-        audioRef.current.onended = null;
-        audioRef.current.onerror = null;
-        audioRef.current = null;
-      }
-      if (typeof window !== "undefined" && "speechSynthesis" in window) {
-        window.speechSynthesis.cancel();
-      }
-      stopKeepAlive();
-      setIsPlaying(false);
-      isPlayingRef.current = false;
-      setIsFinished(true);
-      setProgress(100);
-      currentTrack?.onChapterComplete?.();
-      return;
-    }
-
-    // Clean up active speech synthesis if running
-    if (typeof window !== "undefined" && "speechSynthesis" in window) {
-      window.speechSynthesis.cancel();
-    }
-
-    currentSegmentIndexRef.current = index;
-    setIsFinished(false);
-    setIsPlaying(true);
-    isPlayingRef.current = true;
-
-    const currentSeg = segments[index];
-    const pct = Math.min(100, Math.round(((index + 1) / segments.length) * 100));
-    setProgress(pct);
-
-    if (currentSeg.verseNum && currentTrack?.onVerseChange) {
-      currentTrack.onVerseChange(currentSeg.verseNum);
-    }
-
-    const targetVoice = voiceToUse || selectedVoiceId || getSavedVoiceId();
-    const targetGender = genderToUse || voiceGender;
-    const rate = (customRate !== undefined ? customRate : playbackRate) || 1.0;
-
-    // Resolve voice display name
-    const serverVoice = SERVER_VOICES.find((v) => v.id === targetVoice);
-    const narratorLabel = serverVoice
-      ? serverVoice.name
-      : targetVoice.startsWith("browser:")
-      ? targetVoice.replace("browser:", "")
-      : targetGender === "female"
-      ? "Jenny (Natural Female)"
-      : "Guy (Natural Male)";
-    setActiveNarratorName(narratorLabel);
-
-    console.log(`[AudioPlayerBar] Segment ${index + 1}/${segments.length}:`, {
-      selectedVoice: targetVoice,
-      actualVoiceName: narratorLabel,
-      provider: serverVoice?.provider || (targetVoice.startsWith("browser:") ? "browser" : "microsoft"),
-      gender: targetGender,
-      rate,
-      snippet: currentSeg.text.substring(0, 40) + "..."
-    });
-
-    // SpeechSynthesis fallback that strictly honors requested voice
-    const fallbackToSpeechSynthesis = () => {
-      if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
-      const utterance = new SpeechSynthesisUtterance(currentSeg.text);
-      const resolved = getNaturalBibleVoice(targetGender, targetVoice);
-
-      if (resolved.voice) {
-        utterance.voice = resolved.voice;
-      }
-      setActiveNarratorName(resolved.actualVoiceName);
-      utterance.pitch = resolved.pitch;
-      utterance.rate = (customRate !== undefined ? customRate : playbackRate) || resolved.rate;
-      utterance.volume = isMutedRef.current ? 0 : (volumeRef.current || 1.0);
-
-      console.log(`[AudioPlayerBar:SpeechSynthesis] Utterance ready:`, {
-        requestedVoice: targetVoice,
-        actualVoice: resolved.actualVoiceName,
-        fallbackUsed: resolved.fallbackUsed,
-        provider: resolved.provider,
-        volume: utterance.volume
-      });
-
-      utterance.onend = () => {
-        if (isPlayingRef.current) {
-          playSegment(index + 1, targetGender, customRate, targetVoice);
-        }
-      };
-
-      utterance.onerror = (e) => {
-        if (e.error === "canceled" || e.error === "interrupted") return;
-        if (isPlayingRef.current) {
-          playSegment(index + 1, targetGender, customRate, targetVoice);
-        }
-      };
-
-      synthRef.current = utterance;
-      startKeepAlive();
-      window.speechSynthesis.speak(utterance);
-    };
-
-    // If a browser voice was explicitly selected, bypass server TTS and speak directly
-    if (targetVoice.startsWith("browser:")) {
-      fallbackToSpeechSynthesis();
-      return;
-    }
-
-    try {
-      const ttsUrl = getAudioTTSUrl(currentSeg.text, targetVoice, targetGender);
-
-      // Reuse the same HTMLAudioElement instance for seamless continuous playback
-      let audio = audioRef.current;
-      if (!audio) {
-        audio = new Audio();
-        audio.preload = "auto";
-        (audio as any).playsInline = true;
-        audioRef.current = audio;
-        bluetoothAudioService.registerMediaElement(audio);
-      }
-
-      audio.pause();
-      audio.onended = null;
-      audio.onerror = null;
-      audio.src = ttsUrl;
-      audio.playbackRate = rate;
-      audio.muted = isMutedRef.current;
-      audio.volume = isMutedRef.current ? 0 : (volumeRef.current || 1.0);
-
-      audio.onended = () => {
-        if (isPlayingRef.current) {
-          playSegment(index + 1, targetGender, customRate, targetVoice);
-        }
-      };
-
-      audio.onerror = () => {
-        console.warn(`[AudioPlayerBar] Server TTS notice for "${targetVoice}", switching to synthesizer.`);
-        fallbackToSpeechSynthesis();
-      };
-
-      const playPromise = audio.play();
-      if (playPromise !== undefined) {
-        playPromise
-          .then(() => {
-            setHasAutoplayBlock(false);
-          })
-          .catch((e) => {
-            if (e?.name === "AbortError") {
-              return;
-            }
-            if (e?.name === "NotAllowedError") {
-              console.warn("[AudioPlayerBar] Browser blocked autoplay audio. Click unmute/play to hear:", e);
-              setHasAutoplayBlock(true);
-            }
-            console.warn("[AudioPlayerBar] Audio play catch:", e?.name, e?.message);
-            fallbackToSpeechSynthesis();
-          });
-      }
-
-      // Prefetch the next segment with the exact same voice
-      if (index + 1 < segments.length) {
-        const nextSeg = segments[index + 1];
-        const nextUrl = getAudioTTSUrl(nextSeg.text, targetVoice, targetGender);
-        fetch(nextUrl, { cache: "force-cache" }).catch(() => {});
-      }
-    } catch (e) {
-      fallbackToSpeechSynthesis();
-    }
-  };
-
-  useEffect(() => {
-    if (!currentTrack) {
-      setIsPlaying(false);
-      setIsFinished(false);
-      setProgress(0);
-      stopKeepAlive();
-      if (audioRef.current) {
-        audioRef.current.pause();
-        audioRef.current = null;
-      }
-      if (typeof window !== "undefined" && "speechSynthesis" in window) {
-        window.speechSynthesis.cancel();
-      }
-      return;
-    }
-
-    const segments = buildSegmentsFromTrack(currentTrack);
-    segmentsRef.current = segments;
-    currentSegmentIndexRef.current = 0;
-    setProgress(0);
-    setIsFinished(false);
-
-    if (segments.length > 0) {
-      unlockAudio();
-      playSegment(0, voiceGender);
-    } else {
-      setIsPlaying(true);
-    }
-
-    return () => {
-      stopKeepAlive();
-      if (audioRef.current) {
-        audioRef.current.pause();
-        audioRef.current = null;
-      }
-      if (typeof window !== "undefined" && "speechSynthesis" in window) {
-        window.speechSynthesis.cancel();
-      }
-    };
-  }, [currentTrack]);
-
-  // Handle Play / Pause
   const togglePlay = () => {
-    unlockAudio();
-    if (isPlaying) {
-      if (audioRef.current) {
-        audioRef.current.pause();
-      }
-      if (typeof window !== "undefined" && "speechSynthesis" in window) {
-        window.speechSynthesis.pause();
-      }
-      stopKeepAlive();
-      setIsPlaying(false);
-      isPlayingRef.current = false;
-      currentTrack?.onPlaybackStateChange?.(false);
-    } else {
-      currentTrack?.onPlaybackStateChange?.(true);
-      if (isFinished || progress >= 100) {
-        setProgress(0);
-        setIsFinished(false);
-        playSegment(0);
-      } else if (audioRef.current && audioRef.current.paused && audioRef.current.src) {
-        audioRef.current.muted = isMutedRef.current;
-        audioRef.current.volume = isMutedRef.current ? 0 : (volumeRef.current || 1.0);
-        audioRef.current
-          .play()
-          .then(() => {
-            setIsPlaying(true);
-            isPlayingRef.current = true;
-            setHasAutoplayBlock(false);
-          })
-          .catch(() => {
-            playSegment(currentSegmentIndexRef.current);
-          });
-      } else if (typeof window !== "undefined" && "speechSynthesis" in window && window.speechSynthesis.paused) {
-        window.speechSynthesis.resume();
-        startKeepAlive();
-        setIsPlaying(true);
-        isPlayingRef.current = true;
-      } else {
-        playSegment(currentSegmentIndexRef.current);
-      }
-    }
+    globalAudioEngine.togglePlay();
   };
 
   const handleToggleMute = () => {
-    unlockAudio();
-    const nextMuted = !isMuted;
-    setIsMuted(nextMuted);
-    isMutedRef.current = nextMuted;
-    setSavedMuteState(nextMuted);
-
-    if (audioRef.current) {
-      audioRef.current.muted = nextMuted;
-      audioRef.current.volume = nextMuted ? 0 : (volumeRef.current || 1.0);
-      if (!nextMuted) {
-        setHasAutoplayBlock(false);
-        if (audioRef.current.paused && isPlayingRef.current) {
-          audioRef.current.play().catch((e) => {
-            console.warn("[AudioPlayerBar] Play on unmute catch:", e);
-          });
-        }
-      }
-    }
-
-    if (typeof window !== "undefined" && "speechSynthesis" in window) {
-      if (nextMuted) {
-        window.speechSynthesis.pause();
-      } else {
-        if (window.speechSynthesis.paused) {
-          window.speechSynthesis.resume();
-        }
-      }
-    }
-
-    // If audio was blocked or stalled while unmuting, restart active segment so sound immediately comes out
-    if (!nextMuted && (!isPlaying || hasAutoplayBlock)) {
-      setHasAutoplayBlock(false);
-      playSegment(currentSegmentIndexRef.current);
-    }
+    globalAudioEngine.toggleMute();
   };
 
   const handleVolumeChange = (newVolume: number) => {
-    const clamped = Math.max(0, Math.min(1, newVolume));
-    setVolume(clamped);
-    volumeRef.current = clamped;
-    setSavedAudioVolume(clamped);
-
-    if (clamped === 0) {
-      setIsMuted(true);
-      isMutedRef.current = true;
-      setSavedMuteState(true);
-      if (audioRef.current) {
-        audioRef.current.muted = true;
-        audioRef.current.volume = 0;
-      }
-    } else {
-      if (isMuted) {
-        setIsMuted(false);
-        isMutedRef.current = false;
-        setSavedMuteState(false);
-      }
-      if (audioRef.current) {
-        audioRef.current.muted = false;
-        audioRef.current.volume = clamped;
-        if (audioRef.current.paused && isPlayingRef.current) {
-          audioRef.current.play().catch(() => {});
-        }
-      }
-    }
+    globalAudioEngine.setVolume(newVolume);
   };
 
   const handleForceUnblockAndPlay = () => {
-    unlockAudio();
-    setHasAutoplayBlock(false);
-    setIsMuted(false);
-    isMutedRef.current = false;
-    setSavedMuteState(false);
-    if (audioRef.current) {
-      audioRef.current.muted = false;
-      audioRef.current.volume = volumeRef.current || 1.0;
-      audioRef.current
-        .play()
-        .then(() => {
-          setIsPlaying(true);
-          isPlayingRef.current = true;
-        })
-        .catch(() => {
-          playSegment(currentSegmentIndexRef.current);
-        });
-    } else {
-      playSegment(currentSegmentIndexRef.current);
-    }
+    globalAudioEngine.resume();
   };
 
   const handleVoiceChange = (newVoiceId: string) => {
-    setSelectedVoiceId(newVoiceId);
-    setSavedVoiceId(newVoiceId);
-    const serverVoice = SERVER_VOICES.find((v) => v.id === newVoiceId);
-    let g = voiceGender;
-    if (serverVoice) {
-      g = serverVoice.gender;
-      setVoiceGender(g);
-      setActiveNarratorName(serverVoice.name);
-    }
-    console.log(`[AudioPlayerBar] Voice manually changed from player: "${newVoiceId}"`);
-    playSegment(currentSegmentIndexRef.current, g, undefined, newVoiceId);
+    globalAudioEngine.setVoice(newVoiceId);
   };
 
   const handleGenderToggle = (newGender: VoiceGender) => {
-    setVoiceGender(newGender);
-    setSavedVoiceGender(newGender);
-    const newVoiceId = getSavedVoiceId();
-    setSelectedVoiceId(newVoiceId);
-    const serverVoice = SERVER_VOICES.find((v) => v.id === newVoiceId);
-    if (serverVoice) {
-      setActiveNarratorName(serverVoice.name);
-    }
-    console.log(`[AudioPlayerBar] Gender toggled to "${newGender}", active voice: "${newVoiceId}"`);
-    playSegment(currentSegmentIndexRef.current, newGender, undefined, newVoiceId);
+    globalAudioEngine.setGender(newGender);
   };
 
   const handleSpeedChange = () => {
     const speeds = [0.85, 0.95, 1.0, 1.15, 1.3];
     const nextIdx = (speeds.indexOf(playbackRate) + 1) % speeds.length;
     const newRate = speeds[nextIdx];
-    setPlaybackRate(newRate);
-    if (audioRef.current) {
-      audioRef.current.playbackRate = newRate;
-    }
+    globalAudioEngine.setPlaybackRate(newRate);
   };
 
   const handleSkip = (direction: number) => {
-    const total = segmentsRef.current.length;
-    if (total === 0) return;
-    const nextIdx = direction > 0
-      ? Math.min(total - 1, currentSegmentIndexRef.current + 1)
-      : Math.max(0, currentSegmentIndexRef.current - 1);
-    playSegment(nextIdx);
+    if (direction > 0) {
+      globalAudioEngine.nextSegment();
+    } else {
+      globalAudioEngine.prevSegment();
+    }
   };
 
   const handleSelectAudioDevice = async (device: AudioOutputDevice) => {
     await bluetoothAudioService.routeToDevice(device.deviceId, device.label, device.isBluetooth);
     setShowDeviceMenu(false);
+  };
+
+  const handleClose = () => {
+    globalAudioEngine.stop();
+    onClose();
   };
 
   if (!currentTrack) return null;
@@ -743,19 +200,19 @@ export const AudioPlayerBar: React.FC<AudioPlayerBarProps> = ({
       id="global-audio-player"
       className="fixed bottom-[calc(4.25rem+env(safe-area-inset-bottom,0px))] lg:bottom-5 left-2 right-2 sm:left-4 sm:right-4 lg:left-72 lg:right-8 z-40 bg-[#FDFCF9]/98 backdrop-blur-md border border-[#E5E0D5] rounded-2xl sm:rounded-3xl shadow-xl p-3 sm:p-4 transition-all animate-slideUp space-y-2 sm:space-y-2.5"
     >
-      {/* Autoplay unblock notification banner */}
+      {/* Quick Unmute / Audio Output Banner if muted */}
       {hasAutoplayBlock && (
         <div
           id="audio-autoplay-unblock-banner"
           onClick={handleForceUnblockAndPlay}
-          className="w-full bg-amber-500 hover:bg-amber-600 text-white px-3.5 py-2.5 rounded-2xl text-xs font-bold flex items-center justify-between shadow-md cursor-pointer transition-colors"
+          className="w-full bg-[#C5A059] hover:bg-[#B48F48] text-white px-3.5 py-2 rounded-2xl text-xs font-semibold flex items-center justify-between shadow-md cursor-pointer transition-colors"
         >
           <div className="flex items-center gap-2">
-            <VolumeX className="w-4 h-4 text-white animate-pulse shrink-0" />
-            <span>Sound paused by browser policy. Click anywhere to Unmute & Hear the Bible!</span>
+            <Volume2 className="w-4 h-4 text-white animate-pulse shrink-0" />
+            <span>Tap to hear the Audio Bible aloud through your device speaker</span>
           </div>
-          <span className="px-2.5 py-1 bg-white text-amber-900 rounded-xl text-[11px] font-extrabold uppercase tracking-wide shrink-0 shadow-xs">
-            Unmute Now
+          <span className="px-3 py-1 bg-white text-[#C5A059] rounded-xl text-[11px] font-bold uppercase tracking-wide shrink-0 shadow-xs">
+            Play Aloud
           </span>
         </div>
       )}
@@ -1108,12 +565,7 @@ export const AudioPlayerBar: React.FC<AudioPlayerBarProps> = ({
 
             {/* Close */}
             <button
-              onClick={() => {
-                if (typeof window !== "undefined" && "speechSynthesis" in window) {
-                  window.speechSynthesis.cancel();
-                }
-                onClose();
-              }}
+              onClick={handleClose}
               className="p-1.5 text-[#8A8478] hover:text-[#2D2D2D] hover:bg-[#F9F7F2] rounded-xl cursor-pointer transition-colors"
             >
               <X className="w-4 h-4" />

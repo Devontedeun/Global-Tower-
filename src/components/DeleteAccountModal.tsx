@@ -24,7 +24,9 @@ import {
   getAudioTTSUrl,
   getNaturalBibleVoice,
   getSavedVoiceGender,
-  getSavedVoiceId
+  getSavedVoiceId,
+  startSynchronousAudioPlayback,
+  globalAudioEngine
 } from "../lib/audioVoiceHelper";
 
 interface DeleteAccountModalProps {
@@ -152,16 +154,10 @@ export const DeleteAccountModal: React.FC<DeleteAccountModalProps> = ({
   const activeScripture =
     PARTING_SCRIPTURES.find((s) => s.id === selectedScriptureId) || PARTING_SCRIPTURES[0];
 
-  const speechUtteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
-
   // Stop speech when component unmounts
   useEffect(() => {
     return () => {
-      if (audioRef.current) {
-        audioRef.current.pause();
-        audioRef.current = null;
-      }
+      globalAudioEngine.stop();
       if (typeof window !== "undefined" && "speechSynthesis" in window) {
         window.speechSynthesis.cancel();
       }
@@ -223,12 +219,9 @@ export const DeleteAccountModal: React.FC<DeleteAccountModalProps> = ({
     });
   };
 
-  // Speak the closing scripture aloud using Microsoft Neural Voice with speech synthesis fallback
+  // Speak the closing scripture aloud using Microsoft Neural Voice with unified audio pipeline
   const speakClosingScripture = (scriptureToSpeak: PartingScripture, muted = false) => {
-    if (audioRef.current) {
-      audioRef.current.pause();
-      audioRef.current = null;
-    }
+    globalAudioEngine.stop();
     if (typeof window !== "undefined" && "speechSynthesis" in window) {
       window.speechSynthesis.cancel();
     }
@@ -238,72 +231,23 @@ export const DeleteAccountModal: React.FC<DeleteAccountModalProps> = ({
       return;
     }
 
-    const savedGender = getSavedVoiceGender();
-    const savedVoiceId = getSavedVoiceId();
+    setIsSpeaking(true);
+    setHasFinishedSpeaking(false);
 
-    const fallbackToSpeechSynthesis = () => {
-      if (typeof window === "undefined" || !("speechSynthesis" in window)) {
-        setIsSpeaking(false);
-        setHasFinishedSpeaking(true);
-        return;
-      }
-
-      try {
-        const utterance = new SpeechSynthesisUtterance(scriptureToSpeak.spokenText);
-        const resolved = getNaturalBibleVoice(savedGender, savedVoiceId);
-        if (resolved.voice) {
-          utterance.voice = resolved.voice;
-        }
-        utterance.rate = 0.88; // Reverent, gentle, calm pacing
-        utterance.pitch = resolved.pitch || 0.96;
-
-        console.log("[DeleteAccountModal:SpeechSynthesis] Utterance active:", {
-          requestedVoice: savedVoiceId,
-          actualVoice: resolved.actualVoiceName,
-          fallbackUsed: resolved.fallbackUsed
-        });
-
-        utterance.onstart = () => {
-          setIsSpeaking(true);
-        };
-
-        utterance.onend = () => {
-          setIsSpeaking(false);
-          setHasFinishedSpeaking(true);
-        };
-
-        utterance.onerror = () => {
-          setIsSpeaking(false);
-          setHasFinishedSpeaking(true);
-        };
-
-        speechUtteranceRef.current = utterance;
-        window.speechSynthesis.speak(utterance);
-      } catch (err) {
+    startSynchronousAudioPlayback({
+      id: `departure-${scriptureToSpeak.id}`,
+      title: scriptureToSpeak.title,
+      subtitle: scriptureToSpeak.reference,
+      textToRead: scriptureToSpeak.spokenText,
+      onPlaybackStateChange: (playing) => {
+        setIsSpeaking(playing);
+        if (!playing) setHasFinishedSpeaking(true);
+      },
+      onChapterComplete: () => {
         setIsSpeaking(false);
         setHasFinishedSpeaking(true);
       }
-    };
-
-    if (savedVoiceId.startsWith("browser:")) {
-      fallbackToSpeechSynthesis();
-      return;
-    }
-
-    try {
-      const ttsUrl = getAudioTTSUrl(scriptureToSpeak.spokenText, savedVoiceId, savedGender);
-      const audio = new Audio(ttsUrl);
-      audioRef.current = audio;
-      audio.onplay = () => setIsSpeaking(true);
-      audio.onended = () => {
-        setIsSpeaking(false);
-        setHasFinishedSpeaking(true);
-      };
-      audio.onerror = () => fallbackToSpeechSynthesis();
-      audio.play().catch(() => fallbackToSpeechSynthesis());
-    } catch (e) {
-      fallbackToSpeechSynthesis();
-    }
+    });
   };
 
   // Switch scripture and read aloud immediately
@@ -320,6 +264,7 @@ export const DeleteAccountModal: React.FC<DeleteAccountModalProps> = ({
       speakClosingScripture(activeScripture, false);
     } else {
       setIsMuted(true);
+      globalAudioEngine.stop();
       if (typeof window !== "undefined" && "speechSynthesis" in window) {
         window.speechSynthesis.cancel();
       }

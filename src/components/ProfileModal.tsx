@@ -87,6 +87,55 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
+  // Version & Redeployment Update Status
+  const [checkingUpdates, setCheckingUpdates] = useState(false);
+  const [updateFeedback, setUpdateFeedback] = useState<{
+    status: 'idle' | 'latest' | 'available' | 'error';
+    version?: string;
+    message?: string;
+  }>({ status: 'idle' });
+
+  const appCurrentVersion = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '1.0.1';
+
+  const handleManualCheckForUpdates = async () => {
+    try {
+      setCheckingUpdates(true);
+      setUpdateFeedback({ status: 'idle' });
+      const res = await fetch(`/api/version?t=${Date.now()}`, {
+        cache: 'no-store',
+        headers: { 'Cache-Control': 'no-cache, no-store, must-revalidate', Pragma: 'no-cache' }
+      });
+      if (!res.ok) throw new Error('Version check failed');
+      const data = await res.json();
+      const serverVersion = data?.version || appCurrentVersion;
+      
+      const serverDate = data?.bootTime ? new Date(data.bootTime).getTime() : 0;
+      const clientDate = typeof __BUILD_TIME__ !== 'undefined' ? new Date(__BUILD_TIME__).getTime() : 0;
+
+      if (serverVersion !== appCurrentVersion || (serverDate > clientDate && serverDate - clientDate > 5000)) {
+        setUpdateFeedback({
+          status: 'available',
+          version: serverVersion,
+          message: `New deployment detected (v${serverVersion}). Refresh to apply latest release.`
+        });
+      } else {
+        setUpdateFeedback({
+          status: 'latest',
+          version: appCurrentVersion,
+          message: `Sanctuary is running the newest release (v${appCurrentVersion}).`
+        });
+      }
+    } catch {
+      setUpdateFeedback({
+        status: 'latest',
+        version: appCurrentVersion,
+        message: `Currently running version ${appCurrentVersion}.`
+      });
+    } finally {
+      setCheckingUpdates(false);
+    }
+  };
+
   const { isInstallable, isInstalled, install } = usePWAInstall();
   const [barTheme, setBarTheme] = useState<string>(() => {
     try {
@@ -633,6 +682,51 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
                 </button>
               </div>
             )}
+          </div>
+
+          {/* Sanctuary Deployment & Version Card */}
+          <div className="pt-4 border-t border-[#E5E0D5] space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="font-bold text-[#2D2D2D] block font-serif text-sm">Sanctuary Release & Build</span>
+              <span className="text-[11px] font-mono text-[#8C6B2D] bg-[#FAF6EE] border border-[#C5A059]/30 px-2 py-0.5 rounded-full font-semibold">
+                v{appCurrentVersion}
+              </span>
+            </div>
+            
+            <div className="p-3.5 bg-[#FAF6EE]/70 border border-[#C5A059]/30 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="space-y-0.5">
+                <div className="text-xs font-bold text-[#2D2D2D] font-serif flex items-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5 text-[#C5A059]" />
+                  <span>Deployment Synchronization</span>
+                </div>
+                <p className="text-[11px] text-[#7A7468] font-sans">
+                  {updateFeedback.message || "Guaranteed to serve the latest version on each redeployment."}
+                </p>
+              </div>
+
+              <div className="shrink-0 flex items-center gap-2">
+                {updateFeedback.status === 'available' ? (
+                  <button
+                    type="button"
+                    onClick={() => window.location.reload()}
+                    className="px-3.5 py-1.5 bg-[#C5A059] hover:bg-[#B48F48] text-white text-xs font-bold rounded-full transition-all flex items-center gap-1.5 cursor-pointer shadow-xs"
+                  >
+                    <RefreshCw className="w-3 h-3" />
+                    <span>Reload to Update</span>
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    disabled={checkingUpdates}
+                    onClick={handleManualCheckForUpdates}
+                    className="px-3.5 py-1.5 bg-white hover:bg-[#F9F7F2] border border-[#C5A059]/40 text-[#8C6B2D] text-xs font-semibold rounded-full transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-60 shadow-2xs"
+                  >
+                    <RefreshCw className={`w-3 h-3 ${checkingUpdates ? "animate-spin" : ""}`} />
+                    <span>{checkingUpdates ? "Checking..." : "Check for Updates"}</span>
+                  </button>
+                )}
+              </div>
+            </div>
           </div>
 
           {/* Account Management & Deletion (Right to Erasure) */}

@@ -32,6 +32,7 @@ import { MyLibrary } from "./components/MyLibrary";
 import { AdminPortal } from "./components/AdminPortal";
 import { SignUpPortal } from "./components/SignUpPortal";
 import { AudioPlayerBar, AudioTrack } from "./components/AudioPlayerBar";
+import { unlockAudio, setSavedMuteState, startSynchronousAudioPlayback } from "./lib/audioVoiceHelper";
 import { GlobalSearchModal } from "./components/GlobalSearchModal";
 import { ProfileModal } from "./components/ProfileModal";
 import { FeedbackModal } from "./components/FeedbackModal";
@@ -47,6 +48,7 @@ import { UserAvatar } from "./components/UserAvatar";
 import { LanguageSelector } from "./components/LanguageSelector";
 import { WebAppTopBar } from "./components/WebAppTopBar";
 import { ThemeToggle } from "./components/ThemeToggle";
+import { VersionUpdateNotifier } from "./components/VersionUpdateNotifier";
 
 export default function App() {
   const { currentUser, userProfile, loading, updateProfileData } = useAuth();
@@ -84,6 +86,13 @@ export default function App() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [currentAudioTrack, setCurrentAudioTrack] = useState<AudioTrack | null>(null);
+
+  const handlePlayAudio = (track: AudioTrack) => {
+    unlockAudio();
+    setSavedMuteState(false);
+    startSynchronousAudioPlayback(track);
+    setCurrentAudioTrack(track);
+  };
 
   // Sync user from AuthContext or Storage
   useEffect(() => {
@@ -612,7 +621,7 @@ export default function App() {
                 <HomeDashboard
                   user={user}
                   onNavigate={handleNavigate}
-                  onPlayAudio={(track) => setCurrentAudioTrack(track)}
+                  onPlayAudio={handlePlayAudio}
                   onAskAI={(query) => handleSpiritualInsightQuery(query)}
                 />
               )}
@@ -622,7 +631,7 @@ export default function App() {
                   initialBook={viewParams?.book || "Romans"}
                   initialChapter={viewParams?.chapter || 8}
                   initialVerse={viewParams?.verse}
-                  onPlayAudio={(track) => setCurrentAudioTrack(track)}
+                  onPlayAudio={handlePlayAudio}
                   onAskAI={(verseText) => handleSpiritualInsightQuery(verseText)}
                 />
               )}
@@ -630,7 +639,7 @@ export default function App() {
               {currentView === "encouragements" && (
                 <EncouragementHub
                   user={user}
-                  onPlayAudio={(track) => setCurrentAudioTrack(track)}
+                  onPlayAudio={handlePlayAudio}
                   onNavigateToBible={(book, ch, v) => handleNavigate("bible", { book, chapter: ch, verse: v })}
                   onAskAI={(prompt) => handleSpiritualInsightQuery(prompt)}
                 />
@@ -745,6 +754,9 @@ export default function App() {
 
       {/* Feedback Modal */}
       <FeedbackModal isOpen={isFeedbackOpen} onClose={() => setIsFeedbackOpen(false)} />
+
+      {/* Redeployment and Version Update Notifier */}
+      <VersionUpdateNotifier />
 
       {/* Mobile Bottom Navigation Bar with Safe Area Bottom Support */}
       <nav

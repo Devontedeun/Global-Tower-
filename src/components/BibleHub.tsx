@@ -55,6 +55,7 @@ import {
   getSavedMuteState,
   setSavedMuteState,
   unlockAudio,
+  startSynchronousAudioPlayback,
   SERVER_VOICES
 } from "../lib/audioVoiceHelper";
 
@@ -407,36 +408,41 @@ export const BibleHub: React.FC<BibleHubProps> = ({
     } else {
       if (versesList.length === 0) return;
       setChapterCompleted(false);
-      // If muted, unmute so audio sound immediately plays aloud
-      if (isMuted) {
-        setIsMuted(false);
-        setSavedMuteState(false);
-      }
+      // Ensure audio sound is unmuted and immediately plays aloud
+      setIsMuted(false);
+      setSavedMuteState(false);
+
+      const track: AudioTrack = {
+        id: `bible-${selectedBook}-${selectedChapter}`,
+        title: `${selectedBook} Chapter ${selectedChapter}`,
+        subtitle: `Audio Bible • ${translation} Translation • Continuous Chapter Mode`,
+        textToRead: `${selectedBook}, chapter ${selectedChapter}. ${fullChapterText}`,
+        verses: versesList.map((v) => ({ num: v.num, text: v.text })),
+        book: selectedBook,
+        chapter: selectedChapter,
+        voiceId: selectedVoiceURI,
+        onVerseChange: (num: number) => {
+          setAudioVerseNum(num);
+          setIsAudioPlaying(true);
+          setChapterCompleted(false);
+        },
+        onChapterComplete: () => {
+          setIsAudioPlaying(false);
+          setAudioVerseNum(null);
+          setChapterCompleted(true);
+        },
+        onPlaybackStateChange: (playing: boolean) => {
+          setIsAudioPlaying(playing);
+          if (!playing) setAudioVerseNum(null);
+        }
+      };
+
+      // CRITICAL FOR MOBILE & TABLETS:
+      // Start audio output synchronously directly within this user tap event
+      startSynchronousAudioPlayback(track, selectedVoiceURI);
+
       if (onPlayAudio) {
-        onPlayAudio({
-          id: `bible-${selectedBook}-${selectedChapter}`,
-          title: `${selectedBook} Chapter ${selectedChapter}`,
-          subtitle: `Audio Bible • ${translation} Translation • Continuous Chapter Mode`,
-          textToRead: `${selectedBook}, chapter ${selectedChapter}. ${fullChapterText}`,
-          verses: versesList.map((v) => ({ num: v.num, text: v.text })),
-          book: selectedBook,
-          chapter: selectedChapter,
-          voiceId: selectedVoiceURI,
-          onVerseChange: (num: number) => {
-            setAudioVerseNum(num);
-            setIsAudioPlaying(true);
-            setChapterCompleted(false);
-          },
-          onChapterComplete: () => {
-            setIsAudioPlaying(false);
-            setAudioVerseNum(null);
-            setChapterCompleted(true);
-          },
-          onPlaybackStateChange: (playing: boolean) => {
-            setIsAudioPlaying(playing);
-            if (!playing) setAudioVerseNum(null);
-          }
-        });
+        onPlayAudio(track);
         setIsAudioPlaying(true);
       } else {
         playVerseByIndex(0, selectedBook, selectedChapter);
@@ -446,85 +452,42 @@ export const BibleHub: React.FC<BibleHubProps> = ({
 
   const playSingleVerseAudio = (verseNum: number, text: string) => {
     unlockAudio();
-    if (isMuted) {
-      setIsMuted(false);
-      setSavedMuteState(false);
-    }
-    // If global audio player is provided, route directly to ensure continuous narration
-    if (onPlayAudio) {
-      onPlayAudio({
-        id: `bible-${selectedBook}-${selectedChapter}-v${verseNum}`,
-        title: `${selectedBook} ${selectedChapter}:${verseNum}`,
-        subtitle: `Scripture Verse • ${translation} Translation`,
-        textToRead: `${selectedBook}, chapter ${selectedChapter}, verse ${verseNum}. ${text}`,
-        verses: [{ num: verseNum, text }],
-        book: selectedBook,
-        chapter: selectedChapter,
-        voiceId: selectedVoiceURI,
-        onVerseChange: (num: number) => {
-          setAudioVerseNum(num);
-          setIsAudioPlaying(true);
-        },
-        onChapterComplete: () => {
-          setIsAudioPlaying(false);
-          setAudioVerseNum(null);
-        },
-        onPlaybackStateChange: (playing: boolean) => {
-          setIsAudioPlaying(playing);
-          if (!playing) setAudioVerseNum(null);
-        }
-      });
-      setAudioVerseNum(verseNum);
-      setIsAudioPlaying(true);
-      return;
-    }
+    setIsMuted(false);
+    setSavedMuteState(false);
+
+    const track: AudioTrack = {
+      id: `bible-${selectedBook}-${selectedChapter}-v${verseNum}`,
+      title: `${selectedBook} ${selectedChapter}:${verseNum}`,
+      subtitle: `Scripture Verse • ${translation} Translation`,
+      textToRead: `${selectedBook}, chapter ${selectedChapter}, verse ${verseNum}. ${text}`,
+      verses: [{ num: verseNum, text }],
+      book: selectedBook,
+      chapter: selectedChapter,
+      voiceId: selectedVoiceURI,
+      onVerseChange: (num: number) => {
+        setAudioVerseNum(num);
+        setIsAudioPlaying(true);
+      },
+      onChapterComplete: () => {
+        setIsAudioPlaying(false);
+        setAudioVerseNum(null);
+      },
+      onPlaybackStateChange: (playing: boolean) => {
+        setIsAudioPlaying(playing);
+        if (!playing) setAudioVerseNum(null);
+      }
+    };
+
+    // CRITICAL FOR MOBILE & TABLETS:
+    // Start audio output synchronously directly within this user tap event
+    startSynchronousAudioPlayback(track, selectedVoiceURI);
 
     setAudioVerseNum(verseNum);
     setIsAudioPlaying(true);
 
-    // Direct standalone fallback
-    try {
-      const recitationText = `${selectedBook}, chapter ${selectedChapter}. ${text}`;
-      const ttsUrl = getAudioTTSUrl(recitationText, selectedVoiceURI, getSavedVoiceGender());
-      const audio = new Audio(ttsUrl);
-      audio.playbackRate = playbackSpeed || 1.0;
-      audio.muted = isMuted;
-      audio.volume = isMuted ? 0 : 1.0;
-      audio.onended = () => {
-        setIsAudioPlaying(false);
-        setAudioVerseNum(null);
-      };
-      audio.onerror = () => {
-        // Fallback to speech synthesis if network issue occurs
-        if (typeof window !== "undefined" && "speechSynthesis" in window) {
-          const utterance = new SpeechSynthesisUtterance(recitationText);
-          const resolved = getNaturalBibleVoice(getSavedVoiceGender(), selectedVoiceURI);
-          if (resolved.voice) utterance.voice = resolved.voice;
-          utterance.pitch = resolved.pitch;
-          utterance.rate = playbackSpeed || resolved.rate;
-          utterance.onend = () => {
-            setIsAudioPlaying(false);
-            setAudioVerseNum(null);
-          };
-          utterance.onerror = () => {
-            setIsAudioPlaying(false);
-            setAudioVerseNum(null);
-          };
-          synthRef.current = utterance;
-          window.speechSynthesis.speak(utterance);
-        } else {
-          setIsAudioPlaying(false);
-          setAudioVerseNum(null);
-        }
-      };
-
-      audio.play().catch(() => {
-        setIsAudioPlaying(false);
-        setAudioVerseNum(null);
-      });
-    } catch (err) {
-      setIsAudioPlaying(false);
-      setAudioVerseNum(null);
+    // If global audio player is provided, route directly to ensure continuous narration
+    if (onPlayAudio) {
+      onPlayAudio(track);
     }
   };
 

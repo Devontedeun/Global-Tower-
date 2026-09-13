@@ -19,7 +19,9 @@ import {
   getAudioTTSUrl,
   getNaturalBibleVoice,
   getSavedVoiceGender,
-  getSavedVoiceId
+  getSavedVoiceId,
+  startSynchronousAudioPlayback,
+  globalAudioEngine
 } from "../lib/audioVoiceHelper";
 
 export interface FarewellUser {
@@ -121,8 +123,6 @@ export const FarewellExitPage: React.FC<FarewellExitPageProps> = ({
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
   const [copied, setCopied] = useState(false);
-  const speechRef = useRef<SpeechSynthesisUtterance | null>(null);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
 
   const activeScripture =
     FAREWELL_SCRIPTURES.find((s) => s.id === selectedScriptureId) || FAREWELL_SCRIPTURES[0];
@@ -135,22 +135,16 @@ export const FarewellExitPage: React.FC<FarewellExitPageProps> = ({
     window.scrollTo({ top: 0, behavior: "smooth" });
 
     return () => {
-      if (audioRef.current) {
-        audioRef.current.pause();
-        audioRef.current = null;
-      }
+      globalAudioEngine.stop();
       if (typeof window !== "undefined" && "speechSynthesis" in window) {
         window.speechSynthesis.cancel();
       }
     };
   }, []);
 
-  // Speak scripture aloud using Microsoft Neural Voice with speech synthesis fallback
+  // Speak scripture aloud using Microsoft Neural Voice with unified mobile/desktop audio pipeline
   const speakScripture = (scripture: PartingScripture, muted = false) => {
-    if (audioRef.current) {
-      audioRef.current.pause();
-      audioRef.current = null;
-    }
+    globalAudioEngine.stop();
     if (typeof window !== "undefined" && "speechSynthesis" in window) {
       window.speechSynthesis.cancel();
     }
@@ -160,54 +154,15 @@ export const FarewellExitPage: React.FC<FarewellExitPageProps> = ({
       return;
     }
 
-    const savedGender = getSavedVoiceGender();
-    const savedVoiceId = getSavedVoiceId();
-
-    const fallbackToSpeechSynthesis = () => {
-      if (typeof window === "undefined" || !("speechSynthesis" in window)) {
-        setIsSpeaking(false);
-        return;
-      }
-      try {
-        const utterance = new SpeechSynthesisUtterance(scripture.spokenText);
-        const resolved = getNaturalBibleVoice(savedGender, savedVoiceId);
-        if (resolved.voice) utterance.voice = resolved.voice;
-        utterance.rate = 0.88;
-        utterance.pitch = resolved.pitch || 0.96;
-
-        console.log("[FarewellExitPage:SpeechSynthesis] Utterance active:", {
-          requestedVoice: savedVoiceId,
-          actualVoice: resolved.actualVoiceName,
-          fallbackUsed: resolved.fallbackUsed
-        });
-
-        utterance.onstart = () => setIsSpeaking(true);
-        utterance.onend = () => setIsSpeaking(false);
-        utterance.onerror = () => setIsSpeaking(false);
-
-        speechRef.current = utterance;
-        window.speechSynthesis.speak(utterance);
-      } catch (e) {
-        setIsSpeaking(false);
-      }
-    };
-
-    if (savedVoiceId.startsWith("browser:")) {
-      fallbackToSpeechSynthesis();
-      return;
-    }
-
-    try {
-      const ttsUrl = getAudioTTSUrl(scripture.spokenText, savedVoiceId, savedGender);
-      const audio = new Audio(ttsUrl);
-      audioRef.current = audio;
-      audio.onplay = () => setIsSpeaking(true);
-      audio.onended = () => setIsSpeaking(false);
-      audio.onerror = () => fallbackToSpeechSynthesis();
-      audio.play().catch(() => fallbackToSpeechSynthesis());
-    } catch (e) {
-      fallbackToSpeechSynthesis();
-    }
+    setIsSpeaking(true);
+    startSynchronousAudioPlayback({
+      id: `farewell-${scripture.id}`,
+      title: scripture.title,
+      subtitle: scripture.reference,
+      textToRead: scripture.spokenText,
+      onPlaybackStateChange: (playing) => setIsSpeaking(playing),
+      onChapterComplete: () => setIsSpeaking(false)
+    });
   };
 
   const handleSelectScripture = (scripture: PartingScripture) => {
@@ -219,7 +174,10 @@ export const FarewellExitPage: React.FC<FarewellExitPageProps> = ({
 
   const handleToggleAudio = () => {
     if (isSpeaking) {
-      window.speechSynthesis.cancel();
+      globalAudioEngine.stop();
+      if (typeof window !== "undefined" && "speechSynthesis" in window) {
+        window.speechSynthesis.cancel();
+      }
       setIsSpeaking(false);
       setIsMuted(true);
     } else {
