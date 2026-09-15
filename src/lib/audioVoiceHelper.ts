@@ -14,10 +14,10 @@ export interface NarratorVoiceConfig {
 }
 
 export interface VoiceOption {
-  id: string; // e.g. "en-US-GuyNeural", "en-US-ChristopherNeural", "gemini:Puck", "browser:Samantha"
-  name: string; // Display label
+  id: string; // e.g. "en-US-GuyNeural", "en-US-ChristopherNeural", "browser:Samantha"
+  name: string; // Display label (human person name)
   gender: VoiceGender;
-  provider: "microsoft" | "gemini" | "browser";
+  provider: "standard" | "browser";
   description?: string;
   isDefault?: boolean;
 }
@@ -25,119 +25,120 @@ export interface VoiceOption {
 export const GENDER_STORAGE_KEY = "gtc_narrator_voice_gender";
 export const VOICE_STORAGE_KEY = "gtc_selected_narrator_voice";
 
-// Comprehensive Catalog of High-Quality Server Voices
+/**
+ * Formats any raw voice identifier or browser/server voice string into strictly
+ * a clean human person's name (e.g. "Guy", "Jenny", "Christopher", "Eric", "Brian", "Ryan", "Aria", "Michelle", "Sonia", "David", "Samantha").
+ * Removes all vendor branding ("Microsoft", "Azure", "Google", "Apple"), engine labels ("Neural", "Online (Natural)", "Desktop"),
+ * and locale codes so only the person's name is shown.
+ */
+export function formatPersonVoiceName(rawName?: string | null): string {
+  if (!rawName) return "Narrator";
+  let cleaned = String(rawName).trim();
+
+  // If it's a code-like ID such as "en-US-GuyNeural" or "en-GB-RyanNeural"
+  const neuralMatch = cleaned.match(/^[a-z]{2}-[A-Z]{2}-([A-Za-z]+)Neural$/i);
+  if (neuralMatch && neuralMatch[1]) {
+    return neuralMatch[1];
+  }
+
+  // Remove prefixes
+  cleaned = cleaned.replace(/^(browser:|server:|gemini:)/i, "");
+
+  // Remove vendor and engine words
+  cleaned = cleaned
+    .replace(/\b(Microsoft|Azure|Google|Apple|Amazon|Samsung|Android)\b/gi, "")
+    .replace(/\b(Online|Natural|Neural|Desktop|Mobile|Synthesizer|Standard|Wavenet|Voice|Speech|TTS|Preview)\b/gi, "")
+    .replace(/\(.*?\)/g, "") // remove parentheticals like "(Natural)" or "(en-US)"
+    .replace(/\[.*?\]/g, "")
+    .replace(/[-_•:|]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  // Extract primary name token
+  const words = cleaned
+    .split(/\s+/)
+    .filter((w) => !["en", "us", "gb", "english", "uk", "au", "ca", "male", "female", "natural"].includes(w.toLowerCase()));
+
+  if (words.length > 0 && words[0].length >= 2) {
+    return words[0].charAt(0).toUpperCase() + words[0].slice(1);
+  }
+
+  // Fallback: strip vendor from original raw name
+  const fallback = rawName
+    .replace(/^(en-US-|en-GB-|Microsoft\s+|Google\s+|Apple\s+)/i, "")
+    .split(/[\s-(_]/)[0]
+    .trim();
+
+  if (fallback && fallback.length >= 2) {
+    return fallback.charAt(0).toUpperCase() + fallback.slice(1);
+  }
+
+  return "Narrator";
+}
+
+// Catalog of High-Quality Person Narrator Voices (Zero API Needed)
+// Strictly reverent, solemn, and natural readers for Holy Scripture
 export const SERVER_VOICES: VoiceOption[] = [
-  // Microsoft Edge Neural Voices (Male)
+  // Male Person Voices (Solemn, Reverent, Authoritative)
   {
     id: "en-US-GuyNeural",
-    name: "Guy (Microsoft Neural • Reverent US)",
+    name: "Guy",
     gender: "male",
-    provider: "microsoft",
-    description: "Deep, warm, mature narrator — reverent scripture tone",
+    provider: "standard",
+    description: "Deep, solemn, reverent scripture narrator",
     isDefault: true,
   },
   {
     id: "en-US-ChristopherNeural",
-    name: "Christopher (Microsoft Neural • Authoritative US)",
+    name: "Christopher",
     gender: "male",
-    provider: "microsoft",
-    description: "Clear, resonant, and dignified delivery",
+    provider: "standard",
+    description: "Resonant, authoritative, dignified delivery",
   },
   {
     id: "en-US-EricNeural",
-    name: "Eric (Microsoft Neural • Calm & Gentle US)",
+    name: "Eric",
     gender: "male",
-    provider: "microsoft",
-    description: "Soft, contemplative delivery for devotional meditation",
+    provider: "standard",
+    description: "Calm, contemplative, prayerful cadence",
   },
   {
     id: "en-US-BrianNeural",
-    name: "Brian (Microsoft Neural • Expressive US)",
+    name: "Brian",
     gender: "male",
-    provider: "microsoft",
-    description: "Articulate and engaging American narrator",
+    provider: "standard",
+    description: "Steady, grounded scripture reader",
   },
   {
     id: "en-GB-RyanNeural",
-    name: "Ryan (Microsoft Neural • British Narrator)",
+    name: "Ryan",
     gender: "male",
-    provider: "microsoft",
-    description: "Distinguished British classical cathedral cadence",
+    provider: "standard",
+    description: "Distinguished British classical cathedral delivery",
   },
 
-  // Microsoft Edge Neural Voices (Female)
+  // Female Person Voices (Solemn, Reverent, Gentle - No Bubbly Voices)
   {
     id: "en-US-JennyNeural",
-    name: "Jenny (Microsoft Neural • Reverent US)",
+    name: "Jenny",
     gender: "female",
-    provider: "microsoft",
-    description: "Warm, clear, and reverent female scripture reader",
+    provider: "standard",
+    description: "Solemn, reverent, mature female reader",
     isDefault: true,
   },
   {
-    id: "en-US-AriaNeural",
-    name: "Aria (Microsoft Neural • Expressive US)",
-    gender: "female",
-    provider: "microsoft",
-    description: "Vibrant, poetic, lyrical narrator",
-  },
-  {
     id: "en-US-MichelleNeural",
-    name: "Michelle (Microsoft Neural • Gentle US)",
+    name: "Michelle",
     gender: "female",
-    provider: "microsoft",
-    description: "Gentle, peaceful, and comforting cadence",
+    provider: "standard",
+    description: "Gentle, peaceful, quiet devotional cadence",
   },
   {
-    id: "en-GB-SoniaNeural",
-    name: "Sonia (Microsoft Neural • British Narrator)",
+    id: "en-US-EmmaNeural",
+    name: "Emma",
     gender: "female",
-    provider: "microsoft",
-    description: "Refined British female narrative delivery",
-  },
-
-  // Gemini AI Voices (Server-side Studio AI)
-  {
-    id: "gemini:Charon",
-    name: "Charon (Gemini AI • Deep Male)",
-    gender: "male",
-    provider: "gemini",
-    description: "Solemn, low-frequency AI-synthesized narrator",
-  },
-  {
-    id: "gemini:Puck",
-    name: "Puck (Gemini AI • Clear Male)",
-    gender: "male",
-    provider: "gemini",
-    description: "Crisp, articulated modern AI narrator",
-  },
-  {
-    id: "gemini:Fenrir",
-    name: "Fenrir (Gemini AI • Resonant Male)",
-    gender: "male",
-    provider: "gemini",
-    description: "Rich and deep AI timber",
-  },
-  {
-    id: "gemini:Kore",
-    name: "Kore (Gemini AI • Gentle Female)",
-    gender: "female",
-    provider: "gemini",
-    description: "Soothing and peaceful AI narrator",
-  },
-  {
-    id: "gemini:Aoede",
-    name: "Aoede (Gemini AI • Expressive Female)",
-    gender: "female",
-    provider: "gemini",
-    description: "Melodic, dynamic female AI cadence",
-  },
-  {
-    id: "gemini:Zephyr",
-    name: "Zephyr (Gemini AI • Crisp Female)",
-    gender: "female",
-    provider: "gemini",
-    description: "Clear and precise modern female AI delivery",
+    provider: "standard",
+    description: "Measured, clear, dignified narrative delivery",
   },
 ];
 
@@ -150,7 +151,7 @@ export interface WebVoiceOption {
   isDefault: boolean;
 }
 
-// Banned robotic / novelty voice names in browser SpeechSynthesis
+// Banned robotic, novelty, or bubbly voice names in browser SpeechSynthesis
 export const BANNED_VOICE_NAMES = [
   "zarvox",
   "trinoids",
@@ -160,6 +161,7 @@ export const BANNED_VOICE_NAMES = [
   "organ",
   "deranged",
   "bubbles",
+  "bubbly",
   "bells",
   "boing",
   "good news",
@@ -169,7 +171,16 @@ export const BANNED_VOICE_NAMES = [
   "wobble",
   "xander",
   "albert",
-  "ralph"
+  "ralph",
+  "fred",
+  "kathy",
+  "princess",
+  "vicki",
+  "victoria",
+  "espeak",
+  "mbrola",
+  "aria",
+  "sonia"
 ];
 
 export function isNaturalVoice(voice: SpeechSynthesisVoice): boolean {
@@ -309,19 +320,25 @@ export function setSavedVoiceGender(gender: VoiceGender) {
   try {
     localStorage.setItem(GENDER_STORAGE_KEY, gender);
 
-    // Pick best voice for gender from available browser voices
-    if ("speechSynthesis" in window) {
-      const voices = getAvailableWebVoices();
-      const best = findBestVoiceForGender(voices, gender);
-      if (best) {
-        const bestId = best.voiceURI || best.name;
-        localStorage.setItem(VOICE_STORAGE_KEY, bestId);
-        window.dispatchEvent(
-          new CustomEvent("gtc_voice_changed", {
-            detail: { voiceId: bestId, gender }
-          })
-        );
-      }
+    // Default to the high-fidelity natural voice for the selected gender
+    const defaultVoice = gender === "female" ? "en-US-JennyNeural" : "en-US-GuyNeural";
+    const currentSaved = localStorage.getItem(VOICE_STORAGE_KEY);
+    const naturalMatch = SERVER_VOICES.find((v) => v.id === currentSaved);
+    
+    // If no saved voice or current saved voice has opposite gender, update to default for this gender
+    if (!currentSaved || (naturalMatch && naturalMatch.gender !== gender)) {
+      localStorage.setItem(VOICE_STORAGE_KEY, defaultVoice);
+      window.dispatchEvent(
+        new CustomEvent("gtc_voice_changed", {
+          detail: { voiceId: defaultVoice, gender, name: gender === "female" ? "Jenny" : "Guy" }
+        })
+      );
+    } else {
+      window.dispatchEvent(
+        new CustomEvent("gtc_voice_changed", {
+          detail: { voiceId: currentSaved, gender }
+        })
+      );
     }
   } catch (e) {
     // ignore
@@ -329,34 +346,23 @@ export function setSavedVoiceGender(gender: VoiceGender) {
 }
 
 /**
- * Retrieve the saved voice ID from localStorage or select the best native browser voice.
- * Restores seamlessly after page reload.
+ * Retrieve the saved voice ID from localStorage or select the high-fidelity natural default.
+ * Restores seamlessly after page reload without falling back to robotic browser voices.
  */
 export function getSavedVoiceId(): string {
-  if (typeof window === "undefined") return "";
+  if (typeof window === "undefined") return "en-US-GuyNeural";
   try {
     const saved = localStorage.getItem(VOICE_STORAGE_KEY);
     if (saved && saved.trim()) {
-      const trimmed = saved.trim();
-      // If it's not an obsolete Azure Neural string, return it
-      if (!(trimmed.startsWith("en-US-") && trimmed.endsWith("Neural"))) {
-        return trimmed;
-      }
+      return saved.trim();
     }
   } catch (e) {
     // fallback
   }
 
-  // Fallback to best matching voice from available browser voices
-  if (typeof window !== "undefined" && "speechSynthesis" in window) {
-    const voices = getAvailableWebVoices();
-    const gender = getSavedVoiceGender();
-    const best = findBestVoiceForGender(voices, gender);
-    if (best) {
-      return best.voiceURI || best.name;
-    }
-  }
-  return "";
+  // Default to high-fidelity zero-API neural voice based on saved gender
+  const gender = getSavedVoiceGender();
+  return gender === "female" ? "en-US-JennyNeural" : "en-US-GuyNeural";
 }
 
 /**
@@ -367,21 +373,25 @@ export function setSavedVoiceId(voiceId: string) {
   try {
     localStorage.setItem(VOICE_STORAGE_KEY, voiceId);
 
-    let activeGender = getSavedVoiceGender();
-    if ("speechSynthesis" in window) {
+    const naturalMatch = SERVER_VOICES.find(
+      (v) => v.id.toLowerCase() === voiceId.toLowerCase() || v.name.toLowerCase() === voiceId.toLowerCase()
+    );
+    let activeGender = naturalMatch ? naturalMatch.gender : getSavedVoiceGender();
+
+    if (!naturalMatch && typeof window !== "undefined" && "speechSynthesis" in window) {
       const voices = window.speechSynthesis.getVoices();
       const matched = voices.find((v) => v.voiceURI === voiceId || v.name === voiceId);
       if (matched) {
         activeGender = detectVoiceGender(matched);
-        localStorage.setItem(GENDER_STORAGE_KEY, activeGender);
       }
     }
 
+    localStorage.setItem(GENDER_STORAGE_KEY, activeGender);
     console.log(`[AudioVoiceHelper] Voice persisted to localStorage: id="${voiceId}", gender="${activeGender}"`);
 
     window.dispatchEvent(
       new CustomEvent("gtc_voice_changed", {
-        detail: { voiceId, gender: activeGender }
+        detail: { voiceId, gender: activeGender, name: formatPersonVoiceName(voiceId) }
       })
     );
   } catch (e) {
@@ -868,8 +878,16 @@ class GlobalAudioEngine {
       this.activeGender = getSavedVoiceGender();
       this.activeVoiceId = getSavedVoiceId();
 
-      const initialVoice = getNaturalBibleVoice(this.activeGender, this.activeVoiceId);
-      this.narratorName = initialVoice.voiceName;
+      const naturalMatch = SERVER_VOICES.find(
+        (v) => v.id.toLowerCase() === this.activeVoiceId.toLowerCase() || v.name.toLowerCase() === this.activeVoiceId.toLowerCase()
+      );
+      if (naturalMatch) {
+        this.narratorName = naturalMatch.name;
+        this.activeGender = naturalMatch.gender;
+        this.activeVoiceId = naturalMatch.id;
+      } else {
+        this.narratorName = formatPersonVoiceName(this.activeVoiceId) || (this.activeGender === "female" ? "Jenny" : "Guy");
+      }
 
       audioContextManager.subscribe(() => {
         this.notify();
@@ -880,21 +898,19 @@ class GlobalAudioEngine {
         this.stop();
       });
 
-      window.addEventListener("gtc_web_voices_loaded", () => {
-        const resolved = getNaturalBibleVoice(this.activeGender, this.activeVoiceId);
-        if (resolved.voice) {
-          this.narratorName = resolved.voice.name;
-          if (!this.activeVoiceId) {
-            this.activeVoiceId = resolved.voice.voiceURI || resolved.voice.name;
-          }
+      window.addEventListener("gtc_voice_changed", (e: any) => {
+        if (e.detail?.voiceId) {
+          this.activeVoiceId = e.detail.voiceId;
+          if (e.detail.gender) this.activeGender = e.detail.gender;
+          if (e.detail.name) this.narratorName = e.detail.name;
+          this.notify();
         }
-        this.notify();
       });
     }
   }
 
   public getAudioElement(): HTMLAudioElement | null {
-    if (!this.audio) {
+    if (!this.audio && typeof window !== "undefined") {
       this.audio = getOrCreateMasterAudioElement();
     }
     return this.audio;
@@ -991,8 +1007,16 @@ class GlobalAudioEngine {
     this.activeVoiceId = targetVoice;
     this.activeGender = targetGender;
 
-    const natural = getNaturalBibleVoice(targetGender, targetVoice);
-    this.narratorName = natural.voiceName;
+    const naturalMatch = SERVER_VOICES.find(
+      (v) => v.id.toLowerCase() === targetVoice.toLowerCase() || v.name.toLowerCase() === targetVoice.toLowerCase()
+    );
+    if (naturalMatch) {
+      this.narratorName = naturalMatch.name;
+      this.activeGender = naturalMatch.gender;
+      this.activeVoiceId = naturalMatch.id;
+    } else {
+      this.narratorName = formatPersonVoiceName(targetVoice) || (targetGender === "female" ? "Jenny" : "Guy");
+    }
 
     if (options?.rate) {
       this.playbackRate = options.rate;
@@ -1032,8 +1056,15 @@ class GlobalAudioEngine {
     this.isPlaying = false;
     this.isLoading = false;
     this.playbackStatus = "PAUSED";
+    if (this.audio) {
+      try {
+        this.audio.pause();
+      } catch {}
+    }
     if (typeof window !== "undefined" && "speechSynthesis" in window) {
-      window.speechSynthesis.pause();
+      try {
+        window.speechSynthesis.pause();
+      } catch {}
     }
     if (typeof navigator !== "undefined" && "mediaSession" in navigator) {
       try {
@@ -1060,6 +1091,20 @@ class GlobalAudioEngine {
 
     if (this.isFinished || this.getState().progress >= 100) {
       this.playCurrentSegment(0, this.currentPlaySessionId);
+      return;
+    }
+
+    // Check if HTMLAudio is loaded and paused
+    const audio = this.getAudioElement();
+    if (audio && audio.src && audio.paused && !audio.ended) {
+      this.playbackStatus = "PLAYING";
+      this.isPlaying = true;
+      this.isLoading = false;
+      audio.play().catch(() => {
+        this.playCurrentSegment(this.currentSegmentIndex, this.currentPlaySessionId);
+      });
+      this.currentTrack?.onPlaybackStateChange?.(true);
+      this.notify();
       return;
     }
 
@@ -1096,8 +1141,19 @@ class GlobalAudioEngine {
     this.segments = [];
     this.currentSegmentIndex = 0;
 
+    if (this.audio) {
+      try {
+        this.audio.pause();
+        this.audio.currentTime = 0;
+        this.audio.removeAttribute("src");
+        this.audio.load();
+      } catch {}
+    }
+
     if (typeof window !== "undefined" && "speechSynthesis" in window) {
-      window.speechSynthesis.cancel();
+      try {
+        window.speechSynthesis.cancel();
+      } catch {}
     }
     this.stopKeepAlive();
     console.log("[GlobalAudioEngine] ⏹️ Audio playback STOPPED and reset.");
@@ -1127,17 +1183,28 @@ class GlobalAudioEngine {
   public setVoice(newVoiceId: string) {
     this.activeVoiceId = newVoiceId;
     setSavedVoiceId(newVoiceId);
-    const resolved = getNaturalBibleVoice(this.activeGender, newVoiceId);
-    if (resolved.voice) {
-      this.narratorName = resolved.voice.name;
-      this.activeGender = resolved.gender;
+    const naturalMatch = SERVER_VOICES.find(
+      (v) => v.id.toLowerCase() === newVoiceId.toLowerCase() || v.name.toLowerCase() === newVoiceId.toLowerCase()
+    );
+    if (naturalMatch) {
+      this.narratorName = naturalMatch.name;
+      this.activeGender = naturalMatch.gender;
+      this.activeVoiceId = naturalMatch.id;
+    } else {
+      const resolved = getNaturalBibleVoice(this.activeGender, newVoiceId);
+      if (resolved.voice) {
+        this.narratorName = formatPersonVoiceName(resolved.voice.name);
+        this.activeGender = resolved.gender;
+      } else {
+        this.narratorName = formatPersonVoiceName(newVoiceId) || (this.activeGender === "female" ? "Jenny" : "Guy");
+      }
     }
-    console.log(`[GlobalAudioEngine] Voice selector changed to: "${newVoiceId}" (${this.narratorName})`);
+    console.log(`[GlobalAudioEngine] Voice selector changed to: "${this.activeVoiceId}" (${this.narratorName})`);
 
     if (typeof window !== "undefined") {
       window.dispatchEvent(
         new CustomEvent("gtc_voice_changed", {
-          detail: { voiceId: newVoiceId, gender: this.activeGender, name: this.narratorName }
+          detail: { voiceId: this.activeVoiceId, gender: this.activeGender, name: this.narratorName }
         })
       );
     }
@@ -1151,19 +1218,17 @@ class GlobalAudioEngine {
   public setGender(gender: VoiceGender) {
     this.activeGender = gender;
     setSavedVoiceGender(gender);
-    if (typeof window !== "undefined" && "speechSynthesis" in window) {
-      const voices = getAvailableWebVoices();
-      const best = findBestVoiceForGender(voices, gender);
-      if (best) {
-        this.setVoice(best.voiceURI || best.name);
-      }
-    }
+    const defaultVoice = gender === "female" ? "en-US-JennyNeural" : "en-US-GuyNeural";
+    this.setVoice(defaultVoice);
   }
 
   public setPlaybackRate(rate: number) {
     this.playbackRate = rate;
+    if (this.audio) {
+      this.audio.playbackRate = rate;
+    }
     this.notify();
-    if (this.isPlaying && this.segments.length > 0) {
+    if (this.isPlaying && this.segments.length > 0 && (!this.audio || this.audio.paused)) {
       this.playCurrentSegment(this.currentSegmentIndex, this.currentPlaySessionId);
     }
   }
@@ -1179,6 +1244,10 @@ class GlobalAudioEngine {
       this.isMuted = false;
       setSavedMuteState(false);
     }
+    if (this.audio) {
+      this.audio.volume = clamped;
+      this.audio.muted = this.isMuted;
+    }
     this.notify();
   }
 
@@ -1186,6 +1255,10 @@ class GlobalAudioEngine {
     unlockAudio();
     this.isMuted = !this.isMuted;
     setSavedMuteState(this.isMuted);
+    if (this.audio) {
+      this.audio.muted = this.isMuted;
+      this.audio.volume = this.isMuted ? 0 : this.volume;
+    }
     this.notify();
   }
 
@@ -1210,16 +1283,6 @@ class GlobalAudioEngine {
       return;
     }
 
-    if (typeof window === "undefined" || !("speechSynthesis" in window)) {
-      console.warn("[GlobalAudioEngine] window.speechSynthesis is not supported in this environment.");
-      this.playbackStatus = "ERROR";
-      this.errorMessage = "Speech synthesis is not supported in this browser.";
-      this.isLoading = false;
-      this.isPlaying = false;
-      this.notify();
-      return;
-    }
-
     const currentSeg = this.segments[index];
     const rawText = (currentSeg.text || "").trim();
     const formattedText = formatBibleTextForSpeech(rawText);
@@ -1238,7 +1301,7 @@ class GlobalAudioEngine {
     this.isFinished = false;
     this.errorMessage = null;
 
-    // Do NOT fake playing state: accurate READY/Loading status before speech starts
+    // Loading status while audio buffers
     this.playbackStatus = "READY";
     this.isLoading = true;
     this.isPlaying = false;
@@ -1251,29 +1314,159 @@ class GlobalAudioEngine {
       } catch {}
     }
 
+    // High-fidelity natural voice streaming via /api/tts
+    const targetVoice = this.activeVoiceId || getSavedVoiceId() || (this.activeGender === "female" ? "en-US-JennyNeural" : "en-US-GuyNeural");
+    const audio = this.getAudioElement();
+
+    if (audio) {
+      try {
+        // Cancel browser speech synthesis if running
+        if (typeof window !== "undefined" && "speechSynthesis" in window) {
+          try { window.speechSynthesis.cancel(); } catch {}
+        }
+        this.stopKeepAlive();
+
+        const audioUrl = getAudioTTSUrl(formattedText, targetVoice, this.activeGender);
+
+        audio.playbackRate = this.playbackRate;
+        audio.volume = this.isMuted ? 0 : this.volume;
+        audio.muted = this.isMuted;
+        audio.src = audioUrl;
+
+        audio.onplay = () => {
+          if (this.currentPlaySessionId !== sessionId) return;
+          console.log(
+            `[GlobalAudioEngine:Audio] 🎙️ Playing natural neural voice segment ${index + 1}/${this.segments.length}: ` +
+            `"${formattedText.substring(0, 45)}..." | Voice: ${this.narratorName} (${targetVoice})`
+          );
+          this.playbackStatus = "PLAYING";
+          this.isPlaying = true;
+          this.isLoading = false;
+          this.hasAutoplayBlock = false;
+          this.errorMessage = null;
+          this.notify();
+
+          if (currentSeg.verseNum && this.currentTrack?.onVerseChange) {
+            this.currentTrack.onVerseChange(currentSeg.verseNum);
+          }
+          this.currentTrack?.onPlaybackStateChange?.(true);
+        };
+
+        audio.onpause = () => {
+          if (this.currentPlaySessionId !== sessionId) return;
+          if (!audio.ended && this.playbackStatus !== "FINISHED") {
+            this.playbackStatus = "PAUSED";
+            this.isPlaying = false;
+            this.notify();
+            this.currentTrack?.onPlaybackStateChange?.(false);
+          }
+        };
+
+        audio.onended = () => {
+          if (this.currentPlaySessionId !== sessionId) return;
+          if (index + 1 < this.segments.length) {
+            this.playCurrentSegment(index + 1, sessionId);
+          } else {
+            this.finishPlayback();
+          }
+        };
+
+        audio.onerror = (e) => {
+          if (this.currentPlaySessionId !== sessionId) return;
+          console.warn("[GlobalAudioEngine:Audio] Audio stream error:", e);
+          const canonical = this.activeGender === "female" ? "en-US-JennyNeural" : "en-US-GuyNeural";
+          if (targetVoice !== canonical) {
+            console.log(`[GlobalAudioEngine:Audio] Retrying segment with canonical reverent voice "${canonical}"...`);
+            const retryUrl = getAudioTTSUrl(formattedText, canonical, this.activeGender);
+            audio.onerror = () => {
+              if (this.currentPlaySessionId !== sessionId) return;
+              this.fallbackToNaturalWebSpeech(formattedText, index, sessionId);
+            };
+            audio.src = retryUrl;
+            audio.load();
+            audio.play().catch(() => {
+              this.fallbackToNaturalWebSpeech(formattedText, index, sessionId);
+            });
+            return;
+          }
+          this.fallbackToNaturalWebSpeech(formattedText, index, sessionId);
+        };
+
+        const playPromise = audio.play();
+        if (playPromise !== undefined) {
+          playPromise.catch((err) => {
+            if (this.currentPlaySessionId !== sessionId) return;
+            if (err.name === "NotAllowedError") {
+              console.warn("[GlobalAudioEngine:Audio] Autoplay blocked, awaiting user click:", err);
+              this.hasAutoplayBlock = true;
+              this.isLoading = false;
+              this.isPlaying = false;
+              this.playbackStatus = "READY";
+              this.notify();
+            } else if (err.name !== "AbortError") {
+              console.warn("[GlobalAudioEngine:Audio] Audio playback exception, falling back:", err);
+              this.fallbackToNaturalWebSpeech(formattedText, index, sessionId);
+            }
+          });
+        }
+
+        // Prefetch next segment in background to ensure zero latency between verses
+        if (index + 1 < this.segments.length) {
+          const nextSeg = this.segments[index + 1];
+          const nextText = formatBibleTextForSpeech(nextSeg.text);
+          if (nextText) {
+            const prefetchUrl = getAudioTTSUrl(nextText, targetVoice, this.activeGender);
+            const prefetchAudio = new Audio();
+            prefetchAudio.preload = "auto";
+            prefetchAudio.src = prefetchUrl;
+          }
+        }
+        return;
+      } catch (err) {
+        console.warn("[GlobalAudioEngine:Audio] Error setting audio stream, falling back:", err);
+      }
+    }
+
+    // Fallback path if audio element unavailable
+    this.fallbackToNaturalWebSpeech(formattedText, index, sessionId);
+  }
+
+  private fallbackToNaturalWebSpeech(formattedText: string, index: number, sessionId: number) {
+    if (typeof window === "undefined" || !("speechSynthesis" in window)) {
+      this.playbackStatus = "ERROR";
+      this.errorMessage = "Audio playback failed.";
+      this.isLoading = false;
+      this.isPlaying = false;
+      this.notify();
+      return;
+    }
+
     try {
-      // Cancel previous utterance safely before starting new
       window.speechSynthesis.cancel();
       this.stopKeepAlive();
 
-      const utterance = new SpeechSynthesisUtterance(formattedText);
-
-      // Resolve voice and ensure it is assigned directly to utterance.voice
       const resolved = getNaturalBibleVoice(this.activeGender, this.activeVoiceId);
-      if (resolved.voice) {
-        utterance.voice = resolved.voice;
-        this.narratorName = resolved.voice.name;
+      // STRICT MANDATE: Never speak scripture with robotic / novelty voices!
+      // Only proceed if the browser provides a verified natural, human-sounding voice.
+      if (!resolved.voice || !isNaturalVoice(resolved.voice)) {
+        console.warn("[GlobalAudioEngine] Suppressing robotic browser speech synthesis to preserve reverent scripture reading.");
+        this.playbackStatus = "ERROR";
+        this.errorMessage = "Scripture narration buffering. Tap play to retry.";
+        this.isLoading = false;
+        this.isPlaying = false;
+        this.notify();
+        return;
       }
-      utterance.pitch = resolved.pitch || 1.0;
-      utterance.rate = this.playbackRate || resolved.rate || 0.95;
+
+      const utterance = new SpeechSynthesisUtterance(formattedText);
+      utterance.voice = resolved.voice;
+      this.narratorName = formatPersonVoiceName(resolved.voice.name);
+      utterance.pitch = resolved.pitch || 0.96;
+      utterance.rate = this.playbackRate || resolved.rate || 0.94;
       utterance.volume = this.isMuted ? 0 : this.volume;
 
       utterance.onstart = () => {
         if (this.currentPlaySessionId !== sessionId) return;
-        console.log(
-          `[GlobalAudioEngine:WebSpeech] 🎙️ Reading aloud segment ${index + 1}/${this.segments.length}: ` +
-          `"${formattedText.substring(0, 45)}..." | Voice: ${utterance.voice?.name || "System Default"}`
-        );
         this.playbackStatus = "READING";
         this.isPlaying = true;
         this.isLoading = false;
@@ -1282,7 +1475,8 @@ class GlobalAudioEngine {
         this.startKeepAlive();
         this.notify();
 
-        if (currentSeg.verseNum && this.currentTrack?.onVerseChange) {
+        const currentSeg = this.segments[index];
+        if (currentSeg?.verseNum && this.currentTrack?.onVerseChange) {
           this.currentTrack.onVerseChange(currentSeg.verseNum);
         }
         this.currentTrack?.onPlaybackStateChange?.(true);
@@ -1317,13 +1511,10 @@ class GlobalAudioEngine {
 
       utterance.onerror = (e) => {
         this.stopKeepAlive();
-        if (e.error === "canceled" || e.error === "interrupted") {
-          return;
-        }
-        console.error("[GlobalAudioEngine:WebSpeech] Utterance error:", e);
+        if (e.error === "canceled" || e.error === "interrupted") return;
         if (this.currentPlaySessionId === sessionId) {
           this.playbackStatus = "ERROR";
-          this.errorMessage = `Speech synthesis error: ${e.error || "playback failed"}`;
+          this.errorMessage = `Audio playback error: ${e.error || "failed"}`;
           this.isLoading = false;
           this.isPlaying = false;
           this.notify();
@@ -1331,16 +1522,14 @@ class GlobalAudioEngine {
         }
       };
 
-      // 25ms delay avoids WebKit/Blink cancel-speak race condition
       setTimeout(() => {
         if (this.currentPlaySessionId === sessionId) {
           window.speechSynthesis.speak(utterance);
         }
       }, 25);
     } catch (err: any) {
-      console.error("[GlobalAudioEngine:WebSpeech] Failed to speak segment:", err);
       this.playbackStatus = "ERROR";
-      this.errorMessage = err?.message || "Speech synthesis failed.";
+      this.errorMessage = err?.message || "Audio playback failed.";
       this.isLoading = false;
       this.isPlaying = false;
       this.notify();
@@ -1438,44 +1627,32 @@ if (typeof window !== "undefined" && !hasSetupGlobalUnlock) {
 }
 
 export const PREFERRED_MALE_VOICES = [
-  "Microsoft Guy Online (Natural)",
-  "Microsoft Christopher Online (Natural)",
-  "Microsoft Eric Online (Natural)",
-  "Microsoft Ryan Online (Natural)",
-  "Microsoft David",
-  "Microsoft Mark",
-  "Microsoft George",
-  "Microsoft Steffan Online (Natural)",
-  "Microsoft Andrew Online (Natural)",
-  "Microsoft Brian Online (Natural)",
-  "en-US-Neural2-D",
-  "en-US-Neural2-J",
-  "Google UK English Male",
-  "en-GB-Neural2-B",
-  "en-GB-Neural2-D",
-  "en-US-Standard-B",
-  "en-US-Standard-D",
-  "Google US English"
+  "Guy",
+  "Christopher",
+  "Eric",
+  "Ryan",
+  "David",
+  "Mark",
+  "George",
+  "Steffan",
+  "Andrew",
+  "Brian",
+  "en-US-GuyNeural",
+  "en-US-ChristopherNeural",
+  "en-US-EricNeural",
+  "en-US-BrianNeural",
+  "en-GB-RyanNeural"
 ];
 
 export const PREFERRED_FEMALE_VOICES = [
-  "Microsoft Jenny Online (Natural)",
-  "Microsoft Aria Online (Natural)",
-  "Microsoft Sonia Online (Natural)",
-  "Microsoft Libby Online (Natural)",
-  "Microsoft Zira",
-  "Microsoft Michelle Online (Natural)",
-  "Microsoft Ava Online (Natural)",
-  "Microsoft Emma Online (Natural)",
-  "en-US-Neural2-F",
-  "en-US-Neural2-C",
-  "Google UK English Female",
-  "en-GB-Neural2-A",
-  "en-GB-Neural2-C",
-  "en-US-Standard-C",
+  "Jenny",
+  "Michelle",
+  "Emma",
+  "Ava",
   "Samantha",
-  "Victoria",
-  "Google US English"
+  "en-US-JennyNeural",
+  "en-US-MichelleNeural",
+  "en-US-EmmaNeural"
 ];
 
 /**
@@ -1498,9 +1675,9 @@ export function getAudioTTSUrl(text: string, voiceId?: string, gender?: VoiceGen
 }
 
 /**
- * Alias for getAudioTTSUrl to maintain compatibility across legacy callers.
+ * Primary URL generator for server voice audio track streaming.
  */
-export function getMicrosoftTTSUrl(text: string, genderOrVoice?: VoiceGender | string): string {
+export function getNaturalTTSUrl(text: string, genderOrVoice?: VoiceGender | string): string {
   if (genderOrVoice === "male" || genderOrVoice === "female") {
     const savedVoiceId = getSavedVoiceId();
     const savedGender = getSavedVoiceGender();
@@ -1512,6 +1689,11 @@ export function getMicrosoftTTSUrl(text: string, genderOrVoice?: VoiceGender | s
   }
   return getAudioTTSUrl(text, genderOrVoice);
 }
+
+/**
+ * Legacy compatibility alias.
+ */
+export const getMicrosoftTTSUrl = getNaturalTTSUrl;
 
 /**
  * Resolves the requested voice in browser SpeechSynthesis at runtime.
@@ -1535,7 +1717,7 @@ export function getNaturalBibleVoice(
       pitch: gender === "male" ? 0.94 : 1.02,
       rate: 0.94,
       gender,
-      voiceName: gender === "male" ? "Guy (Natural Male)" : "Jenny (Natural Female)",
+      voiceName: gender === "male" ? "Guy" : "Jenny",
       requestedVoice: rawTargetVoiceId,
       actualVoiceName: "None (SpeechSynthesis unavailable)",
       fallbackUsed: true,
@@ -1551,7 +1733,7 @@ export function getNaturalBibleVoice(
       pitch: gender === "male" ? 0.94 : 1.02,
       rate: 0.94,
       gender,
-      voiceName: gender === "male" ? "Guy (Natural Male)" : "Jenny (Natural Female)",
+      voiceName: gender === "male" ? "Guy" : "Jenny",
       requestedVoice: rawTargetVoiceId,
       actualVoiceName: "None (Empty voice list)",
       fallbackUsed: true,
@@ -1587,9 +1769,9 @@ export function getNaturalBibleVoice(
       pitch: gender === "male" ? 0.94 : 1.02,
       rate: 0.94,
       gender,
-      voiceName: exactMatch.name,
+      voiceName: formatPersonVoiceName(exactMatch.name),
       requestedVoice: rawTargetVoiceId,
-      actualVoiceName: exactMatch.name,
+      actualVoiceName: formatPersonVoiceName(exactMatch.name),
       fallbackUsed: false,
       provider: "browser"
     };
@@ -1616,9 +1798,9 @@ export function getNaturalBibleVoice(
         pitch: gender === "male" ? 0.94 : 1.02,
         rate: 0.94,
         gender,
-        voiceName: keywordMatch.name,
+        voiceName: formatPersonVoiceName(keywordMatch.name),
         requestedVoice: rawTargetVoiceId,
-        actualVoiceName: keywordMatch.name,
+        actualVoiceName: formatPersonVoiceName(keywordMatch.name),
         fallbackUsed: false,
         provider: "browser"
       };
@@ -1640,9 +1822,9 @@ export function getNaturalBibleVoice(
     pitch: gender === "male" ? 0.94 : 1.02,
     rate: 0.94,
     gender,
-    voiceName: fallbackMatch ? fallbackMatch.name : (gender === "male" ? "Natural Male" : "Natural Female"),
+    voiceName: formatPersonVoiceName(fallbackMatch?.name) || (gender === "male" ? "Guy" : "Jenny"),
     requestedVoice: rawTargetVoiceId,
-    actualVoiceName: fallbackMatch ? fallbackMatch.name : "System Default",
+    actualVoiceName: formatPersonVoiceName(fallbackMatch?.name) || (gender === "male" ? "Guy" : "Jenny"),
     fallbackUsed: true,
     provider: "browser"
   };
@@ -1658,6 +1840,9 @@ export function formatBibleTextForSpeech(text: string): string {
   if (!text) return "";
 
   return text
+    // Normalize whole-word all-caps LORD and GOD so TTS engines pronounce them solemnly as words rather than spelling out L-O-R-D
+    .replace(/\bLORD\b/g, "Lord")
+    .replace(/\bGOD\b/g, "God")
     // Replace semi-colons and colons with natural pause-inducing commas
     .replace(/;/g, ", ")
     // Ensure em-dashes and hyphens have natural breathing space
@@ -1665,6 +1850,9 @@ export function formatBibleTextForSpeech(text: string): string {
     .replace(/--/g, ", ")
     // Remove bracketed verse citation numbers like [1] or (v. 4)
     .replace(/\[\d+\]/g, "")
+    .replace(/\(\s*v\.?\s*\d+\s*\)/gi, "")
+    // Remove footnote symbols
+    .replace(/[*†‡]/g, "")
     // Ensure periods and exclamation marks have a clean break so sentences don't collide
     .replace(/\.([A-Za-z])/g, ". $1")
     // Clean redundant whitespace

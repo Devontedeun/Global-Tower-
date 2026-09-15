@@ -143,7 +143,7 @@ export const FarewellExitPage: React.FC<FarewellExitPageProps> = ({
     };
   }, []);
 
-  // Speak scripture aloud using Microsoft Neural Voice with unified mobile/desktop audio pipeline
+  // Speak scripture aloud using reverent voice narration with unified mobile/desktop audio pipeline
   const speakScripture = (scripture: PartingScripture, muted = false) => {
     unlockAudio();
     if (muted) {

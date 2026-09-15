@@ -58,7 +58,7 @@ export const COLOR_PALETTES: ColorPaletteConfig[] = [
   {
     id: "sapphire",
     name: "Celestial Sapphire",
-    subtitle: "Deep oceanic blue, starlight & azure",
+    subtitle: "Deep oceanic blue, starlight & celestial sapphire",
     primaryColor: "#2563EB",
     secondaryColor: "#3B82F6",
     accentClass: "text-blue-600 bg-blue-600",

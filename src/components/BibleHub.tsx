@@ -56,7 +56,9 @@ import {
   setSavedMuteState,
   unlockAudio,
   startSynchronousAudioPlayback,
-  globalAudioEngine
+  globalAudioEngine,
+  formatPersonVoiceName,
+  SERVER_VOICES
 } from "../lib/audioVoiceHelper";
 
 interface BibleHubProps {
@@ -176,42 +178,12 @@ export const BibleHub: React.FC<BibleHubProps> = ({
     setChapterCompleted(false);
   }, [selectedBook, selectedChapter]);
 
-  // Load voices for Audio Bible via browser Web Speech API
+  // Load voices for Audio Bible and sync with high-fidelity server voice
   useEffect(() => {
-    const loadVoices = () => {
-      if (typeof window !== "undefined" && "speechSynthesis" in window) {
-        const voices = getAvailableWebVoices();
-        if (voices.length > 0) {
-          setAvailableVoices(voices);
-
-          const savedVoice = getSavedVoiceId();
-          if (!savedVoice || !selectedVoiceURI) {
-            const best = findBestVoiceForGender(voices, getSavedVoiceGender());
-            const chosen = best ? (best.voiceURI || best.name) : voices[0]?.name || "";
-            setSelectedVoiceURI(chosen);
-            setSavedVoiceId(chosen);
-          } else {
-            const exists = voices.some((v) => v.voiceURI === savedVoice || v.name === savedVoice);
-            if (exists) {
-              setSelectedVoiceURI(savedVoice);
-            }
-          }
-        }
-      }
-    };
-
-    loadVoices();
-    window.addEventListener("gtc_web_voices_loaded", loadVoices);
-    if (typeof window !== "undefined" && "speechSynthesis" in window) {
-      window.speechSynthesis.onvoiceschanged = loadVoices;
+    const savedVoice = getSavedVoiceId();
+    if (savedVoice) {
+      setSelectedVoiceURI(savedVoice);
     }
-
-    return () => {
-      window.removeEventListener("gtc_web_voices_loaded", loadVoices);
-      if (typeof window !== "undefined" && "speechSynthesis" in window) {
-        window.speechSynthesis.cancel();
-      }
-    };
   }, []);
 
   // Fetch verified verses whenever Book, Chapter, or Translation changes
@@ -420,6 +392,9 @@ export const BibleHub: React.FC<BibleHubProps> = ({
           setIsAudioPlaying(false);
           setAudioVerseNum(null);
           setChapterCompleted(true);
+          if (isContinuousBible) {
+            handleNextChapter();
+          }
         },
         onPlaybackStateChange: (playing: boolean) => {
           setIsAudioPlaying(playing);
@@ -1183,7 +1158,7 @@ export const BibleHub: React.FC<BibleHubProps> = ({
                   <div className="flex items-center justify-between mb-1">
                     <label className="text-[11px] font-bold text-[#7A7468]">Narrator Voice:</label>
                     <span className="text-[9px] bg-[#2D2D2D] text-[#C5A059] px-1.5 py-0.5 rounded-full font-bold">
-                      Web Speech API
+                      Zero-API Voice
                     </span>
                   </div>
                   <select
@@ -1198,17 +1173,11 @@ export const BibleHub: React.FC<BibleHubProps> = ({
                     }}
                     className="w-full p-1.5 bg-white border border-[#E5E0D5] rounded-lg text-xs font-medium focus:outline-none focus:border-[#C5A059]"
                   >
-                    {availableVoices.length > 0 ? (
-                      availableVoices.map((voice) => (
-                        <option key={voice.voiceURI || voice.name} value={voice.voiceURI || voice.name}>
-                          {voice.name} ({voice.lang})
-                        </option>
-                      ))
-                    ) : (
-                      <option value={selectedVoiceURI || "default"}>
-                        Default Browser Voice
+                    {SERVER_VOICES.map((voice) => (
+                      <option key={voice.id} value={voice.id}>
+                        {voice.name} ({voice.gender === "female" ? "Female" : "Male"})
                       </option>
-                    )}
+                    ))}
                   </select>
                 </div>
               </div>

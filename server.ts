@@ -212,50 +212,44 @@ app.post("/api/admin/watchdog/resolve", (req, res) => {
   }
 });
 
-// Helper to fetch resilient HTTP TTS if WebSocket Neural engine is unavailable in container/deployed environment
-async function fetchResilientWebTTS(text: string): Promise<Buffer | null> {
+// Resilient Scripture TTS Helper - Uses high-definition neural narration only (zero robotic fallback)
+async function synthesizeReverentNeuralTTS(
+  text: string,
+  voice: string,
+  rate = "-4%"
+): Promise<Buffer | null> {
+  let tts: MsEdgeTTS | null = null;
   try {
-    const clean = text.trim();
-    if (!clean) return null;
-    const words = clean.split(/\s+/);
-    const chunks: string[] = [];
-    let cur = "";
-    for (const w of words) {
-      if ((cur + " " + w).trim().length > 150) {
-        if (cur) chunks.push(cur.trim());
-        cur = w;
-      } else {
-        cur = (cur + " " + w).trim();
-      }
-    }
-    if (cur) chunks.push(cur.trim());
+    tts = new MsEdgeTTS();
+    await tts.setMetadata(voice, OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3);
+    const { audioStream } = tts.toStream(text, { rate, pitch: "+0Hz" });
+    const chunks: Buffer[] = [];
+    return new Promise<Buffer | null>((resolve) => {
+      const timeout = setTimeout(() => {
+        try { tts?.close(); } catch {}
+        resolve(null);
+      }, 10000);
 
-    const audioBuffers: Buffer[] = [];
-    for (const chunk of chunks) {
-      const url = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(chunk)}&tl=en&client=tw-ob`;
-      const response = await fetch(url, {
-        headers: {
-          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-          "Referer": "https://translate.google.com/"
-        }
+      audioStream.on("data", (c: Buffer) => chunks.push(c));
+      audioStream.on("end", () => {
+        clearTimeout(timeout);
+        try { tts?.close(); } catch {}
+        resolve(Buffer.concat(chunks));
       });
-      if (response.ok) {
-        const arrayBuf = await response.arrayBuffer();
-        audioBuffers.push(Buffer.from(arrayBuf));
-      }
-    }
-    if (audioBuffers.length > 0) {
-      return Buffer.concat(audioBuffers);
-    }
-    return null;
-  } catch (e) {
-    console.warn("[TTS:Fallback] Resilient TTS fetch exception:", e);
+      audioStream.on("error", () => {
+        clearTimeout(timeout);
+        try { tts?.close(); } catch {}
+        resolve(null);
+      });
+    });
+  } catch {
+    try { tts?.close(); } catch {}
     return null;
   }
 }
 
 // Comprehensive Text-to-Speech Engine
-// Supports high-fidelity Microsoft Edge Neural voices and Gemini AI voices with seamless caching and fallback
+// Zero-API scripture voice synthesis engine with seamless caching and resilient fallback
 const ttsAudioCache = new Map<string, Buffer>();
 const MAX_TTS_CACHE_SIZE = 500;
 
@@ -282,57 +276,6 @@ function pcmToWav(pcmBuffer: Buffer, sampleRate = 24000, channels = 1, bitsPerSa
   return Buffer.concat([header, pcmBuffer]);
 }
 
-function escapeXml(unsafe: string): string {
-  return unsafe
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&apos;");
-}
-
-async function synthesizeWithAzureSpeech(
-  text: string,
-  voiceName: string,
-  locale: string,
-  gender: string
-): Promise<Buffer | null> {
-  const apiKey = (process.env.AZURE_SPEECH_KEY || process.env.SPEECH_KEY || "").trim();
-  const region = (process.env.AZURE_SPEECH_REGION || process.env.SPEECH_REGION || "eastus").trim();
-  if (!apiKey) return null;
-
-  const endpoint = `https://${region}.tts.speech.microsoft.com/cognitiveservices/v1`;
-  const ssml = `<speak version='1.0' xml:lang='${locale}'><voice xml:lang='${locale}' xml:gender='${gender === "female" ? "Female" : "Male"}' name='${voiceName}'>${escapeXml(text)}</voice></speak>`;
-
-  try {
-    console.log(`[TTS:AzureSpeech] Sending request to ${endpoint}, voice="${voiceName}", locale="${locale}", textLen=${text.length}`);
-    const response = await fetch(endpoint, {
-      method: "POST",
-      headers: {
-        "Ocp-Apim-Subscription-Key": apiKey,
-        "Content-Type": "application/ssml+xml",
-        "X-Microsoft-OutputFormat": "audio-24khz-48kbitrate-mono-mp3",
-        "User-Agent": "GlobalTowerOfChrist-BibleAudio",
-      },
-      body: ssml,
-    });
-
-    if (!response.ok) {
-      const errText = await response.text();
-      console.warn(`[TTS:AzureSpeech] Azure Speech API error (HTTP ${response.status}): ${errText}`);
-      return null;
-    }
-
-    const arrayBuf = await response.arrayBuffer();
-    const buffer = Buffer.from(arrayBuf);
-    console.log(`[TTS:AzureSpeech] Received ${buffer.length} bytes of synthesized audio from Azure Speech API`);
-    return buffer;
-  } catch (err: any) {
-    console.warn(`[TTS:AzureSpeech] Exception contacting Azure Speech endpoint:`, err?.message || err);
-    return null;
-  }
-}
-
 function sendAudioWithRange(
   req: express.Request,
   res: express.Response,
@@ -340,7 +283,7 @@ function sendAudioWithRange(
   selectedVoice: string,
   isCached: boolean,
   contentType: string = "audio/mpeg",
-  engineName: string = "Microsoft-Edge-Neural",
+  engineName: string = "Natural-Voice",
   requestedVoice?: string,
   fallbackUsed: boolean = false,
   locale: string = "en-US"
@@ -402,7 +345,7 @@ app.options("/api/tts", (req, res) => {
   res.sendStatus(204);
 });
 
-// List of verified Microsoft Edge Neural voices supported out of the box
+// List of verified voices supported out of the box (strictly reverent, solemn narrators)
 const VERIFIED_EDGE_VOICES = new Set([
   "en-US-GuyNeural",
   "en-US-ChristopherNeural",
@@ -410,40 +353,23 @@ const VERIFIED_EDGE_VOICES = new Set([
   "en-US-BrianNeural",
   "en-GB-RyanNeural",
   "en-US-JennyNeural",
-  "en-US-AriaNeural",
   "en-US-MichelleNeural",
-  "en-GB-SoniaNeural",
-  "en-US-AvaNeural",
   "en-US-EmmaNeural",
-  "en-US-RogerNeural",
-  "en-US-SteffanNeural",
-  "en-GB-LibbyNeural",
-  "en-CA-LiamNeural",
-  "en-AU-WilliamMultilingualNeural",
 ]);
 
-// Endpoint returning available voices catalog
+// Endpoint returning available reverent voices catalog
 app.get("/api/tts/voices", (req, res) => {
-  const hasGemini = !!process.env.GEMINI_API_KEY;
   res.json({
     status: "ok",
-    hasGemini,
     voices: [
-      { id: "en-US-GuyNeural", name: "Guy (Microsoft Neural • Reverent US)", gender: "male", provider: "microsoft" },
-      { id: "en-US-ChristopherNeural", name: "Christopher (Microsoft Neural • Authoritative US)", gender: "male", provider: "microsoft" },
-      { id: "en-US-EricNeural", name: "Eric (Microsoft Neural • Calm & Gentle US)", gender: "male", provider: "microsoft" },
-      { id: "en-US-BrianNeural", name: "Brian (Microsoft Neural • Expressive US)", gender: "male", provider: "microsoft" },
-      { id: "en-GB-RyanNeural", name: "Ryan (Microsoft Neural • British Narrator)", gender: "male", provider: "microsoft" },
-      { id: "en-US-JennyNeural", name: "Jenny (Microsoft Neural • Reverent US)", gender: "female", provider: "microsoft" },
-      { id: "en-US-AriaNeural", name: "Aria (Microsoft Neural • Expressive US)", gender: "female", provider: "microsoft" },
-      { id: "en-US-MichelleNeural", name: "Michelle (Microsoft Neural • Gentle US)", gender: "female", provider: "microsoft" },
-      { id: "en-GB-SoniaNeural", name: "Sonia (Microsoft Neural • British Narrator)", gender: "female", provider: "microsoft" },
-      { id: "gemini:Charon", name: "Charon (Gemini AI • Deep Male)", gender: "male", provider: "gemini", available: hasGemini },
-      { id: "gemini:Puck", name: "Puck (Gemini AI • Clear Male)", gender: "male", provider: "gemini", available: hasGemini },
-      { id: "gemini:Fenrir", name: "Fenrir (Gemini AI • Resonant Male)", gender: "male", provider: "gemini", available: hasGemini },
-      { id: "gemini:Kore", name: "Kore (Gemini AI • Gentle Female)", gender: "female", provider: "gemini", available: hasGemini },
-      { id: "gemini:Aoede", name: "Aoede (Gemini AI • Expressive Female)", gender: "female", provider: "gemini", available: hasGemini },
-      { id: "gemini:Zephyr", name: "Zephyr (Gemini AI • Crisp Female)", gender: "female", provider: "gemini", available: hasGemini },
+      { id: "en-US-GuyNeural", name: "Guy", gender: "male", provider: "standard", description: "Deep, solemn, reverent scripture narrator" },
+      { id: "en-US-ChristopherNeural", name: "Christopher", gender: "male", provider: "standard", description: "Resonant, authoritative, dignified delivery" },
+      { id: "en-US-EricNeural", name: "Eric", gender: "male", provider: "standard", description: "Calm, contemplative, prayerful cadence" },
+      { id: "en-US-BrianNeural", name: "Brian", gender: "male", provider: "standard", description: "Steady, grounded scripture reader" },
+      { id: "en-GB-RyanNeural", name: "Ryan", gender: "male", provider: "standard", description: "Distinguished, classical cathedral delivery" },
+      { id: "en-US-JennyNeural", name: "Jenny", gender: "female", provider: "standard", description: "Solemn, reverent, mature female reader" },
+      { id: "en-US-MichelleNeural", name: "Michelle", gender: "female", provider: "standard", description: "Gentle, peaceful, quiet devotional cadence" },
+      { id: "en-US-EmmaNeural", name: "Emma", gender: "female", provider: "standard", description: "Measured, clear, dignified narrative delivery" },
     ],
   });
 });
@@ -517,12 +443,12 @@ app.get("/api/tts", async (req, res) => {
           return sendAudioWithRange(req, res, wavBuffer, geminiVoiceName, false, "audio/wav", "Gemini-TTS", requestedVoice, false);
         }
       } catch (geminiErr: any) {
-        console.warn(`[TTS] Gemini TTS notice: ${geminiErr?.message || geminiErr}. Gracefully falling back to Microsoft Neural voice.`);
-        // Fall through to Microsoft Edge Neural TTS below
+        console.warn(`[TTS] Gemini TTS notice: ${geminiErr?.message || geminiErr}. Falling back to default narrator voice.`);
+        // Fall through to voice synthesis below
       }
     }
 
-    // 2. Microsoft / Azure Speech Synthesis Pipeline
+    // 2. High-Fidelity Scripture Voice Synthesis Pipeline (Zero-API Required)
     let selectedVoice = requestedVoice;
     let fallbackUsed = false;
 
@@ -531,9 +457,17 @@ app.get("/api/tts", async (req, res) => {
       selectedVoice = selectedVoice.replace("browser:", "");
     }
 
+    // Ban and redirect any bubbly, perky, or irreverent voices
+    if (/aria|bubbly|perky|cheerful/i.test(selectedVoice)) {
+      selectedVoice = "en-US-JennyNeural";
+      fallbackUsed = true;
+    } else if (/sonia/i.test(selectedVoice)) {
+      selectedVoice = "en-US-EmmaNeural";
+      fallbackUsed = true;
+    }
+
     // If no voice specified or voice is not a direct valid Edge Neural voice, resolve cleanly
     if (!selectedVoice || !VERIFIED_EDGE_VOICES.has(selectedVoice)) {
-      // Check if it's one of our known names without exact case
       const matched = Array.from(VERIFIED_EDGE_VOICES).find(
         (v) => v.toLowerCase() === selectedVoice.toLowerCase() || v.toLowerCase().includes(selectedVoice.toLowerCase())
       );
@@ -545,57 +479,39 @@ app.get("/api/tts", async (req, res) => {
       }
     }
 
-    // Extract exact matching language/locale from the voice name (e.g. "en-US", "en-GB", "en-CA")
-    const voiceLocale = selectedVoice.startsWith("en-GB")
-      ? "en-GB"
-      : selectedVoice.startsWith("en-CA")
-      ? "en-CA"
-      : selectedVoice.startsWith("en-AU")
-      ? "en-AU"
-      : "en-US";
+    // Extract exact matching language/locale from the voice name (e.g. "en-US", "en-GB")
+    const voiceLocale = selectedVoice.startsWith("en-GB") ? "en-GB" : "en-US";
 
     const cacheKey = `edge:${selectedVoice}:${truncatedText}`;
 
     if (ttsAudioCache.has(cacheKey)) {
       const cached = ttsAudioCache.get(cacheKey)!;
-      return sendAudioWithRange(req, res, cached, selectedVoice, true, "audio/mpeg", "Microsoft-Neural", requestedVoice, fallbackUsed, voiceLocale);
+      return sendAudioWithRange(req, res, cached, selectedVoice, true, "audio/mpeg", "Natural-Voice", requestedVoice, fallbackUsed, voiceLocale);
     }
 
-    // 2A. If Azure Speech Subscription Key is configured, use official Azure Cognitive Services Speech REST API
-    const azureApiKey = (process.env.AZURE_SPEECH_KEY || process.env.SPEECH_KEY || "").trim();
-    if (azureApiKey) {
-      console.log(`[TTS:AzureSpeech] Synthesizing with Azure Speech API for voice="${selectedVoice}", locale="${voiceLocale}"...`);
-      const azureBuffer = await synthesizeWithAzureSpeech(truncatedText, selectedVoice, voiceLocale, gender);
-      if (azureBuffer && azureBuffer.length > 0) {
-        if (ttsAudioCache.size >= MAX_TTS_CACHE_SIZE) {
-          const firstKey = ttsAudioCache.keys().next().value;
-          if (firstKey) ttsAudioCache.delete(firstKey);
-        }
-        ttsAudioCache.set(cacheKey, azureBuffer);
-        return sendAudioWithRange(req, res, azureBuffer, selectedVoice, false, "audio/mpeg", "Azure-Cognitive-Speech", requestedVoice, fallbackUsed, voiceLocale);
-      }
-      console.warn(`[TTS:AzureSpeech] Azure Cognitive Speech direct synthesis not returned, proceeding with Microsoft Edge Neural engine...`);
-    }
-
-    // 2B. Microsoft Edge Neural Voice Synthesis (Zero-Config Microsoft Azure Speech Engine)
-    console.log(`[TTS:MicrosoftEdge] Synthesizing voice="${selectedVoice}", locale="${voiceLocale}", textLen=${truncatedText.length}...`);
+    // High-Fidelity Reverent Scripture Voice Synthesis (Zero-API Required)
+    console.log(`[TTS:NaturalVoice] Synthesizing reverent voice="${selectedVoice}", locale="${voiceLocale}", textLen=${truncatedText.length}...`);
     ttsInstance = new MsEdgeTTS();
     await ttsInstance.setMetadata(selectedVoice, OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3);
-    const { audioStream } = ttsInstance.toStream(truncatedText);
+    const { audioStream } = ttsInstance.toStream(truncatedText, {
+      rate: "-4%", // Solemn, measured, dignified pace for Holy Scripture
+      pitch: "+0Hz",
+    });
 
     const chunks: Buffer[] = [];
     const timeout = setTimeout(async () => {
       cleanup();
       if (!res.headersSent) {
-        console.warn(`[TTS] Edge TTS generation timed out for voice "${selectedVoice}". Falling back to resilient web TTS...`);
-        const fallbackBuffer = await fetchResilientWebTTS(truncatedText);
-        if (fallbackBuffer && !res.headersSent) {
-          ttsAudioCache.set(cacheKey, fallbackBuffer);
-          return sendAudioWithRange(req, res, fallbackBuffer, selectedVoice, false, "audio/mpeg", "Resilient-Web-TTS", requestedVoice, true, voiceLocale);
+        console.warn(`[TTS] Voice generation timed out for voice "${selectedVoice}". Retrying canonical reverent voice...`);
+        const fallbackVoice = gender === "female" ? "en-US-JennyNeural" : "en-US-GuyNeural";
+        const fallbackBuf = await synthesizeReverentNeuralTTS(truncatedText, fallbackVoice);
+        if (fallbackBuf && !res.headersSent) {
+          ttsAudioCache.set(cacheKey, fallbackBuf);
+          return sendAudioWithRange(req, res, fallbackBuf, fallbackVoice, false, "audio/mpeg", "Natural-Voice", requestedVoice, true, voiceLocale);
         }
         res.status(504).json({ error: "TTS generation timed out" });
       }
-    }, 9000);
+    }, 12000);
 
     audioStream.on("data", (chunk: Buffer) => chunks.push(chunk));
     audioStream.on("end", () => {
@@ -609,68 +525,35 @@ app.get("/api/tts", async (req, res) => {
       }
       ttsAudioCache.set(cacheKey, audioBuffer);
 
-      console.log(`[TTS:Edge] Synthesized voice="${selectedVoice}", locale="${voiceLocale}", requested="${requestedVoice}", size=${audioBuffer.length} bytes, fallback=${fallbackUsed}`);
-      sendAudioWithRange(req, res, audioBuffer, selectedVoice, false, "audio/mpeg", "Microsoft-Edge-Neural", requestedVoice, fallbackUsed, voiceLocale);
+      console.log(`[TTS:Voice] Synthesized reverent voice="${selectedVoice}", size=${audioBuffer.length} bytes, fallback=${fallbackUsed}`);
+      sendAudioWithRange(req, res, audioBuffer, selectedVoice, false, "audio/mpeg", "Natural-Voice", requestedVoice, fallbackUsed, voiceLocale);
     });
 
     audioStream.on("error", async (err: any) => {
       clearTimeout(timeout);
       cleanup();
-      console.warn(`[TTS] Edge TTS stream error for voice "${selectedVoice}":`, err?.message || err);
+      console.warn(`[TTS] Voice stream error for voice "${selectedVoice}":`, err?.message || err);
 
-      // If a non-default voice failed, retry with canonical fallback
+      // Retry with canonical reverent voice (Guy or Jenny)
       const defaultVoice = gender === "female" ? "en-US-JennyNeural" : "en-US-GuyNeural";
       if (selectedVoice !== defaultVoice) {
-        console.log(`[TTS] Retrying with canonical voice "${defaultVoice}"...`);
-        try {
-          const fallbackTts = new MsEdgeTTS();
-          await fallbackTts.setMetadata(defaultVoice, OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3);
-          const fallbackStream = fallbackTts.toStream(truncatedText).audioStream;
-          const fallbackChunks: Buffer[] = [];
-          fallbackStream.on("data", (c) => fallbackChunks.push(c));
-          fallbackStream.on("end", () => {
-            fallbackTts.close();
-            const fallbackBuf = Buffer.concat(fallbackChunks);
-            if (!res.headersSent) {
-              sendAudioWithRange(req, res, fallbackBuf, defaultVoice, false, "audio/mpeg", "Microsoft-Edge-Neural", requestedVoice, true);
-            }
-          });
-          fallbackStream.on("error", async () => {
-            fallbackTts.close();
-            const resilientBuf = await fetchResilientWebTTS(truncatedText);
-            if (resilientBuf && !res.headersSent) {
-              return sendAudioWithRange(req, res, resilientBuf, defaultVoice, false, "audio/mpeg", "Resilient-Web-TTS", requestedVoice, true);
-            }
-            if (!res.headersSent) res.status(500).json({ error: "TTS failed after retry" });
-          });
-          return;
-        } catch (retryErr) {
-          // ignore
+        console.log(`[TTS] Retrying with canonical reverent voice "${defaultVoice}"...`);
+        const fallbackBuf = await synthesizeReverentNeuralTTS(truncatedText, defaultVoice);
+        if (fallbackBuf && !res.headersSent) {
+          ttsAudioCache.set(cacheKey, fallbackBuf);
+          return sendAudioWithRange(req, res, fallbackBuf, defaultVoice, false, "audio/mpeg", "Natural-Voice", requestedVoice, true, voiceLocale);
         }
       }
 
-      // Final bulletproof fallback: Resilient HTTP Web TTS
-      const resilientBuf = await fetchResilientWebTTS(truncatedText);
-      if (resilientBuf && !res.headersSent) {
-        return sendAudioWithRange(req, res, resilientBuf, selectedVoice, false, "audio/mpeg", "Resilient-Web-TTS", requestedVoice, true);
-      }
-
       if (!res.headersSent) {
-        res.status(500).json({ error: "TTS generation failed", details: err?.message });
+        res.status(500).json({ error: "Scripture narration temporarily unavailable" });
       }
     });
   } catch (err: any) {
     cleanup();
-    console.warn("Microsoft TTS endpoint notice:", err?.message || err);
-    try {
-      const rawText = ((req.query.text as string) || "").trim();
-      const resilientBuf = await fetchResilientWebTTS(rawText.substring(0, 2000));
-      if (resilientBuf && !res.headersSent) {
-        return sendAudioWithRange(req, res, resilientBuf, "System Narrator", false, "audio/mpeg", "Resilient-Web-TTS", undefined, true);
-      }
-    } catch {}
+    console.warn("TTS endpoint notice:", err?.message || err);
     if (!res.headersSent) {
-      res.status(500).json({ error: "TTS service error", details: err?.message });
+      res.status(500).json({ error: "Scripture narration error", details: err?.message });
     }
   }
 });

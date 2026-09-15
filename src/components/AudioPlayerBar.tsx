@@ -29,7 +29,9 @@ import {
   AudioTrack,
   SpeechSegment,
   unlockAudio,
-  audioContextManager
+  audioContextManager,
+  formatPersonVoiceName,
+  SERVER_VOICES
 } from "../lib/audioVoiceHelper";
 import { bluetoothAudioService, AudioOutputDevice } from "../lib/bluetoothAudioService";
 import { Storage } from "../lib/storage";
@@ -448,7 +450,7 @@ export const AudioPlayerBar: React.FC<AudioPlayerBarProps> = ({
               ) : (
                 <>
                   {currentTrack.subtitle}
-                  {activeNarratorName ? ` • ${activeNarratorName}` : ""}
+                  {activeNarratorName ? ` • ${formatPersonVoiceName(activeNarratorName)}` : ""}
                 </>
               )}
             </p>
@@ -466,17 +468,11 @@ export const AudioPlayerBar: React.FC<AudioPlayerBarProps> = ({
               className="bg-[#F9F7F2] hover:bg-white border border-[#E5E0D5] hover:border-[#C5A059] text-[#2D2D2D] rounded-xl px-2.5 py-1 text-[11px] font-semibold transition-all cursor-pointer focus:outline-none focus:ring-1 focus:ring-[#C5A059] max-w-[155px] sm:max-w-[200px] truncate shadow-2xs"
               title="Select narrator voice"
             >
-              {webVoices.length > 0 ? (
-                webVoices.map((voice) => (
-                  <option key={voice.voiceURI || voice.name} value={voice.voiceURI || voice.name}>
-                    {voice.name} ({voice.lang})
-                  </option>
-                ))
-              ) : (
-                <option value={selectedVoiceId || "default"}>
-                  {activeNarratorName || "System Default Voice"}
+              {SERVER_VOICES.map((voice) => (
+                <option key={voice.id} value={voice.id}>
+                  {voice.name} ({voice.gender === "female" ? "Female" : "Male"})
                 </option>
-              )}
+              ))}
             </select>
           </div>
 

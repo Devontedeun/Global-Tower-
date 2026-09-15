@@ -220,7 +220,7 @@ export const DeleteAccountModal: React.FC<DeleteAccountModalProps> = ({
     });
   };
 
-  // Speak the closing scripture aloud using Microsoft Neural Voice with unified audio pipeline
+  // Speak the closing scripture aloud using reverent voice narration with unified audio pipeline
   const speakClosingScripture = (scriptureToSpeak: PartingScripture, muted = false) => {
     unlockAudio();
     if (muted) {
