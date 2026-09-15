@@ -184,7 +184,11 @@ export function getSavedVoiceId(): string {
   try {
     const saved = localStorage.getItem(VOICE_STORAGE_KEY);
     if (saved && saved.trim()) {
-      return saved.trim();
+      const trimmed = saved.trim();
+      // Ensure saved voice is a valid server neural voice or an explicit browser voice
+      if (SERVER_VOICES.some((v) => v.id === trimmed) || trimmed.startsWith("browser:")) {
+        return trimmed;
+      }
     }
   } catch (e) {
     // fallback
@@ -348,8 +352,10 @@ export function buildSegmentsFromTrack(track: AudioTrack): SpeechSegment[] {
         ? `${track.book}, chapter ${track.chapter}. `
         : "";
       const fullVerse = formatBibleTextForSpeech(`${intro}${v.text}`);
-      if (fullVerse.length > 180) {
-        const sub = splitTextIntoNaturalChunks(fullVerse, 160);
+      // Preserve verse integrity as a single natural segment.
+      // Only split if the verse is extraordinarily long (> 450 characters)
+      if (fullVerse.length > 450) {
+        const sub = splitTextIntoNaturalChunks(fullVerse, 350);
         sub.forEach((chunk) => {
           segments.push({ text: chunk, verseNum: v.num });
         });
@@ -362,8 +368,11 @@ export function buildSegmentsFromTrack(track: AudioTrack): SpeechSegment[] {
 
   if (track.textToRead) {
     const formatted = formatBibleTextForSpeech(track.textToRead);
-    const sub = splitTextIntoNaturalChunks(formatted, 160);
-    return sub.map((chunk) => ({ text: chunk }));
+    if (formatted.length > 450) {
+      const sub = splitTextIntoNaturalChunks(formatted, 350);
+      return sub.map((chunk) => ({ text: chunk }));
+    }
+    return [{ text: formatted }];
   }
 
   return [];
@@ -374,6 +383,8 @@ export function buildSegmentsFromTrack(track: AudioTrack): SpeechSegment[] {
 // Unified audio architecture that operates identically across
 // Laptop, PC, Mobile (iOS/Android), Tablet, and APK/WebViews.
 // -------------------------------------------------------------
+
+export type AudioContextStateStatus = "uninitialized" | "suspended" | "running" | "interrupted" | "closed" | "unsupported";
 
 export interface GlobalAudioState {
   currentTrack: AudioTrack | null;
@@ -392,6 +403,8 @@ export interface GlobalAudioState {
   narratorName: string;
   hasAutoplayBlock: boolean;
   currentVerseNum: number | null;
+  audioContextStatus: AudioContextStateStatus;
+  isAudioContextReady: boolean;
 }
 
 export interface ActiveAudioSession {
@@ -405,13 +418,162 @@ export interface ActiveAudioSession {
   isPlaying: boolean;
 }
 
-let sharedAudioCtx: AudioContext | null = null;
+/**
+ * Detects iOS devices (iPhone, iPad, iPod) and iPadOS on WebKit.
+ */
+export function isIOS(): boolean {
+  if (typeof window === "undefined" || typeof navigator === "undefined") return false;
+  return (
+    /iPad|iPhone|iPod/.test(navigator.userAgent || "") ||
+    (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1)
+  );
+}
+
+/**
+ * Robust State Management Engine for Web Audio API AudioContext.
+ * Automatically monitors lifecycle states and activates on first user gesture.
+ */
+export class AudioContextStateManager {
+  private ctx: AudioContext | null = null;
+  private status: AudioContextStateStatus = "uninitialized";
+  private listeners: Set<(status: AudioContextStateStatus) => void> = new Set();
+  private isUserGestureBound: boolean = false;
+
+  constructor() {
+    if (typeof window !== "undefined") {
+      this.bindUserInteractionListeners();
+    }
+  }
+
+  public getContext(): AudioContext | null {
+    if (typeof window === "undefined") return null;
+    if (!this.ctx) {
+      try {
+        const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+        if (AudioCtx) {
+          this.ctx = new AudioCtx();
+          this.status = this.ctx.state as AudioContextStateStatus;
+          this.ctx.onstatechange = () => {
+            if (this.ctx) {
+              this.updateStatus(this.ctx.state as AudioContextStateStatus);
+            }
+          };
+        } else {
+          this.status = "unsupported";
+        }
+      } catch (err) {
+        console.warn("[AudioContextStateManager] Notice creating AudioContext:", err);
+      }
+    }
+    return this.ctx;
+  }
+
+  public getStatus(): AudioContextStateStatus {
+    if (this.ctx) {
+      return this.ctx.state as AudioContextStateStatus;
+    }
+    return this.status;
+  }
+
+  public isReady(): boolean {
+    return this.getStatus() === "running";
+  }
+
+  public subscribe(fn: (status: AudioContextStateStatus) => void): () => void {
+    this.listeners.add(fn);
+    fn(this.getStatus());
+    return () => this.listeners.delete(fn);
+  }
+
+  private updateStatus(newStatus: AudioContextStateStatus) {
+    if (this.status === newStatus) return;
+    this.status = newStatus;
+    this.listeners.forEach((fn) => {
+      try {
+        fn(newStatus);
+      } catch {}
+    });
+    // If browser tab sleeps or loses focus and suspends again, re-bind listeners
+    if (newStatus === "suspended" || newStatus === "interrupted") {
+      this.bindUserInteractionListeners();
+    }
+  }
+
+  public async ensureRunning(): Promise<boolean> {
+    const ctx = this.getContext();
+    if (!ctx) return false;
+
+    if (ctx.state === "running") {
+      this.updateStatus("running");
+      return true;
+    }
+
+    try {
+      await ctx.resume();
+
+      // On iOS Safari / WebKit: Play a micro silent buffer to unlock the audio output pipeline
+      try {
+        const silentBuf = ctx.createBuffer(1, 1, 22050);
+        const source = ctx.createBufferSource();
+        source.buffer = silentBuf;
+        source.connect(ctx.destination);
+        source.start(0);
+      } catch {}
+
+      this.updateStatus(ctx.state as AudioContextStateStatus);
+      return (ctx.state as string) === "running";
+    } catch (err) {
+      console.warn("[AudioContextStateManager] AudioContext resume note:", err);
+      this.updateStatus(ctx.state as AudioContextStateStatus);
+      return false;
+    }
+  }
+
+  public bindUserInteractionListeners() {
+    if (typeof window === "undefined" || this.isUserGestureBound) return;
+    this.isUserGestureBound = true;
+
+    const handleUserGesture = async () => {
+      try {
+        await this.ensureRunning();
+        unlockAudio();
+      } catch {}
+
+      if (this.isReady()) {
+        const events = ["click", "touchstart", "touchend", "pointerdown", "keydown"];
+        events.forEach((evt) => {
+          window.removeEventListener(evt, handleUserGesture, true);
+        });
+        this.isUserGestureBound = false;
+      }
+    };
+
+    const events = ["click", "touchstart", "touchend", "pointerdown", "keydown"];
+    events.forEach((evt) => {
+      window.addEventListener(evt, handleUserGesture, { capture: true, passive: true });
+    });
+
+    // Auto-resume on iOS tab return and visibility wake
+    if (typeof document !== "undefined") {
+      document.addEventListener("visibilitychange", () => {
+        if (document.visibilityState === "visible") {
+          this.ensureRunning().catch(() => {});
+        }
+      }, { passive: true });
+    }
+  }
+}
+
+export const audioContextManager = new AudioContextStateManager();
+
 let sharedAudioElement: HTMLAudioElement | null = null;
-let hasSetupGlobalUnlock = false;
+
+// 0.05s silent WAV audio data URI to prime HTMLAudioElement on iOS Safari and Android Chrome
+const SILENT_WAV_DATA_URI = "data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQQAAAAAAP8A";
 
 /**
  * Creates or retrieves the single master HTMLAudioElement.
- * Embedded directly in document.body with playsinline and crossOrigin
+ * Embedded directly in document.body with playsinline and x-webkit-airplay
  * to ensure iOS Safari, Android Chrome, and APK WebViews treat it
  * as an active foreground media element that never gets suspended.
  */
@@ -426,23 +588,37 @@ export function getOrCreateMasterAudioElement(): HTMLAudioElement | null {
         sharedAudioElement = new Audio();
         sharedAudioElement.id = "gtc-master-audio-player";
         sharedAudioElement.preload = "auto";
-        sharedAudioElement.crossOrigin = "anonymous";
         (sharedAudioElement as any).playsInline = true;
         sharedAudioElement.setAttribute("playsinline", "true");
         sharedAudioElement.setAttribute("webkit-playsinline", "true");
+        sharedAudioElement.setAttribute("x-webkit-airplay", "allow");
+        sharedAudioElement.setAttribute("aria-hidden", "true");
 
-        sharedAudioElement.muted = getSavedMuteState();
-        sharedAudioElement.volume = getSavedMuteState() ? 0 : getSavedAudioVolume();
+        // Error safety: ignore benign errors when src is unset or idle
+        sharedAudioElement.onerror = () => {
+          if (!sharedAudioElement?.src || 
+              sharedAudioElement.src === window.location.href || 
+              sharedAudioElement.src.endsWith("/")) {
+            return;
+          }
+        };
+
+        sharedAudioElement.muted = false;
+        if (!isIOS()) {
+          try {
+            sharedAudioElement.volume = getSavedAudioVolume();
+          } catch {}
+        }
 
         if (typeof document !== "undefined" && document.body) {
           sharedAudioElement.style.position = "fixed";
-          sharedAudioElement.style.left = "-9999px";
-          sharedAudioElement.style.top = "-9999px";
+          sharedAudioElement.style.bottom = "0";
+          sharedAudioElement.style.right = "0";
           sharedAudioElement.style.width = "1px";
           sharedAudioElement.style.height = "1px";
           sharedAudioElement.style.opacity = "0.01";
           sharedAudioElement.style.pointerEvents = "none";
-          sharedAudioElement.style.zIndex = "-9999";
+          sharedAudioElement.style.zIndex = "-1";
           document.body.appendChild(sharedAudioElement);
         }
       }
@@ -460,36 +636,48 @@ export function getSharedAudioPlayer(): HTMLAudioElement | null {
 
 /**
  * Universal Hardware Audio Unlocker
- * Wakes up AudioContext and initializes speaker buffer on mobile & digital devices.
+ * Wakes up AudioContext, primes HTMLAudioElement for iOS Safari / Android Chrome, and prepares synthesis.
+ * Note: Never overrides player.src with dummy audio during active playback flows to prevent AbortError.
  */
 export function unlockAudio(): boolean {
   if (typeof window === "undefined") return false;
   try {
-    const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
-    if (AudioCtx) {
-      if (!sharedAudioCtx) {
-        sharedAudioCtx = new AudioCtx();
-      }
-      if (sharedAudioCtx.state === "suspended") {
-        sharedAudioCtx.resume().catch(() => {});
-      }
-      try {
-        const buffer = sharedAudioCtx.createBuffer(1, 1, 22050);
-        const source = sharedAudioCtx.createBufferSource();
-        source.buffer = buffer;
-        source.connect(sharedAudioCtx.destination);
-        source.start(0);
-      } catch (e) {
-        // ignore micro-buffer notice
-      }
-    }
+    // 1. Hardware Web Audio API Unlock via manager
+    audioContextManager.ensureRunning().catch(() => {});
 
+    // 2. Hardware HTMLAudioElement ready state & silent prime on iOS Safari
     const player = getOrCreateMasterAudioElement();
     if (player) {
-      player.muted = getSavedMuteState();
-      player.volume = getSavedMuteState() ? 0 : getSavedAudioVolume();
+      player.muted = false;
+      if (!isIOS()) {
+        try {
+          player.volume = getSavedAudioVolume();
+        } catch {}
+      }
+
+      // If player is idle or uninitialized, prime with silence so iOS WebKit grants persistent playback authorization
+      const isCurrentlyPlaying = typeof globalAudioEngine !== "undefined" ? globalAudioEngine.getState().isPlaying : false;
+      if (!isCurrentlyPlaying && (!player.src || player.src === window.location.href || player.src.startsWith("data:") || player.paused)) {
+        if (!player.src || player.src === window.location.href) {
+          player.src = SILENT_WAV_DATA_URI;
+          try {
+            player.load();
+          } catch {}
+        }
+        const playPromise = player.play();
+        if (playPromise !== undefined) {
+          playPromise
+            .then(() => {
+              if (player.src.startsWith("data:") && (!globalAudioEngine || !globalAudioEngine.getState().isPlaying)) {
+                player.pause();
+              }
+            })
+            .catch(() => {});
+        }
+      }
     }
 
+    // 3. SpeechSynthesis Engine Unlock (if available)
     if ("speechSynthesis" in window) {
       if (window.speechSynthesis.paused) {
         window.speechSynthesis.resume();
@@ -535,6 +723,9 @@ class GlobalAudioEngine {
         this.narratorName = serverVoice.name;
         this.activeGender = serverVoice.gender;
       }
+      audioContextManager.subscribe(() => {
+        this.notify();
+      });
     }
   }
 
@@ -566,6 +757,8 @@ class GlobalAudioEngine {
       narratorName: this.narratorName,
       hasAutoplayBlock: this.hasAutoplayBlock,
       currentVerseNum: currentSeg?.verseNum || null,
+      audioContextStatus: audioContextManager.getStatus(),
+      isAudioContextReady: audioContextManager.isReady(),
     };
   }
 
@@ -593,6 +786,19 @@ class GlobalAudioEngine {
     options?: { startSegment?: number; voiceId?: string; gender?: VoiceGender; rate?: number }
   ): boolean {
     if (typeof window === "undefined") return false;
+
+    // Deduplication protection: If the exact same track is already loaded & playing/loading, do not interrupt and abort in-flight play
+    const targetStartSeg = options?.startSegment !== undefined ? options.startSegment : 0;
+    if (
+      this.currentTrack &&
+      this.currentTrack.id === track.id &&
+      (this.isPlaying || this.isLoading) &&
+      this.currentSegmentIndex === targetStartSeg &&
+      Date.now() - this.currentPlaySessionId < 1500
+    ) {
+      console.log("[GlobalAudioEngine] Track already playing/loading, skipping redundant start:", track.id);
+      return true;
+    }
 
     this.currentPlaySessionId = Date.now();
     const sessionId = this.currentPlaySessionId;
@@ -657,6 +863,11 @@ class GlobalAudioEngine {
     if (typeof window !== "undefined" && "speechSynthesis" in window) {
       window.speechSynthesis.pause();
     }
+    if (typeof navigator !== "undefined" && "mediaSession" in navigator) {
+      try {
+        navigator.mediaSession.playbackState = "paused";
+      } catch {}
+    }
     this.stopKeepAlive();
     this.currentTrack?.onPlaybackStateChange?.(false);
     this.notify();
@@ -669,6 +880,12 @@ class GlobalAudioEngine {
     this.isMuted = false;
     setSavedMuteState(false);
 
+    if (typeof navigator !== "undefined" && "mediaSession" in navigator) {
+      try {
+        navigator.mediaSession.playbackState = "playing";
+      } catch {}
+    }
+
     if (this.isFinished || this.getState().progress >= 100) {
       this.playCurrentSegment(0, this.currentPlaySessionId);
       return;
@@ -677,7 +894,9 @@ class GlobalAudioEngine {
     const audio = this.getAudioElement();
     if (audio && audio.paused && audio.src) {
       audio.muted = false;
-      audio.volume = this.volume;
+      try {
+        audio.volume = this.volume;
+      } catch {}
       audio
         .play()
         .then(() => {
@@ -703,6 +922,11 @@ class GlobalAudioEngine {
     this.isPlaying = false;
     this.isLoading = false;
     this.isFinished = false;
+    if (typeof navigator !== "undefined" && "mediaSession" in navigator) {
+      try {
+        navigator.mediaSession.playbackState = "none";
+      } catch {}
+    }
     this.currentTrack?.onPlaybackStateChange?.(false);
     this.currentTrack = null;
     this.segments = [];
@@ -713,7 +937,11 @@ class GlobalAudioEngine {
       audio.pause();
       audio.onended = null;
       audio.onerror = null;
-      audio.src = "";
+      audio.onplaying = null;
+      try {
+        audio.removeAttribute("src");
+        audio.load();
+      } catch {}
     }
     if (typeof window !== "undefined" && "speechSynthesis" in window) {
       window.speechSynthesis.cancel();
@@ -832,6 +1060,13 @@ class GlobalAudioEngine {
     this.isLoading = true;
     const currentSeg = this.segments[index];
 
+    // Maintain iOS Lock Screen media playback permissions
+    if (typeof navigator !== "undefined" && "mediaSession" in navigator) {
+      try {
+        navigator.mediaSession.playbackState = "playing";
+      } catch {}
+    }
+
     // Verse highlight notification
     if (currentSeg.verseNum && this.currentTrack?.onVerseChange) {
       this.currentTrack.onVerseChange(currentSeg.verseNum);
@@ -865,9 +1100,20 @@ class GlobalAudioEngine {
         ? this.currentTrack.audioSrc
         : getAudioTTSUrl(currentSeg.text, this.activeVoiceId, this.activeGender);
 
-      audio.playbackRate = this.playbackRate;
+      const hasValidOrigin = typeof window !== "undefined" && 
+        Boolean(window.location?.origin && window.location.origin !== "null" && window.location.origin.startsWith("http"));
+      const baseUrl = hasValidOrigin ? window.location.origin : "";
+      const absoluteTtsUrl = (ttsUrl.startsWith("http://") || ttsUrl.startsWith("https://") || ttsUrl.startsWith("data:"))
+        ? ttsUrl
+        : (baseUrl ? `${baseUrl}${ttsUrl}` : ttsUrl);
+
+      try {
+        audio.playbackRate = this.playbackRate;
+      } catch {}
       audio.muted = this.isMuted;
-      audio.volume = this.isMuted ? 0 : this.volume;
+      try {
+        audio.volume = this.isMuted ? 0 : this.volume;
+      } catch {}
 
       audio.onended = () => {
         if (this.isPlaying && this.currentPlaySessionId === sessionId) {
@@ -875,10 +1121,34 @@ class GlobalAudioEngine {
         }
       };
 
-      audio.onerror = () => {
-        console.warn(`[GlobalAudioEngine] Master audio notice on segment ${index}, using resilient fallback.`);
+      audio.onerror = (e) => {
+        if (!audio.src || audio.src === window.location.href || audio.src.endsWith("/")) {
+          return;
+        }
+        console.warn(`[GlobalAudioEngine] Master audio notice on segment ${index}:`, e);
         if (this.currentPlaySessionId === sessionId) {
-          this.playWithSpeechSynthesis(currentSeg.text, index, sessionId);
+          // If the user explicitly requested a system/browser voice, route through speechSynthesis
+          if (this.activeVoiceId.startsWith("browser:")) {
+            this.playWithSpeechSynthesis(currentSeg.text, index, sessionId);
+          } else {
+            // For neural voices: do NOT hijack with robotic phone speech synthesis!
+            // Attempt single retry with cache-buster if not already retried
+            if (!audio.src.includes("_retry=")) {
+              console.log(`[GlobalAudioEngine] Retrying segment ${index} with fresh stream...`);
+              const retryUrl = `${absoluteTtsUrl}${absoluteTtsUrl.includes("?") ? "&" : "?"}_retry=${Date.now()}`;
+              audio.src = retryUrl;
+              const p = audio.play();
+              if (p !== undefined) {
+                p.catch(() => {
+                  this.isLoading = false;
+                  this.notify();
+                });
+              }
+            } else {
+              this.isLoading = false;
+              this.notify();
+            }
+          }
         }
       };
 
@@ -890,10 +1160,15 @@ class GlobalAudioEngine {
         }
       };
 
-      if (audio.src !== ttsUrl) {
-        audio.src = ttsUrl;
+      // Only reassign src if it differs from current element src
+      if (audio.src !== absoluteTtsUrl && audio.currentSrc !== absoluteTtsUrl) {
+        audio.src = absoluteTtsUrl;
       }
-      audio.currentTime = 0;
+      try {
+        if (audio.currentTime !== 0 && audio.readyState > 0) {
+          audio.currentTime = 0;
+        }
+      } catch {}
 
       const playPromise = audio.play();
       if (playPromise !== undefined) {
@@ -906,6 +1181,7 @@ class GlobalAudioEngine {
             }
           })
           .catch((err) => {
+            // AbortError is benign and expected when interrupted by user or track change
             if (err?.name === "AbortError") {
               return;
             }
@@ -913,18 +1189,28 @@ class GlobalAudioEngine {
             if (err?.name === "NotAllowedError") {
               this.hasAutoplayBlock = true;
               this.notify();
+              audioContextManager.bindUserInteractionListeners();
               const resumeOnTouch = () => {
+                audioContextManager.ensureRunning().catch(() => {});
                 audio.play().then(() => {
                   this.hasAutoplayBlock = false;
                   this.notify();
                 }).catch(() => {});
-                window.removeEventListener("touchstart", resumeOnTouch);
-                window.removeEventListener("pointerdown", resumeOnTouch);
+                window.removeEventListener("touchstart", resumeOnTouch, true);
+                window.removeEventListener("pointerdown", resumeOnTouch, true);
+                window.removeEventListener("click", resumeOnTouch, true);
               };
-              window.addEventListener("touchstart", resumeOnTouch, { once: true, passive: true });
-              window.addEventListener("pointerdown", resumeOnTouch, { once: true, passive: true });
+              window.addEventListener("touchstart", resumeOnTouch, { once: true, passive: true, capture: true });
+              window.addEventListener("pointerdown", resumeOnTouch, { once: true, passive: true, capture: true });
+              window.addEventListener("click", resumeOnTouch, { once: true, passive: true, capture: true });
             } else {
-              this.playWithSpeechSynthesis(currentSeg.text, index, sessionId);
+              // Only fallback to speech synthesis if user chose a browser voice
+              if (this.activeVoiceId.startsWith("browser:")) {
+                this.playWithSpeechSynthesis(currentSeg.text, index, sessionId);
+              } else {
+                this.isLoading = false;
+                this.notify();
+              }
             }
           });
       }
@@ -948,7 +1234,15 @@ class GlobalAudioEngine {
     }
 
     try {
-      window.speechSynthesis.cancel();
+      // On iOS Safari: calling cancel() immediately before speak() cancels the newly queued utterance.
+      // Only cancel if speaking was active.
+      if (window.speechSynthesis.speaking || window.speechSynthesis.pending) {
+        window.speechSynthesis.cancel();
+      }
+      if (window.speechSynthesis.paused) {
+        window.speechSynthesis.resume();
+      }
+
       const utterance = new SpeechSynthesisUtterance(text);
       const resolved = getNaturalBibleVoice(this.activeGender, this.activeVoiceId);
       if (resolved.voice) utterance.voice = resolved.voice;
@@ -978,7 +1272,12 @@ class GlobalAudioEngine {
         this.notify();
       };
 
-      window.speechSynthesis.speak(utterance);
+      // 30ms timeout avoids iOS Safari cancel() race condition
+      setTimeout(() => {
+        if (this.currentPlaySessionId === sessionId) {
+          window.speechSynthesis.speak(utterance);
+        }
+      }, 30);
     } catch (err) {
       this.isLoading = false;
       this.notify();
@@ -1062,6 +1361,7 @@ export function clearActiveAudioSession(): void {
 }
 
 // Global user interaction trigger for instant audio capability on touch
+let hasSetupGlobalUnlock = false;
 if (typeof window !== "undefined" && !hasSetupGlobalUnlock) {
   hasSetupGlobalUnlock = true;
   const userInteractionTrigger = () => {

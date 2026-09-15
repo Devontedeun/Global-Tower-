@@ -30,7 +30,8 @@ export const FOUNDER_SUPERADMIN_EMAILS = [
   "info@globaltowerofchrist.com",
   "sangorichard@gmail.com",
   "sangodeyvin@gmail.com",
-  "tmsamuralogistics@gmail.com"
+  "tmsamuralogistics@gmail.com",
+  "samuraholdingsltd@gmail.com"
 ];
 
 export function isSuperAdminEmail(email?: string): boolean {

@@ -27,7 +27,9 @@ import {
   GlobalAudioState,
   SERVER_VOICES,
   AudioTrack,
-  SpeechSegment
+  SpeechSegment,
+  unlockAudio,
+  audioContextManager
 } from "../lib/audioVoiceHelper";
 import { bluetoothAudioService, AudioOutputDevice } from "../lib/bluetoothAudioService";
 import { Storage } from "../lib/storage";
@@ -105,7 +107,9 @@ export const AudioPlayerBar: React.FC<AudioPlayerBarProps> = ({
     isMuted,
     volume,
     hasAutoplayBlock,
-    currentVerseNum
+    currentVerseNum,
+    audioContextStatus,
+    isAudioContextReady
   } = engineState;
 
   const getCurrentPlayingVerse = (): number | undefined => {
@@ -145,18 +149,24 @@ export const AudioPlayerBar: React.FC<AudioPlayerBarProps> = ({
   };
 
   const togglePlay = () => {
+    audioContextManager.ensureRunning().catch(() => {});
+    unlockAudio();
     globalAudioEngine.togglePlay();
   };
 
   const handleToggleMute = () => {
+    audioContextManager.ensureRunning().catch(() => {});
     globalAudioEngine.toggleMute();
   };
 
   const handleVolumeChange = (newVolume: number) => {
+    audioContextManager.ensureRunning().catch(() => {});
     globalAudioEngine.setVolume(newVolume);
   };
 
   const handleForceUnblockAndPlay = () => {
+    audioContextManager.ensureRunning().catch(() => {});
+    unlockAudio();
     globalAudioEngine.resume();
   };
 
@@ -200,8 +210,8 @@ export const AudioPlayerBar: React.FC<AudioPlayerBarProps> = ({
       id="global-audio-player"
       className="fixed bottom-[calc(4.25rem+env(safe-area-inset-bottom,0px))] lg:bottom-5 left-2 right-2 sm:left-4 sm:right-4 lg:left-72 lg:right-8 z-40 bg-[#FDFCF9]/98 backdrop-blur-md border border-[#E5E0D5] rounded-2xl sm:rounded-3xl shadow-xl p-3 sm:p-4 transition-all animate-slideUp space-y-2 sm:space-y-2.5"
     >
-      {/* Quick Unmute / Audio Output Banner if muted */}
-      {hasAutoplayBlock && (
+      {/* Quick Unmute / Audio Output Banner if blocked or suspended during play */}
+      {(hasAutoplayBlock || (isPlaying && audioContextStatus === "suspended")) && (
         <div
           id="audio-autoplay-unblock-banner"
           onClick={handleForceUnblockAndPlay}
@@ -255,6 +265,20 @@ export const AudioPlayerBar: React.FC<AudioPlayerBarProps> = ({
               </h4>
               <span className="hidden sm:inline-flex items-center gap-1 text-[10px] bg-[#2D2D2D] text-[#C5A059] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider">
                 Natural Audio Bible
+              </span>
+
+              {/* Audio Context Hardware State Badge */}
+              <span 
+                className={`hidden md:inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full font-semibold border ${
+                  isAudioContextReady
+                    ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                    : "bg-amber-50 text-amber-800 border-amber-200 cursor-pointer"
+                }`}
+                onClick={!isAudioContextReady ? handleForceUnblockAndPlay : undefined}
+                title={isAudioContextReady ? "Audio hardware context is active and running" : "Audio hardware is in standby. Click to wake."}
+              >
+                <span className={`w-1.5 h-1.5 rounded-full ${isAudioContextReady ? "bg-emerald-500 animate-pulse" : "bg-amber-500"}`} />
+                <span>{isAudioContextReady ? "Audio Ready" : "Audio Standby (Tap)"}</span>
               </span>
 
               {/* Bluetooth Status Chip */}

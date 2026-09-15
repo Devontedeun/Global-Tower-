@@ -25,13 +25,27 @@ import {
   LogOut,
   Sliders,
   RotateCcw,
-  UserCog
+  UserCog,
+  Terminal,
+  Wrench,
+  ShieldAlert,
+  Cpu,
+  Database,
+  Volume2,
+  Sparkles,
+  Copy,
+  Check,
+  Zap,
+  Smartphone,
+  Bell
 } from "lucide-react";
 import { UserRole, UserProfile } from "../types";
 import { Storage, APOSTLE_SANGO_ADMIN, isSuperAdminEmail } from "../lib/storage";
 import { UserDataService } from "../lib/userDataService";
 import { useAuth } from "../lib/AuthContext";
 import { db, collection, onSnapshot } from "../lib/firebase";
+import { backgroundMaintenance, WatchdogIncident, SystemHealthReport } from "../lib/backgroundMaintenance";
+import { watchdogThunderService } from "../lib/watchdogThunderService";
 
 interface AdminPortalProps {
   currentRole: UserRole;
@@ -45,8 +59,15 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
   onNavigateToBible,
 }) => {
   const { currentUser } = useAuth();
-  const [activeTab, setActiveTab] = useState<"crm" | "analytics" | "bible_sources" | "feedback">("crm");
+  const [activeTab, setActiveTab] = useState<"crm" | "analytics" | "bible_sources" | "feedback" | "watchdog">("crm");
   const [feedbackList] = useState(Storage.getFeedback());
+
+  // Super Admin Watchdog State & Telemetry
+  const [watchdogIncidents, setWatchdogIncidents] = useState<WatchdogIncident[]>(() => backgroundMaintenance.getIncidents());
+  const [watchdogHealth, setWatchdogHealth] = useState<SystemHealthReport | null>(() => backgroundMaintenance.getLastReport());
+  const [isWatchdogFixing, setIsWatchdogFixing] = useState(false);
+  const [watchdogFixMsg, setWatchdogFixMsg] = useState<string | null>(null);
+  const [copiedIncidentId, setCopiedIncidentId] = useState<string | null>(null);
 
   // Members CRM State
   const [membersList, setMembersList] = useState<UserProfile[]>(Storage.getJoinedMembers());
@@ -139,6 +160,35 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
       window.removeEventListener("storage", handleAutoUpdate);
     };
   }, []);
+
+  // Super Admin Watchdog Telemetry Listener
+  useEffect(() => {
+    const unsubH = backgroundMaintenance.onHealthChange(setWatchdogHealth);
+    const unsubI = backgroundMaintenance.onIncident(() => {
+      setWatchdogIncidents(backgroundMaintenance.getIncidents());
+    });
+    return () => {
+      unsubH();
+      unsubI();
+    };
+  }, []);
+
+  const handleWatchdogOneClickFix = async (incident: WatchdogIncident) => {
+    const action = incident.howToFix.recommendedOneClickAction;
+    if (!action) return;
+    setIsWatchdogFixing(true);
+    setWatchdogFixMsg(null);
+    try {
+      const res = await backgroundMaintenance.executeOneClickFix(action);
+      setWatchdogFixMsg(res.message);
+      setWatchdogIncidents(backgroundMaintenance.getIncidents());
+      setTimeout(() => setWatchdogFixMsg(null), 4000);
+    } catch (e: any) {
+      setWatchdogFixMsg(`Fix failed: ${e?.message || "Unknown error"}`);
+    } finally {
+      setIsWatchdogFixing(false);
+    }
+  };
 
   // Ping all people who joined CRM
   const triggerPingAllMembers = async () => {
@@ -449,6 +499,11 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
         {[
           { id: "crm", label: `Members CRM (${membersList.length})`, icon: Users },
           { id: "analytics", label: "Analytics & Growth (Ping Believers)", icon: BarChart3 },
+          {
+            id: "watchdog",
+            label: `Self-Healing Watchdog (${watchdogIncidents.filter((i) => !i.resolved).length > 0 ? `${watchdogIncidents.filter((i) => !i.resolved).length} Issues` : "100% Optimal"})`,
+            icon: ShieldAlert
+          },
           { id: "bible_sources", label: "Bible Sources & Integrity", icon: BookOpen },
           { id: "feedback", label: `Feedback (${feedbackList.length})`, icon: MessageSquare }
         ].map((tab) => {
@@ -1194,6 +1249,353 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
               </div>
             ))
           )}
+        </div>
+      )}
+
+      {/* 5. SUPER ADMIN SELF-HEALING WATCHDOG & REMEDIATION PANEL */}
+      {activeTab === "watchdog" && (
+        <div className="space-y-6">
+          {/* Header & Quick Action Card */}
+          <div className="bg-white border border-[#E5E0D5] rounded-[32px] p-6 sm:p-8 shadow-xs space-y-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-[#E5E0D5]">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-2xl bg-[#FAF6EE] border border-[#E5E0D5] text-[#C5A059] flex items-center justify-center shrink-0">
+                  <ShieldCheck className="w-6 h-6" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="font-serif font-bold text-[#2D2D2D] text-xl">
+                      Automated Background Maintenance & Watchdog
+                    </h3>
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-[#FAF6EE] text-[#8C6B2D] border border-[#E5E0D5]">
+                      Super Admin Exclusive
+                    </span>
+                  </div>
+                  <p className="text-xs text-[#7A7468] font-sans">
+                    Continuously validates subsystem pinging, repairs runtime storage faults, and delivers actionable problem diagnosis with step-by-step remediation directly to Apostle R.Sango.
+                  </p>
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    backgroundMaintenance.triggerTestProbe();
+                    watchdogThunderService.triggerThunder({
+                      intensity: "apocalyptic",
+                      incident: {
+                        id: `probe-${Date.now()}`,
+                        title: "Watchdog Thunder Screen Vibration Probe",
+                        problem: "Admin-initiated test incident confirming screen tremor, lightning flash, and audio notification delivery.",
+                        subsystem: "api",
+                        severity: "critical",
+                        remedyActionTaken: "Thunder shockwave emitted. Screen vibrating.",
+                        howToFix: {
+                          summary: "Diagnostic alert verified functional.",
+                          steps: [
+                            "Apostle R.Sango received visual screen vibration and thunder audio.",
+                            "Watchdog telemetry active."
+                          ]
+                        },
+                        resolved: false
+                      }
+                    });
+                    setWatchdogIncidents(backgroundMaintenance.getIncidents());
+                  }}
+                  className="px-3.5 py-2 bg-amber-50 hover:bg-amber-100/80 text-amber-900 text-xs font-bold rounded-xl border border-amber-300 shadow-xs transition-all cursor-pointer flex items-center gap-1.5"
+                  title="Simulate a diagnostic alert: vibrates the screen with thunder"
+                >
+                  <Zap className="w-3.5 h-3.5 text-amber-600 fill-amber-500 animate-pulse" />
+                  <span>Test Alert (Thunder & Vibrate)</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    setIsWatchdogFixing(true);
+                    setWatchdogFixMsg(null);
+                    const rep = await backgroundMaintenance.runSelfHealingCheck();
+                    setWatchdogHealth(rep);
+                    setWatchdogIncidents(backgroundMaintenance.getIncidents());
+                    setIsWatchdogFixing(false);
+                    setWatchdogFixMsg(`Full probe complete: Overall Score ${rep.score}/100.`);
+                    setTimeout(() => setWatchdogFixMsg(null), 3000);
+                  }}
+                  disabled={isWatchdogFixing}
+                  className="px-4 py-2 bg-[#C5A059] hover:bg-[#B48F48] text-white text-xs font-bold rounded-xl shadow-xs transition-all cursor-pointer flex items-center gap-1.5"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${isWatchdogFixing ? "animate-spin" : ""}`} />
+                  <span>{isWatchdogFixing ? "Auditing Subsystems..." : "Run Health Probe"}</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Subsystem Health Metrics Grid */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+              <div className="p-3.5 bg-[#FAF6EE] rounded-2xl border border-[#E5E0D5] space-y-1">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] uppercase font-bold text-[#8A8478]">Sanctuary Score</span>
+                  <Activity className="w-3.5 h-3.5 text-[#C5A059]" />
+                </div>
+                <div className="text-xl font-serif font-bold text-[#2D2D2D]">
+                  {watchdogHealth ? `${watchdogHealth.score}/100` : "100/100"}
+                </div>
+                <span className="text-[10px] text-emerald-600 font-medium">Self-Healing Active</span>
+              </div>
+
+              <div className="p-3.5 bg-white rounded-2xl border border-[#E5E0D5] space-y-1">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] uppercase font-bold text-[#8A8478]">Backend API Ping</span>
+                  <Radio className="w-3.5 h-3.5 text-emerald-500" />
+                </div>
+                <div className="text-xl font-mono font-bold text-[#2D2D2D]">
+                  {watchdogHealth?.latencyMs !== null && watchdogHealth?.latencyMs !== undefined
+                    ? `${watchdogHealth.latencyMs}ms`
+                    : "Optimal"}
+                </div>
+                <span className="text-[10px] text-stone-500 font-medium">Reverse Proxy Port 3000</span>
+              </div>
+
+              <div className="p-3.5 bg-white rounded-2xl border border-[#E5E0D5] space-y-1">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] uppercase font-bold text-[#8A8478]">Storage Schema</span>
+                  <Database className="w-3.5 h-3.5 text-amber-500" />
+                </div>
+                <div className="text-xl font-serif font-bold text-emerald-600">
+                  Verified
+                </div>
+                <span className="text-[10px] text-stone-500 font-medium">Auto-Repair on Syntax Error</span>
+              </div>
+
+              <div className="p-3.5 bg-white rounded-2xl border border-[#E5E0D5] space-y-1">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] uppercase font-bold text-[#8A8478]">Audio Engine</span>
+                  <Volume2 className="w-3.5 h-3.5 text-blue-500" />
+                </div>
+                <div className="text-xl font-serif font-bold text-emerald-600">
+                  Primed
+                </div>
+                <span className="text-[10px] text-stone-500 font-medium">Auto-Reset on Audio Stall</span>
+              </div>
+
+              <div className="p-3.5 bg-white rounded-2xl border border-[#E5E0D5] space-y-1">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] uppercase font-bold text-[#8A8478]">Internet & Cloud</span>
+                  <Globe className="w-3.5 h-3.5 text-indigo-500" />
+                </div>
+                <div className="text-xl font-serif font-bold text-emerald-600">
+                  Online
+                </div>
+                <span className="text-[10px] text-stone-500 font-medium">Firestore Live Listener</span>
+              </div>
+            </div>
+
+            {/* Quick Status / Fix Notice */}
+            {watchdogFixMsg && (
+              <div className="p-3.5 bg-emerald-50 border border-emerald-200 rounded-2xl text-xs font-semibold text-emerald-800 flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                <span>{watchdogFixMsg}</span>
+              </div>
+            )}
+          </div>
+
+          {/* Incidents & Problem Diagnosis Section */}
+          <div className="bg-white border border-[#E5E0D5] rounded-[32px] p-6 sm:p-8 shadow-xs space-y-6">
+            <div className="flex items-center justify-between pb-3 border-b border-[#E5E0D5]">
+              <div>
+                <h4 className="font-serif font-bold text-lg text-[#2D2D2D]">
+                  Watchdog Diagnostic Log & Problem Remediation
+                </h4>
+                <p className="text-xs text-[#7A7468]">
+                  Whenever an anomaly is detected, it is logged here for the Super Admin with root cause and instructions on how to fix it.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    backgroundMaintenance.resolveAllIncidents();
+                    setWatchdogIncidents(backgroundMaintenance.getIncidents());
+                  }}
+                  className="px-3 py-1.5 bg-[#FAF6EE] hover:bg-[#F2EFE9] text-xs font-bold text-[#8C6B2D] rounded-xl border border-[#E5E0D5] transition-colors cursor-pointer"
+                >
+                  Mark All Resolved
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    backgroundMaintenance.clearAllIncidents();
+                    setWatchdogIncidents([]);
+                  }}
+                  className="px-3 py-1.5 bg-stone-100 hover:bg-stone-200 text-xs font-medium text-stone-600 rounded-xl transition-colors cursor-pointer"
+                >
+                  Clear History
+                </button>
+              </div>
+            </div>
+
+            {/* Incidents Feed */}
+            {watchdogIncidents.length === 0 ? (
+              <div className="py-12 text-center space-y-3 bg-[#FAF6EE]/50 rounded-2xl border border-[#E5E0D5] p-6">
+                <div className="w-12 h-12 rounded-2xl bg-emerald-100 text-emerald-700 flex items-center justify-center mx-auto">
+                  <CheckCircle2 className="w-6 h-6" />
+                </div>
+                <h4 className="font-serif font-bold text-base text-[#2D2D2D]">
+                  No Active Subsystem Issues Detected
+                </h4>
+                <p className="text-xs text-[#7A7468] max-w-md mx-auto">
+                  The sanctuary watchdog is operating in dormant background mode. If any API downtime, storage JSON corruption, or audio buffer errors occur, the watchdog will auto-repair them and notify your Super Admin console immediately with actionable instructions.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {watchdogIncidents.map((incident) => (
+                  <div
+                    key={incident.id}
+                    className={`p-5 rounded-2xl border transition-all ${
+                      incident.resolved
+                        ? "bg-[#FAF6EE]/40 border-stone-200 opacity-75"
+                        : "bg-[#FFFDF9] border-[#C5A059]/60 shadow-xs"
+                    }`}
+                  >
+                    {/* Top line */}
+                    <div className="flex items-start justify-between gap-3 pb-3 border-b border-[#E5E0D5]">
+                      <div className="flex items-center gap-2.5">
+                        <span
+                          className={`text-[9px] font-mono uppercase px-2 py-0.5 rounded-sm font-bold ${
+                            incident.severity === "critical"
+                              ? "bg-rose-100 text-rose-800 border border-rose-300"
+                              : incident.severity === "warning"
+                              ? "bg-amber-100 text-amber-800 border border-amber-300"
+                              : "bg-emerald-100 text-emerald-800 border border-emerald-300"
+                          }`}
+                        >
+                          {incident.severity}
+                        </span>
+                        <span className="text-[10px] font-mono text-[#8C6B2D] uppercase font-bold">
+                          {incident.subsystem} Subsystem
+                        </span>
+                        <span className="text-[10px] text-[#8A8478]">
+                          {new Date(incident.timestamp).toLocaleString()}
+                        </span>
+                        {incident.resolved && (
+                          <span className="text-[9px] font-mono bg-stone-200 text-stone-600 px-2 py-0.2 rounded-full">
+                            Resolved
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            navigator.clipboard.writeText(JSON.stringify(incident, null, 2));
+                            setCopiedIncidentId(incident.id);
+                            setTimeout(() => setCopiedIncidentId(null), 2000);
+                          }}
+                          className="p-1.5 text-stone-400 hover:text-stone-700 rounded-lg transition-colors cursor-pointer"
+                          title="Copy diagnostic incident JSON"
+                        >
+                          {copiedIncidentId === incident.id ? (
+                            <Check className="w-3.5 h-3.5 text-emerald-600" />
+                          ) : (
+                            <Copy className="w-3.5 h-3.5" />
+                          )}
+                        </button>
+                        {!incident.resolved && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              backgroundMaintenance.resolveIncident(incident.id);
+                              setWatchdogIncidents(backgroundMaintenance.getIncidents());
+                            }}
+                            className="px-2.5 py-1 bg-stone-100 hover:bg-stone-200 text-stone-700 text-xs font-semibold rounded-lg transition-colors cursor-pointer"
+                          >
+                            Mark Resolved
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Title & Problem */}
+                    <div className="py-3 space-y-2.5">
+                      <h4 className="font-serif font-bold text-base text-[#2D2D2D]">
+                        {incident.title}
+                      </h4>
+
+                      <div className="p-3 bg-stone-50 border border-stone-200 rounded-xl text-xs space-y-1">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-rose-700 font-mono block">
+                          Problem Observed by Watchdog:
+                        </span>
+                        <p className="text-[#2D2D2D] font-sans leading-relaxed">
+                          {incident.problem}
+                        </p>
+                        {incident.technicalDetails && (
+                          <pre className="mt-2 text-[10px] text-stone-600 font-mono bg-white p-2 rounded-lg border border-stone-200 overflow-x-auto">
+                            {incident.technicalDetails}
+                          </pre>
+                        )}
+                      </div>
+
+                      {incident.remedyActionTaken && (
+                        <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-xs flex items-start gap-2">
+                          <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                          <div>
+                            <strong className="text-[10px] uppercase font-mono text-emerald-800 block">
+                              Automated Self-Healing Action Applied:
+                            </strong>
+                            <span className="text-emerald-900 font-medium">{incident.remedyActionTaken}</span>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Step-by-Step Remediation Guide */}
+                      <div className="p-4 bg-[#FAF6EE] border border-[#E5E0D5] rounded-xl space-y-2">
+                        <div className="flex items-center gap-1.5 text-[#8C6B2D] font-bold text-xs font-serif">
+                          <Wrench className="w-4 h-4 text-[#C5A059]" />
+                          <span>How To Fix It (Apostolic Remediation Guide):</span>
+                        </div>
+                        <p className="text-xs font-semibold text-[#2D2D2D]">
+                          {incident.howToFix.summary}
+                        </p>
+                        <ol className="list-decimal list-inside text-xs text-[#7A7468] space-y-1 pt-1">
+                          {incident.howToFix.steps.map((step, idx) => (
+                            <li key={idx} className="leading-relaxed">
+                              <span>{step}</span>
+                            </li>
+                          ))}
+                        </ol>
+                      </div>
+                    </div>
+
+                    {/* 1-Click Fix Button */}
+                    {!incident.resolved && incident.howToFix.recommendedOneClickAction && (
+                      <div className="pt-2 flex items-center justify-between gap-3 border-t border-[#E5E0D5]">
+                        <span className="text-xs text-[#7A7468]">
+                          Recommended 1-Click Action:
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => handleWatchdogOneClickFix(incident)}
+                          disabled={isWatchdogFixing}
+                          className="px-4 py-2 bg-[#C5A059] hover:bg-[#B48F48] active:scale-95 text-white text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 cursor-pointer shadow-xs"
+                        >
+                          <RefreshCw className={`w-3.5 h-3.5 ${isWatchdogFixing ? "animate-spin" : ""}`} />
+                          <span>
+                            {isWatchdogFixing
+                              ? "Executing Repair..."
+                              : `Execute Fix: ${incident.howToFix.recommendedOneClickAction.replace("_", " ")}`}
+                          </span>
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       )}
 

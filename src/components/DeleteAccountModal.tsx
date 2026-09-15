@@ -26,6 +26,7 @@ import {
   getSavedVoiceGender,
   getSavedVoiceId,
   startSynchronousAudioPlayback,
+  unlockAudio,
   globalAudioEngine
 } from "../lib/audioVoiceHelper";
 
@@ -221,12 +222,12 @@ export const DeleteAccountModal: React.FC<DeleteAccountModalProps> = ({
 
   // Speak the closing scripture aloud using Microsoft Neural Voice with unified audio pipeline
   const speakClosingScripture = (scriptureToSpeak: PartingScripture, muted = false) => {
-    globalAudioEngine.stop();
-    if (typeof window !== "undefined" && "speechSynthesis" in window) {
-      window.speechSynthesis.cancel();
-    }
-
+    unlockAudio();
     if (muted) {
+      globalAudioEngine.stop();
+      if (typeof window !== "undefined" && "speechSynthesis" in window) {
+        window.speechSynthesis.cancel();
+      }
       setIsSpeaking(false);
       return;
     }

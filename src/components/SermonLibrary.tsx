@@ -22,6 +22,7 @@ import { Sermon, MinistryVideo, VideoWatchProgress, UserProfile } from "../types
 import { SERMONS_DATABASE } from "../data/mockData";
 import { Storage } from "../lib/storage";
 import { AudioTrack } from "./AudioPlayerBar";
+import { unlockAudio, startSynchronousAudioPlayback } from "../lib/audioVoiceHelper";
 import { GtcVideoPlayer } from "./video/GtcVideoPlayer";
 import { AdminVideoUploadModal } from "./video/AdminVideoUploadModal";
 import { VideoCard } from "./video/VideoCard";
@@ -98,13 +99,17 @@ export const SermonLibrary: React.FC<SermonLibraryProps> = ({
   };
 
   const handleListenAudio = (vid: MinistryVideo) => {
+    unlockAudio();
+    const track: AudioTrack = {
+      id: `media-audio-${vid.id}`,
+      title: vid.title,
+      subtitle: `${vid.speaker} • ${vid.category}`,
+      textToRead: `${vid.title}. Ministered by ${vid.speaker}. ${vid.description}. Key scriptures: ${(vid.scriptureReferences || []).join(", ")}. Transcript excerpt: ${vid.transcript || ""}`
+    };
     if (onPlayAudio) {
-      onPlayAudio({
-        id: `media-audio-${vid.id}`,
-        title: vid.title,
-        subtitle: `${vid.speaker} • ${vid.category}`,
-        textToRead: `${vid.title}. Ministered by ${vid.speaker}. ${vid.description}. Key scriptures: ${(vid.scriptureReferences || []).join(", ")}. Transcript excerpt: ${vid.transcript || ""}`
-      });
+      onPlayAudio(track);
+    } else {
+      startSynchronousAudioPlayback(track);
     }
   };
 

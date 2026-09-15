@@ -56,8 +56,58 @@ const CANONICAL_BOOKS = [
 
 // Note: VERIFIED_SCRIPTURE_MAP and VerifiedScriptureEntry are imported from ./src/lib/theologicalEngine
 
+app.options("/api/health", (req, res) => {
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Cache-Control, Pragma");
+  res.sendStatus(204);
+});
+
 app.get("/api/health", (req, res) => {
-  res.json({ status: "ok", timestamp: new Date().toISOString() });
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS");
+  res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate, max-age=0");
+  res.setHeader("Pragma", "no-cache");
+  const mem = process.memoryUsage ? process.memoryUsage() : null;
+  res.json({
+    status: "ok",
+    timestamp: new Date().toISOString(),
+    version: APP_VERSION,
+    bootTime: SERVER_BOOT_TIMESTAMP,
+    uptimeSeconds: Math.floor(process.uptime()),
+    services: {
+      tts: "operational",
+      aiEngine: getGeminiClient() ? "connected" : "standby_awaiting_key",
+      theologicalEngine: {
+        status: "verified",
+        canonicalBooks: CANONICAL_BOOKS.length,
+        verifiedScriptures: Object.keys(VERIFIED_SCRIPTURE_MAP).length
+      },
+      systemMemory: mem ? {
+        rssMB: Math.round(mem.rss / (1024 * 1024)),
+        heapUsedMB: Math.round(mem.heapUsed / (1024 * 1024))
+      } : undefined
+    }
+  });
+});
+
+app.options("/api/ping", (req, res) => {
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Cache-Control, Pragma");
+  res.sendStatus(204);
+});
+
+app.get("/api/ping", (req, res) => {
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS");
+  res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate, max-age=0");
+  res.setHeader("Pragma", "no-cache");
+  res.json({
+    pong: true,
+    timestamp: Date.now(),
+    status: "healthy"
+  });
 });
 
 // Explicit favicon endpoint ensuring browsers receive the valid ICO binary
@@ -91,6 +141,75 @@ app.get("/api/version", (req, res) => {
     env: process.env.NODE_ENV || "development",
     status: "active"
   });
+});
+
+// Super Admin Watchdog Incident Log & Telemetry
+interface ServerWatchdogIncident {
+  id: string;
+  timestamp: string;
+  subsystem: string;
+  severity: string;
+  title: string;
+  problem: string;
+  technicalDetails?: string;
+  remedyActionTaken?: string;
+  howToFix: {
+    summary: string;
+    steps: string[];
+    recommendedOneClickAction?: string;
+  };
+  resolved: boolean;
+}
+const serverWatchdogIncidents: ServerWatchdogIncident[] = [];
+
+app.get("/api/admin/watchdog/incidents", (req, res) => {
+  res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate, max-age=0");
+  res.json({
+    status: "ok",
+    incidents: serverWatchdogIncidents,
+    total: serverWatchdogIncidents.length,
+    timestamp: new Date().toISOString()
+  });
+});
+
+app.post("/api/admin/watchdog/log", (req, res) => {
+  try {
+    const incident: ServerWatchdogIncident = req.body;
+    if (incident && incident.id) {
+      const existingIndex = serverWatchdogIncidents.findIndex((i) => i.id === incident.id);
+      if (existingIndex >= 0) {
+        serverWatchdogIncidents[existingIndex] = {
+          ...serverWatchdogIncidents[existingIndex],
+          ...incident
+        };
+      } else {
+        serverWatchdogIncidents.unshift(incident);
+        if (serverWatchdogIncidents.length > 50) {
+          serverWatchdogIncidents.pop();
+        }
+      }
+    }
+    res.json({ success: true, count: serverWatchdogIncidents.length });
+  } catch (err: any) {
+    res.status(400).json({ error: err?.message || "Invalid incident payload" });
+  }
+});
+
+app.post("/api/admin/watchdog/resolve", (req, res) => {
+  try {
+    const { id } = req.body;
+    if (id === "all") {
+      serverWatchdogIncidents.forEach((i) => (i.resolved = true));
+    } else {
+      const target = serverWatchdogIncidents.find((i) => i.id === id);
+      if (target) {
+        target.resolved = true;
+      }
+    }
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(400).json({ error: err?.message || "Resolution error" });
+  }
 });
 
 // Helper to fetch resilient HTTP TTS if WebSocket Neural engine is unavailable in container/deployed environment
@@ -177,6 +296,10 @@ function sendAudioWithRange(
   const totalLength = audioBuffer.length;
   const range = req.headers.range;
 
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Range, Content-Type, Accept-Encoding");
+  res.setHeader("Access-Control-Expose-Headers", "Content-Range, Content-Length, Accept-Ranges, X-Voice-Engine, X-Voice-Name, X-Voice-Requested, X-Voice-Fallback");
   res.setHeader("Content-Type", contentType);
   res.setHeader("Accept-Ranges", "bytes");
   res.setHeader("Cache-Control", "public, max-age=86400, stale-while-revalidate=604800");
@@ -185,12 +308,22 @@ function sendAudioWithRange(
   res.setHeader("X-Voice-Requested", requestedVoice || selectedVoice);
   res.setHeader("X-Voice-Fallback", fallbackUsed ? "true" : "false");
 
+  if (req.method === "HEAD") {
+    res.setHeader("Content-Length", totalLength);
+    return res.end();
+  }
+
   if (range) {
     const parts = range.replace(/bytes=/, "").split("-");
     const start = parseInt(parts[0], 10);
-    const end = parts[1] ? parseInt(parts[1], 10) : totalLength - 1;
+    let end = parts[1] ? parseInt(parts[1], 10) : totalLength - 1;
 
-    if (isNaN(start) || start >= totalLength || (parts[1] && end >= totalLength) || start > end) {
+    // RFC 7233: If end is omitted or >= totalLength, clamp to totalLength - 1
+    if (isNaN(end) || end >= totalLength) {
+      end = totalLength - 1;
+    }
+
+    if (isNaN(start) || start >= totalLength || start > end || start < 0) {
       res.status(416).setHeader("Content-Range", `bytes */${totalLength}`);
       return res.end();
     }
@@ -207,6 +340,14 @@ function sendAudioWithRange(
   res.setHeader("Content-Length", totalLength);
   return res.end(audioBuffer);
 }
+
+app.options("/api/tts", (req, res) => {
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Range, Content-Type, Accept-Encoding");
+  res.setHeader("Access-Control-Expose-Headers", "Content-Range, Content-Length, Accept-Ranges");
+  res.sendStatus(204);
+});
 
 // List of verified Microsoft Edge Neural voices supported out of the box
 const VERIFIED_EDGE_VOICES = new Set([

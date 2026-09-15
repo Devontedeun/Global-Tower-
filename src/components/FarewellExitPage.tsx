@@ -21,6 +21,7 @@ import {
   getSavedVoiceGender,
   getSavedVoiceId,
   startSynchronousAudioPlayback,
+  unlockAudio,
   globalAudioEngine
 } from "../lib/audioVoiceHelper";
 
@@ -144,12 +145,9 @@ export const FarewellExitPage: React.FC<FarewellExitPageProps> = ({
 
   // Speak scripture aloud using Microsoft Neural Voice with unified mobile/desktop audio pipeline
   const speakScripture = (scripture: PartingScripture, muted = false) => {
-    globalAudioEngine.stop();
-    if (typeof window !== "undefined" && "speechSynthesis" in window) {
-      window.speechSynthesis.cancel();
-    }
-
+    unlockAudio();
     if (muted) {
+      globalAudioEngine.stop();
       setIsSpeaking(false);
       return;
     }
@@ -166,6 +164,7 @@ export const FarewellExitPage: React.FC<FarewellExitPageProps> = ({
   };
 
   const handleSelectScripture = (scripture: PartingScripture) => {
+    unlockAudio();
     setSelectedScriptureId(scripture.id);
     if (!isMuted) {
       speakScripture(scripture, false);
@@ -173,6 +172,7 @@ export const FarewellExitPage: React.FC<FarewellExitPageProps> = ({
   };
 
   const handleToggleAudio = () => {
+    unlockAudio();
     if (isSpeaking) {
       globalAudioEngine.stop();
       if (typeof window !== "undefined" && "speechSynthesis" in window) {

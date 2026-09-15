@@ -88,15 +88,7 @@ export const SignUpPortal: React.FC<SignUpPortalProps> = ({
   onClose,
   isOpenAsModal = false
 }) => {
-  const { register, login, resetPassword, continueAsGuest, unlockRememberedUser, getRememberedUser } = useAuth();
-
-  const [rememberedProfile, setRememberedProfile] = useState(() => {
-    try {
-      return getRememberedUser ? getRememberedUser() : null;
-    } catch {
-      return null;
-    }
-  });
+  const { register, login, resetPassword, continueAsGuest } = useAuth();
 
   // Mode: "login" | "signup" | "forgot_password"
   const [mode, setMode] = useState<"login" | "signup" | "forgot_password">("login");
@@ -360,22 +352,6 @@ export const SignUpPortal: React.FC<SignUpPortalProps> = ({
         setIsLoading(false);
       }
     } else if (mode === "login") {
-      if (rememberedProfile) {
-        setIsLoading(true);
-        try {
-          await unlockRememberedUser(rememberedProfile);
-          setSuccessMessage(`Welcome back, ${rememberedProfile.name}! Entering sanctuary...`);
-          if (onSuccess) onSuccess();
-        } catch (err: any) {
-          console.error("Unlock error:", err);
-          setErrorMessage(err.message || "Could not sign in with remembered account. Please enter your credentials below.");
-          setRememberedProfile(null);
-        } finally {
-          setIsLoading(false);
-        }
-        return;
-      }
-
       if (!email.trim() || !password) {
         setErrorMessage("Please provide both email and password.");
         return;
@@ -1043,135 +1019,66 @@ export const SignUpPortal: React.FC<SignUpPortalProps> = ({
 
         {mode === "login" && (
           <div className="space-y-4">
-            {rememberedProfile ? (
-              <div className="p-4 bg-gradient-to-r from-amber-500/10 via-[#FDFCF9] to-amber-500/5 rounded-2xl border border-[#C5A059]/40 shadow-xs space-y-3 animate-in fade-in">
-                <div className="flex items-center justify-between">
-                  <span className="text-[11px] uppercase tracking-wider font-bold text-[#C5A059] flex items-center gap-1.5">
-                    <Sparkles className="w-3.5 h-3.5" />
-                    Recognized Sanctuary Member
-                  </span>
-                  <span className="text-[10px] bg-[#C5A059]/15 text-[#8C6D23] font-semibold px-2 py-0.5 rounded-full">
-                    Remembered in Database
-                  </span>
-                </div>
-                <div className="flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-3 min-w-0">
-                    <img
-                      src={rememberedProfile.avatarUrl || "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400&auto=format&fit=crop&q=80"}
-                      alt=""
-                      aria-hidden="true"
-                      className="w-12 h-12 rounded-full object-cover border-2 border-[#C5A059] shadow-xs shrink-0"
-                    />
-                    <div className="min-w-0">
-                      <h4 className="font-bold text-[#2D2D2D] text-sm font-serif truncate">
-                        {rememberedProfile.name}
-                      </h4>
-                      <p className="text-[11px] text-[#7A7468] truncate font-medium">
-                        {rememberedProfile.role === "admin" || rememberedProfile.role === "moderator" ? "Sanctuary Leadership" : "Sanctuary Member"} • Verified
-                      </p>
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      setIsLoading(true);
-                      try {
-                        await unlockRememberedUser(rememberedProfile);
-                        setSuccessMessage(`Welcome back, ${rememberedProfile.name}! Entering sanctuary...`);
-                        if (onSuccess) onSuccess();
-                      } catch (e: any) {
-                        setErrorMessage(e.message || "Could not unlock remembered account. Please enter your credentials below.");
-                        setRememberedProfile(null);
-                      } finally {
-                        setIsLoading(false);
-                      }
-                    }}
-                    disabled={isLoading}
-                    className="px-4 py-2.5 bg-[#C5A059] hover:bg-[#B48F48] text-white text-xs font-bold rounded-xl shadow-xs shrink-0 cursor-pointer transition-all hover:scale-102 flex items-center gap-1.5 disabled:opacity-50"
-                  >
-                    <span>Sign In</span>
-                    <ArrowRight className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-                <div className="pt-2 border-t border-[#E5E0D5]/70 flex items-center justify-between text-[11px] text-[#8A8478]">
-                  <span>Need to sign in as someone else?</span>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setRememberedProfile(null);
-                      setEmail("");
-                      setPassword("");
-                    }}
-                    className="text-[#C5A059] hover:underline font-semibold cursor-pointer"
-                  >
-                    Use Different Account
-                  </button>
-                </div>
+            <div>
+              <label className="font-bold text-[#2D2D2D] block mb-1 font-serif text-xs">
+                Email Address
+              </label>
+              <div className="relative">
+                <Mail className="w-4 h-4 text-[#8A8478] absolute left-3.5 top-3.5" />
+                <input
+                  type="email"
+                  required
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="Enter your email address"
+                  autoComplete="email"
+                  className="w-full pl-10 pr-3.5 py-3 bg-[#F9F7F2] border border-[#E5E0D5] rounded-xl font-medium focus:outline-none focus:border-[#C5A059] focus:bg-white transition-all text-xs"
+                />
               </div>
-            ) : (
-              <>
-                <div>
-                  <label className="font-bold text-[#2D2D2D] block mb-1 font-serif">
-                    Email Address
-                  </label>
-                  <div className="relative">
-                    <Mail className="w-4 h-4 text-[#8A8478] absolute left-3.5 top-3.5" />
-                    <input
-                      type="email"
-                      required
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      placeholder="Enter your email address"
-                      autoComplete="email"
-                      className="w-full pl-10 pr-3.5 py-3 bg-[#F9F7F2] border border-[#E5E0D5] rounded-xl font-medium focus:outline-none focus:border-[#C5A059] focus:bg-white transition-all text-xs"
-                    />
-                  </div>
-                </div>
+            </div>
 
-                <div>
-                  <div className="flex items-center justify-between mb-1">
-                    <label className="font-bold text-[#2D2D2D] font-serif">Password</label>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setErrorMessage(null);
-                        setSuccessMessage(null);
-                        setMode("forgot_password");
-                      }}
-                      className="text-[11px] text-[#C5A059] hover:underline font-semibold cursor-pointer"
-                    >
-                      Forgot password?
-                    </button>
-                  </div>
-                  <div className="relative">
-                    <Lock className="w-4 h-4 text-[#8A8478] absolute left-3.5 top-3.5" />
-                    <input
-                      type={showPassword ? "text" : "password"}
-                      required
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      placeholder="Enter your password"
-                      autoComplete="current-password"
-                      className="w-full pl-10 pr-10 py-3 bg-[#F9F7F2] border border-[#E5E0D5] rounded-xl font-medium focus:outline-none focus:border-[#C5A059] focus:bg-white transition-all text-xs"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowPassword(!showPassword)}
-                      className="absolute right-3.5 top-3.5 text-[#8A8478] hover:text-[#2D2D2D] cursor-pointer"
-                    >
-                      {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                    </button>
-                  </div>
-                </div>
-              </>
-            )}
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <label className="font-bold text-[#2D2D2D] font-serif text-xs">Password</label>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setErrorMessage(null);
+                    setSuccessMessage(null);
+                    setMode("forgot_password");
+                  }}
+                  className="text-[11px] text-[#C5A059] hover:underline font-semibold cursor-pointer"
+                >
+                  Forgot password?
+                </button>
+              </div>
+              <div className="relative">
+                <Lock className="w-4 h-4 text-[#8A8478] absolute left-3.5 top-3.5" />
+                <input
+                  type={showPassword ? "text" : "password"}
+                  required
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="Enter your password"
+                  autoComplete="current-password"
+                  className="w-full pl-10 pr-10 py-3 bg-[#F9F7F2] border border-[#E5E0D5] rounded-xl font-medium focus:outline-none focus:border-[#C5A059] focus:bg-white transition-all text-xs"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3.5 top-3.5 text-[#8A8478] hover:text-[#2D2D2D] cursor-pointer"
+                >
+                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+            </div>
           </div>
         )}
 
         {mode === "forgot_password" && (
           <div className="space-y-3">
             <div>
-              <label className="font-bold text-[#2D2D2D] block mb-1 font-serif">
+              <label className="font-bold text-[#2D2D2D] block mb-1 font-serif text-xs">
                 Registered Email Address
               </label>
               <div className="relative">
@@ -1191,12 +1098,11 @@ export const SignUpPortal: React.FC<SignUpPortalProps> = ({
 
         {/* Submit Button */}
         <div className="pt-4 space-y-2.5">
-          {(!rememberedProfile || mode !== "login") && (
-            <button
-              type="submit"
-              disabled={isLoading || (mode === "signup" && (!isPasswordValid || !passwordsMatch))}
-              className="w-full py-3.5 bg-[#C5A059] hover:bg-[#B48F48] text-white font-bold text-xs uppercase tracking-wider rounded-2xl shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
-            >
+          <button
+            type="submit"
+            disabled={isLoading || (mode === "signup" && (!isPasswordValid || !passwordsMatch))}
+            className="w-full py-3.5 bg-[#C5A059] hover:bg-[#B48F48] text-white font-bold text-xs uppercase tracking-wider rounded-2xl shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+          >
               {isLoading ? (
                 <span className="inline-flex items-center gap-2">
                   <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
@@ -1219,7 +1125,6 @@ export const SignUpPortal: React.FC<SignUpPortalProps> = ({
                 </>
               )}
             </button>
-          )}
 
           {/* Instant Guest / Visitor Access Button */}
           <button

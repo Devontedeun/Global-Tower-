@@ -40,7 +40,7 @@ import { PrivacyPolicy } from "./components/PrivacyPolicy";
 import { TermsAndConditions } from "./components/TermsAndConditions";
 import { FarewellExitPage, FarewellUser } from "./components/FarewellExitPage";
 import { WelcomeCeremony } from "./components/WelcomeCeremony";
-import { Storage, DEFAULT_USER } from "./lib/storage";
+import { Storage, DEFAULT_USER, isSuperAdminEmail } from "./lib/storage";
 import { UserProfile, UserRole } from "./types";
 import { translations, Language } from "./lib/translations";
 import { useAuth } from "./lib/AuthContext";
@@ -49,6 +49,7 @@ import { LanguageSelector } from "./components/LanguageSelector";
 import { WebAppTopBar } from "./components/WebAppTopBar";
 import { ThemeToggle } from "./components/ThemeToggle";
 import { VersionUpdateNotifier } from "./components/VersionUpdateNotifier";
+import { SuperAdminWatchdogNotifier, SuperAdminWatchdogBadge } from "./components/SuperAdminWatchdogNotifier";
 
 export default function App() {
   const { currentUser, userProfile, loading, updateProfileData } = useAuth();
@@ -287,12 +288,27 @@ export default function App() {
             </button>
           </div>
         </footer>
+
+        {/* Super Admin Watchdog Notifier (Only alerts Super Admin if anomaly occurs) */}
+        <SuperAdminWatchdogNotifier />
+
+        {/* Redeployment and Version Update Notifier */}
+        <VersionUpdateNotifier />
       </div>
     );
   }
 
   // 3. Authenticated App Flow
-  const isSuperAdmin = user.role === "super_admin";
+  const isSuperAdmin =
+    user.role === "super_admin" ||
+    user.role === "ministry_admin" ||
+    (user.role as string) === "admin" ||
+    userProfile?.role === "super_admin" ||
+    userProfile?.role === "ministry_admin" ||
+    (userProfile?.role as string) === "admin" ||
+    isSuperAdminEmail(user.email) ||
+    isSuperAdminEmail(userProfile?.email || "") ||
+    isSuperAdminEmail(currentUser?.email || "");
 
   const navItems = [
     { id: "home", label: t.home, icon: Home },
@@ -345,6 +361,9 @@ export default function App() {
                 <Search className="w-3.5 h-3.5 text-[#C5A059]" />
                 <span className="hidden lg:inline text-xs font-medium">Search scriptures...</span>
               </button>
+
+              {/* Super Admin Watchdog Telemetry & Anomaly Badge (Exclusive to Super Admin) */}
+              <SuperAdminWatchdogBadge />
 
               {/* Global Theme Toggle: Light / Midnight Sanctuary */}
               <ThemeToggle />
@@ -754,6 +773,9 @@ export default function App() {
 
       {/* Feedback Modal */}
       <FeedbackModal isOpen={isFeedbackOpen} onClose={() => setIsFeedbackOpen(false)} />
+
+      {/* Super Admin Watchdog Notifier (Exclusive alerts & diagnostic remediation for Super Admin only) */}
+      <SuperAdminWatchdogNotifier isSuperAdmin={isSuperAdmin} />
 
       {/* Redeployment and Version Update Notifier */}
       <VersionUpdateNotifier />

@@ -22,6 +22,7 @@ import {
 import { EncouragementMessage, UserProfile } from "../types";
 import { INITIAL_ENCOURAGEMENTS } from "../data/encouragementsData";
 import { AudioTrack } from "./AudioPlayerBar";
+import { startSynchronousAudioPlayback, unlockAudio } from "../lib/audioVoiceHelper";
 import { db } from "../lib/firebase";
 import { collection, getDocs, addDoc, updateDoc, doc, query, orderBy, onSnapshot } from "firebase/firestore";
 
@@ -163,14 +164,19 @@ export const EncouragementHub: React.FC<EncouragementHubProps> = ({
   };
 
   const handlePlayPrayerAudio = (msg: EncouragementMessage) => {
-    if (!onPlayAudio) return;
+    unlockAudio();
     const prayerTextToRead = msg.prayer || msg.message;
-    onPlayAudio({
+    const track: AudioTrack = {
       id: `prayer-${msg.id}`,
       title: `Prayer: ${msg.title}`,
       subtitle: `Guided Daily Prayer • ${msg.scriptureRef}`,
       textToRead: `Let us come before the Lord in prayer. ${prayerTextToRead}. In Jesus' mighty name, Amen.`
-    });
+    };
+    if (onPlayAudio) {
+      onPlayAudio(track);
+    } else {
+      startSynchronousAudioPlayback(track);
+    }
   };
 
   const handleCopy = (msg: EncouragementMessage) => {
@@ -196,14 +202,19 @@ export const EncouragementHub: React.FC<EncouragementHubProps> = ({
   };
 
   const handlePlayMessageAudio = (msg: EncouragementMessage) => {
-    if (!onPlayAudio) return;
+    unlockAudio();
     const narrationText = `${msg.title}. Scripture Promise from ${msg.scriptureRef}: "${msg.scriptureText}". Biblical Meaning: ${msg.meaning || msg.message}. Daily Prayer: ${msg.prayer || ""}`;
-    onPlayAudio({
+    const track: AudioTrack = {
       id: `enc-${msg.id}`,
       title: msg.title,
       subtitle: `Daily Promise • ${msg.scriptureRef}`,
       textToRead: narrationText
-    });
+    };
+    if (onPlayAudio) {
+      onPlayAudio(track);
+    } else {
+      startSynchronousAudioPlayback(track);
+    }
   };
 
   const handlePublishMessage = async (e: React.FormEvent) => {

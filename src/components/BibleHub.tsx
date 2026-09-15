@@ -56,7 +56,8 @@ import {
   setSavedMuteState,
   unlockAudio,
   startSynchronousAudioPlayback,
-  SERVER_VOICES
+  SERVER_VOICES,
+  globalAudioEngine
 } from "../lib/audioVoiceHelper";
 
 interface BibleHubProps {
@@ -196,17 +197,11 @@ export const BibleHub: React.FC<BibleHubProps> = ({
           });
           setAvailableVoices(englishVoices.length > 0 ? englishVoices : voices);
           
-          // Only fallback if no voice is currently saved or selected
+          // Ensure default voice is never assigned a local phone system voice
           const savedVoice = getSavedVoiceId();
-          if (!savedVoice && !selectedVoiceURI) {
-            const { voice } = getNaturalBibleVoice();
-            if (voice) {
-              setSelectedVoiceURI(voice.voiceURI);
-              setSavedVoiceId(voice.voiceURI);
-            } else if (englishVoices.length > 0) {
-              setSelectedVoiceURI(englishVoices[0].voiceURI);
-              setSavedVoiceId(englishVoices[0].voiceURI);
-            }
+          if (!savedVoice || !selectedVoiceURI) {
+            setSelectedVoiceURI("en-US-GuyNeural");
+            setSavedVoiceId("en-US-GuyNeural");
           }
         }
       }
@@ -437,15 +432,13 @@ export const BibleHub: React.FC<BibleHubProps> = ({
         }
       };
 
-      // CRITICAL FOR MOBILE & TABLETS:
-      // Start audio output synchronously directly within this user tap event
-      startSynchronousAudioPlayback(track, selectedVoiceURI);
-
+      // Route audio output cleanly without double-invocation race conditions
       if (onPlayAudio) {
         onPlayAudio(track);
         setIsAudioPlaying(true);
       } else {
-        playVerseByIndex(0, selectedBook, selectedChapter);
+        startSynchronousAudioPlayback(track, selectedVoiceURI);
+        setIsAudioPlaying(true);
       }
     }
   };
@@ -478,16 +471,13 @@ export const BibleHub: React.FC<BibleHubProps> = ({
       }
     };
 
-    // CRITICAL FOR MOBILE & TABLETS:
-    // Start audio output synchronously directly within this user tap event
-    startSynchronousAudioPlayback(track, selectedVoiceURI);
-
     setAudioVerseNum(verseNum);
     setIsAudioPlaying(true);
 
-    // If global audio player is provided, route directly to ensure continuous narration
     if (onPlayAudio) {
       onPlayAudio(track);
+    } else {
+      startSynchronousAudioPlayback(track, selectedVoiceURI);
     }
   };
 
@@ -1208,6 +1198,7 @@ export const BibleHub: React.FC<BibleHubProps> = ({
                       const newId = e.target.value;
                       setSelectedVoiceURI(newId);
                       setSavedVoiceId(newId);
+                      globalAudioEngine.setVoice(newId);
                       console.log(`[BibleHub] Voice changed in audio settings: "${newId}"`);
                     }}
                     className="w-full p-1.5 bg-white border border-[#E5E0D5] rounded-lg text-xs font-medium focus:outline-none focus:border-[#C5A059]"

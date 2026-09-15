@@ -17,6 +17,7 @@ import { DEVOTIONAL_TODAY } from "../data/mockData";
 import { INITIAL_ENCOURAGEMENTS } from "../data/encouragementsData";
 import { UserProfile } from "../types";
 import { AudioTrack } from "./AudioPlayerBar";
+import { unlockAudio } from "../lib/audioVoiceHelper";
 import { UserFriendlyMetrics } from "./UserFriendlyMetrics";
 
 interface HomeDashboardProps {
@@ -200,15 +201,16 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
               </button>
 
               <button
-                onClick={() =>
+                onClick={() => {
+                  unlockAudio();
                   onPlayAudio({
                     id: "audio-hebrews-4-12",
                     title: "Hebrews 4:12 Daily Manna",
                     subtitle: "Scripture Audio Narration",
                     textToRead:
                       "Hebrews chapter 4, verse 12. For the word of God is living and active, sharper than any two-edged sword, piercing to the division of soul and of spirit, of joints and of marrow, and discerning the thoughts and intentions of the heart.",
-                  })
-                }
+                  });
+                }}
                 className="px-4 py-2.5 bg-[#FDFCF9] hover:bg-white text-[#7A7468] hover:text-[#C5A059] border border-[#E5E0D5] hover:border-[#C5A059] rounded-full text-xs font-semibold transition-all cursor-pointer inline-flex items-center gap-2 shadow-2xs"
               >
                 <Volume2 className="w-3.5 h-3.5 text-[#C5A059]" />

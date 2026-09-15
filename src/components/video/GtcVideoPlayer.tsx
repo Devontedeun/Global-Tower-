@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import { VideoWatchProgress } from "../../types";
 import { Storage } from "../../lib/storage";
+import { unlockAudio } from "../../lib/audioVoiceHelper";
 
 export interface GtcVideoPlayerProps {
   videoId: string;
@@ -166,6 +167,7 @@ export const GtcVideoPlayer: React.FC<GtcVideoPlayerProps> = ({
   const togglePlay = () => {
     if (!videoRef.current) return;
     if (videoRef.current.paused) {
+      unlockAudio();
       videoRef.current.play().then(() => {
         setIsPlaying(true);
         setShowResumeBanner(false);
@@ -348,6 +350,7 @@ export const GtcVideoPlayer: React.FC<GtcVideoPlayerProps> = ({
         src={src}
         poster={poster}
         playsInline
+        muted={isMuted}
         autoPlay={autoPlay}
         onPlay={() => setIsPlaying(true)}
         onPause={() => setIsPlaying(false)}

@@ -3,7 +3,11 @@ import { createRoot } from "react-dom/client";
 import App from "./App.tsx";
 import { AuthProvider } from "./lib/AuthContext";
 import { ThemeProvider } from "./lib/ThemeContext";
+import { backgroundMaintenance } from "./lib/backgroundMaintenance";
 import "./index.css";
+
+// Boot automated background self-healing & maintenance loop
+backgroundMaintenance.start();
 
 // Auto-recover if dynamic chunk hashes change after a redeployment
 window.addEventListener("vite:preloadError", (event) => {
