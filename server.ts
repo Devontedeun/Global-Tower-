@@ -282,6 +282,57 @@ function pcmToWav(pcmBuffer: Buffer, sampleRate = 24000, channels = 1, bitsPerSa
   return Buffer.concat([header, pcmBuffer]);
 }
 
+function escapeXml(unsafe: string): string {
+  return unsafe
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;");
+}
+
+async function synthesizeWithAzureSpeech(
+  text: string,
+  voiceName: string,
+  locale: string,
+  gender: string
+): Promise<Buffer | null> {
+  const apiKey = (process.env.AZURE_SPEECH_KEY || process.env.SPEECH_KEY || "").trim();
+  const region = (process.env.AZURE_SPEECH_REGION || process.env.SPEECH_REGION || "eastus").trim();
+  if (!apiKey) return null;
+
+  const endpoint = `https://${region}.tts.speech.microsoft.com/cognitiveservices/v1`;
+  const ssml = `<speak version='1.0' xml:lang='${locale}'><voice xml:lang='${locale}' xml:gender='${gender === "female" ? "Female" : "Male"}' name='${voiceName}'>${escapeXml(text)}</voice></speak>`;
+
+  try {
+    console.log(`[TTS:AzureSpeech] Sending request to ${endpoint}, voice="${voiceName}", locale="${locale}", textLen=${text.length}`);
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        "Ocp-Apim-Subscription-Key": apiKey,
+        "Content-Type": "application/ssml+xml",
+        "X-Microsoft-OutputFormat": "audio-24khz-48kbitrate-mono-mp3",
+        "User-Agent": "GlobalTowerOfChrist-BibleAudio",
+      },
+      body: ssml,
+    });
+
+    if (!response.ok) {
+      const errText = await response.text();
+      console.warn(`[TTS:AzureSpeech] Azure Speech API error (HTTP ${response.status}): ${errText}`);
+      return null;
+    }
+
+    const arrayBuf = await response.arrayBuffer();
+    const buffer = Buffer.from(arrayBuf);
+    console.log(`[TTS:AzureSpeech] Received ${buffer.length} bytes of synthesized audio from Azure Speech API`);
+    return buffer;
+  } catch (err: any) {
+    console.warn(`[TTS:AzureSpeech] Exception contacting Azure Speech endpoint:`, err?.message || err);
+    return null;
+  }
+}
+
 function sendAudioWithRange(
   req: express.Request,
   res: express.Response,
@@ -291,7 +342,8 @@ function sendAudioWithRange(
   contentType: string = "audio/mpeg",
   engineName: string = "Microsoft-Edge-Neural",
   requestedVoice?: string,
-  fallbackUsed: boolean = false
+  fallbackUsed: boolean = false,
+  locale: string = "en-US"
 ) {
   const totalLength = audioBuffer.length;
   const range = req.headers.range;
@@ -299,13 +351,14 @@ function sendAudioWithRange(
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Range, Content-Type, Accept-Encoding");
-  res.setHeader("Access-Control-Expose-Headers", "Content-Range, Content-Length, Accept-Ranges, X-Voice-Engine, X-Voice-Name, X-Voice-Requested, X-Voice-Fallback");
+  res.setHeader("Access-Control-Expose-Headers", "Content-Range, Content-Length, Accept-Ranges, X-Voice-Engine, X-Voice-Name, X-Voice-Requested, X-Voice-Locale, X-Voice-Fallback");
   res.setHeader("Content-Type", contentType);
   res.setHeader("Accept-Ranges", "bytes");
   res.setHeader("Cache-Control", "public, max-age=86400, stale-while-revalidate=604800");
   res.setHeader("X-Voice-Engine", isCached ? `${engineName}-Cached` : engineName);
   res.setHeader("X-Voice-Name", selectedVoice);
   res.setHeader("X-Voice-Requested", requestedVoice || selectedVoice);
+  res.setHeader("X-Voice-Locale", locale);
   res.setHeader("X-Voice-Fallback", fallbackUsed ? "true" : "false");
 
   if (req.method === "HEAD") {
@@ -469,7 +522,7 @@ app.get("/api/tts", async (req, res) => {
       }
     }
 
-    // 2. Microsoft Edge Neural Voice Synthesis
+    // 2. Microsoft / Azure Speech Synthesis Pipeline
     let selectedVoice = requestedVoice;
     let fallbackUsed = false;
 
@@ -492,13 +545,40 @@ app.get("/api/tts", async (req, res) => {
       }
     }
 
+    // Extract exact matching language/locale from the voice name (e.g. "en-US", "en-GB", "en-CA")
+    const voiceLocale = selectedVoice.startsWith("en-GB")
+      ? "en-GB"
+      : selectedVoice.startsWith("en-CA")
+      ? "en-CA"
+      : selectedVoice.startsWith("en-AU")
+      ? "en-AU"
+      : "en-US";
+
     const cacheKey = `edge:${selectedVoice}:${truncatedText}`;
 
     if (ttsAudioCache.has(cacheKey)) {
       const cached = ttsAudioCache.get(cacheKey)!;
-      return sendAudioWithRange(req, res, cached, selectedVoice, true, "audio/mpeg", "Microsoft-Edge-Neural", requestedVoice, fallbackUsed);
+      return sendAudioWithRange(req, res, cached, selectedVoice, true, "audio/mpeg", "Microsoft-Neural", requestedVoice, fallbackUsed, voiceLocale);
     }
 
+    // 2A. If Azure Speech Subscription Key is configured, use official Azure Cognitive Services Speech REST API
+    const azureApiKey = (process.env.AZURE_SPEECH_KEY || process.env.SPEECH_KEY || "").trim();
+    if (azureApiKey) {
+      console.log(`[TTS:AzureSpeech] Synthesizing with Azure Speech API for voice="${selectedVoice}", locale="${voiceLocale}"...`);
+      const azureBuffer = await synthesizeWithAzureSpeech(truncatedText, selectedVoice, voiceLocale, gender);
+      if (azureBuffer && azureBuffer.length > 0) {
+        if (ttsAudioCache.size >= MAX_TTS_CACHE_SIZE) {
+          const firstKey = ttsAudioCache.keys().next().value;
+          if (firstKey) ttsAudioCache.delete(firstKey);
+        }
+        ttsAudioCache.set(cacheKey, azureBuffer);
+        return sendAudioWithRange(req, res, azureBuffer, selectedVoice, false, "audio/mpeg", "Azure-Cognitive-Speech", requestedVoice, fallbackUsed, voiceLocale);
+      }
+      console.warn(`[TTS:AzureSpeech] Azure Cognitive Speech direct synthesis not returned, proceeding with Microsoft Edge Neural engine...`);
+    }
+
+    // 2B. Microsoft Edge Neural Voice Synthesis (Zero-Config Microsoft Azure Speech Engine)
+    console.log(`[TTS:MicrosoftEdge] Synthesizing voice="${selectedVoice}", locale="${voiceLocale}", textLen=${truncatedText.length}...`);
     ttsInstance = new MsEdgeTTS();
     await ttsInstance.setMetadata(selectedVoice, OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3);
     const { audioStream } = ttsInstance.toStream(truncatedText);
@@ -511,7 +591,7 @@ app.get("/api/tts", async (req, res) => {
         const fallbackBuffer = await fetchResilientWebTTS(truncatedText);
         if (fallbackBuffer && !res.headersSent) {
           ttsAudioCache.set(cacheKey, fallbackBuffer);
-          return sendAudioWithRange(req, res, fallbackBuffer, selectedVoice, false, "audio/mpeg", "Resilient-Web-TTS", requestedVoice, true);
+          return sendAudioWithRange(req, res, fallbackBuffer, selectedVoice, false, "audio/mpeg", "Resilient-Web-TTS", requestedVoice, true, voiceLocale);
         }
         res.status(504).json({ error: "TTS generation timed out" });
       }
@@ -529,8 +609,8 @@ app.get("/api/tts", async (req, res) => {
       }
       ttsAudioCache.set(cacheKey, audioBuffer);
 
-      console.log(`[TTS:Edge] Synthesized voice="${selectedVoice}", requested="${requestedVoice}", size=${audioBuffer.length} bytes, fallback=${fallbackUsed}`);
-      sendAudioWithRange(req, res, audioBuffer, selectedVoice, false, "audio/mpeg", "Microsoft-Edge-Neural", requestedVoice, fallbackUsed);
+      console.log(`[TTS:Edge] Synthesized voice="${selectedVoice}", locale="${voiceLocale}", requested="${requestedVoice}", size=${audioBuffer.length} bytes, fallback=${fallbackUsed}`);
+      sendAudioWithRange(req, res, audioBuffer, selectedVoice, false, "audio/mpeg", "Microsoft-Edge-Neural", requestedVoice, fallbackUsed, voiceLocale);
     });
 
     audioStream.on("error", async (err: any) => {

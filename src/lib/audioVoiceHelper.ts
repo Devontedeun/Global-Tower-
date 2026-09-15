@@ -141,6 +141,158 @@ export const SERVER_VOICES: VoiceOption[] = [
   },
 ];
 
+export interface WebVoiceOption {
+  id: string;
+  name: string;
+  lang: string;
+  gender: VoiceGender;
+  isNatural: boolean;
+  isDefault: boolean;
+}
+
+// Banned robotic / novelty voice names in browser SpeechSynthesis
+export const BANNED_VOICE_NAMES = [
+  "zarvox",
+  "trinoids",
+  "whisper",
+  "cellos",
+  "bad news",
+  "organ",
+  "deranged",
+  "bubbles",
+  "bells",
+  "boing",
+  "good news",
+  "hysterical",
+  "junior",
+  "pipe organ",
+  "wobble",
+  "xander",
+  "albert",
+  "ralph"
+];
+
+export function isNaturalVoice(voice: SpeechSynthesisVoice): boolean {
+  const lower = (voice.name + " " + voice.voiceURI).toLowerCase();
+  return (
+    lower.includes("natural") ||
+    lower.includes("neural") ||
+    lower.includes("online") ||
+    lower.includes("google") ||
+    lower.includes("enhanced") ||
+    lower.includes("premium") ||
+    lower.includes("siri") ||
+    lower.includes("samantha") ||
+    lower.includes("daniel")
+  );
+}
+
+export function detectVoiceGender(voice: SpeechSynthesisVoice): VoiceGender {
+  const lower = (voice.name + " " + voice.voiceURI).toLowerCase();
+  if (
+    lower.includes("female") ||
+    lower.includes("jenny") ||
+    lower.includes("aria") ||
+    lower.includes("samantha") ||
+    lower.includes("victoria") ||
+    lower.includes("zira") ||
+    lower.includes("karen") ||
+    lower.includes("moira") ||
+    lower.includes("fiona") ||
+    lower.includes("tessa") ||
+    lower.includes("sonia") ||
+    lower.includes("ava") ||
+    lower.includes("emma")
+  ) {
+    return "female";
+  }
+  if (
+    lower.includes("male") ||
+    lower.includes("guy") ||
+    lower.includes("david") ||
+    lower.includes("mark") ||
+    lower.includes("george") ||
+    lower.includes("christopher") ||
+    lower.includes("eric") ||
+    lower.includes("brian") ||
+    lower.includes("ryan") ||
+    lower.includes("daniel") ||
+    lower.includes("oliver") ||
+    lower.includes("arthur") ||
+    lower.includes("steffan") ||
+    lower.includes("andrew")
+  ) {
+    return "male";
+  }
+  return "male";
+}
+
+export function getAvailableWebVoices(): SpeechSynthesisVoice[] {
+  if (typeof window === "undefined" || !("speechSynthesis" in window)) {
+    return [];
+  }
+  const allVoices = window.speechSynthesis.getVoices();
+  const validVoices = allVoices.filter((v) => {
+    const lower = (v.name + " " + v.voiceURI).toLowerCase();
+    return !BANNED_VOICE_NAMES.some((banned) => lower.includes(banned));
+  });
+
+  // Sort: Natural English first, then other English, then other languages
+  return [...validVoices].sort((a, b) => {
+    const aIsEn = a.lang.toLowerCase().startsWith("en");
+    const bIsEn = b.lang.toLowerCase().startsWith("en");
+    if (aIsEn && !bIsEn) return -1;
+    if (!aIsEn && bIsEn) return 1;
+
+    const aIsNat = isNaturalVoice(a);
+    const bIsNat = isNaturalVoice(b);
+    if (aIsNat && !bIsNat) return -1;
+    if (!aIsNat && bIsNat) return 1;
+
+    return a.name.localeCompare(b.name);
+  });
+}
+
+export function findBestVoiceForGender(
+  voices: SpeechSynthesisVoice[],
+  gender: VoiceGender
+): SpeechSynthesisVoice | null {
+  if (!voices || voices.length === 0) return null;
+
+  const english = voices.filter((v) => v.lang.toLowerCase().startsWith("en"));
+  const pool = english.length > 0 ? english : voices;
+
+  // 1. Natural voice matching gender
+  const naturalMatch = pool.find((v) => detectVoiceGender(v) === gender && isNaturalVoice(v));
+  if (naturalMatch) return naturalMatch;
+
+  // 2. Any voice matching gender
+  const genderMatch = pool.find((v) => detectVoiceGender(v) === gender);
+  if (genderMatch) return genderMatch;
+
+  // 3. Natural voice in pool
+  const naturalAny = pool.find((v) => isNaturalVoice(v));
+  if (naturalAny) return naturalAny;
+
+  // 4. Default or first in pool
+  return pool.find((v) => v.default) || pool[0] || null;
+}
+
+// Module-level listener for voiceschanged event
+if (typeof window !== "undefined" && "speechSynthesis" in window) {
+  const handleVoicesChanged = () => {
+    const voices = window.speechSynthesis.getVoices();
+    if (voices.length > 0) {
+      console.log(`[AudioVoiceHelper:WebSpeech] 🎙️ voiceschanged: ${voices.length} voices ready.`);
+      window.dispatchEvent(
+        new CustomEvent("gtc_web_voices_loaded", { detail: { count: voices.length } })
+      );
+    }
+  };
+  window.speechSynthesis.addEventListener("voiceschanged", handleVoicesChanged);
+  window.speechSynthesis.onvoiceschanged = handleVoicesChanged;
+}
+
 export function getSavedVoiceGender(): VoiceGender {
   if (typeof window === "undefined") return "male";
   try {
@@ -157,18 +309,19 @@ export function setSavedVoiceGender(gender: VoiceGender) {
   try {
     localStorage.setItem(GENDER_STORAGE_KEY, gender);
 
-    // Check if the currently saved voice belongs to this gender
-    const currentVoiceId = getSavedVoiceId();
-    const currentVoice = SERVER_VOICES.find((v) => v.id === currentVoiceId);
-    if (currentVoice && currentVoice.gender !== gender) {
-      const defaultVoice = gender === "female" ? "en-US-JennyNeural" : "en-US-GuyNeural";
-      localStorage.setItem(VOICE_STORAGE_KEY, defaultVoice);
-      console.log(`[AudioVoiceHelper] Gender changed to "${gender}", updated default voice to "${defaultVoice}"`);
-      window.dispatchEvent(
-        new CustomEvent("gtc_voice_changed", {
-          detail: { voiceId: defaultVoice, gender }
-        })
-      );
+    // Pick best voice for gender from available browser voices
+    if ("speechSynthesis" in window) {
+      const voices = getAvailableWebVoices();
+      const best = findBestVoiceForGender(voices, gender);
+      if (best) {
+        const bestId = best.voiceURI || best.name;
+        localStorage.setItem(VOICE_STORAGE_KEY, bestId);
+        window.dispatchEvent(
+          new CustomEvent("gtc_voice_changed", {
+            detail: { voiceId: bestId, gender }
+          })
+        );
+      }
     }
   } catch (e) {
     // ignore
@@ -176,25 +329,34 @@ export function setSavedVoiceGender(gender: VoiceGender) {
 }
 
 /**
- * Retrieve the saved voice ID from localStorage.
+ * Retrieve the saved voice ID from localStorage or select the best native browser voice.
  * Restores seamlessly after page reload.
  */
 export function getSavedVoiceId(): string {
-  if (typeof window === "undefined") return "en-US-GuyNeural";
+  if (typeof window === "undefined") return "";
   try {
     const saved = localStorage.getItem(VOICE_STORAGE_KEY);
     if (saved && saved.trim()) {
       const trimmed = saved.trim();
-      // Ensure saved voice is a valid server neural voice or an explicit browser voice
-      if (SERVER_VOICES.some((v) => v.id === trimmed) || trimmed.startsWith("browser:")) {
+      // If it's not an obsolete Azure Neural string, return it
+      if (!(trimmed.startsWith("en-US-") && trimmed.endsWith("Neural"))) {
         return trimmed;
       }
     }
   } catch (e) {
     // fallback
   }
-  const gender = getSavedVoiceGender();
-  return gender === "female" ? "en-US-JennyNeural" : "en-US-GuyNeural";
+
+  // Fallback to best matching voice from available browser voices
+  if (typeof window !== "undefined" && "speechSynthesis" in window) {
+    const voices = getAvailableWebVoices();
+    const gender = getSavedVoiceGender();
+    const best = findBestVoiceForGender(voices, gender);
+    if (best) {
+      return best.voiceURI || best.name;
+    }
+  }
+  return "";
 }
 
 /**
@@ -205,12 +367,14 @@ export function setSavedVoiceId(voiceId: string) {
   try {
     localStorage.setItem(VOICE_STORAGE_KEY, voiceId);
 
-    // If it's a known server voice, align saved gender as well
-    const serverVoice = SERVER_VOICES.find((v) => v.id === voiceId);
     let activeGender = getSavedVoiceGender();
-    if (serverVoice) {
-      activeGender = serverVoice.gender;
-      localStorage.setItem(GENDER_STORAGE_KEY, activeGender);
+    if ("speechSynthesis" in window) {
+      const voices = window.speechSynthesis.getVoices();
+      const matched = voices.find((v) => v.voiceURI === voiceId || v.name === voiceId);
+      if (matched) {
+        activeGender = detectVoiceGender(matched);
+        localStorage.setItem(GENDER_STORAGE_KEY, activeGender);
+      }
     }
 
     console.log(`[AudioVoiceHelper] Voice persisted to localStorage: id="${voiceId}", gender="${activeGender}"`);
@@ -386,12 +550,15 @@ export function buildSegmentsFromTrack(track: AudioTrack): SpeechSegment[] {
 
 export type AudioContextStateStatus = "uninitialized" | "suspended" | "running" | "interrupted" | "closed" | "unsupported";
 
+export type AudioPlaybackStatus = "READY" | "READING" | "GENERATING" | "PLAYING" | "PAUSED" | "FINISHED" | "ERROR";
+
 export interface GlobalAudioState {
   currentTrack: AudioTrack | null;
   segments: SpeechSegment[];
   currentSegmentIndex: number;
   totalSegments: number;
   progress: number;
+  playbackStatus: AudioPlaybackStatus;
   isPlaying: boolean;
   isFinished: boolean;
   isLoading: boolean;
@@ -402,6 +569,7 @@ export interface GlobalAudioState {
   activeGender: VoiceGender;
   narratorName: string;
   hasAutoplayBlock: boolean;
+  errorMessage?: string | null;
   currentVerseNum: number | null;
   audioContextStatus: AudioContextStateStatus;
   isAudioContextReady: boolean;
@@ -645,7 +813,7 @@ export function unlockAudio(): boolean {
     // 1. Hardware Web Audio API Unlock via manager
     audioContextManager.ensureRunning().catch(() => {});
 
-    // 2. Hardware HTMLAudioElement ready state & silent prime on iOS Safari
+    // 2. Hardware HTMLAudioElement ready state
     const player = getOrCreateMasterAudioElement();
     if (player) {
       player.muted = false;
@@ -653,27 +821,6 @@ export function unlockAudio(): boolean {
         try {
           player.volume = getSavedAudioVolume();
         } catch {}
-      }
-
-      // If player is idle or uninitialized, prime with silence so iOS WebKit grants persistent playback authorization
-      const isCurrentlyPlaying = typeof globalAudioEngine !== "undefined" ? globalAudioEngine.getState().isPlaying : false;
-      if (!isCurrentlyPlaying && (!player.src || player.src === window.location.href || player.src.startsWith("data:") || player.paused)) {
-        if (!player.src || player.src === window.location.href) {
-          player.src = SILENT_WAV_DATA_URI;
-          try {
-            player.load();
-          } catch {}
-        }
-        const playPromise = player.play();
-        if (playPromise !== undefined) {
-          playPromise
-            .then(() => {
-              if (player.src.startsWith("data:") && (!globalAudioEngine || !globalAudioEngine.getState().isPlaying)) {
-                player.pause();
-              }
-            })
-            .catch(() => {});
-        }
       }
     }
 
@@ -698,16 +845,18 @@ class GlobalAudioEngine {
   private currentTrack: AudioTrack | null = null;
   private segments: SpeechSegment[] = [];
   private currentSegmentIndex: number = 0;
+  private playbackStatus: AudioPlaybackStatus = "READY";
   private isPlaying: boolean = false;
   private isFinished: boolean = false;
   private isLoading: boolean = false;
   private isMuted: boolean = false;
   private volume: number = 1.0;
-  private playbackRate: number = 1.0;
-  private activeVoiceId: string = "en-US-GuyNeural";
+  private playbackRate: number = 0.95;
+  private activeVoiceId: string = "";
   private activeGender: VoiceGender = "male";
-  private narratorName: string = "Guy (Microsoft Neural • Reverent US)";
+  private narratorName: string = "Narrator";
   private hasAutoplayBlock: boolean = false;
+  private errorMessage: string | null = null;
   private listeners: Set<(state: GlobalAudioState) => void> = new Set();
   private keepAliveInterval: any = null;
   private currentPlaySessionId: number = 0;
@@ -716,14 +865,29 @@ class GlobalAudioEngine {
     if (typeof window !== "undefined") {
       this.isMuted = getSavedMuteState();
       this.volume = getSavedAudioVolume();
-      this.activeVoiceId = getSavedVoiceId();
       this.activeGender = getSavedVoiceGender();
-      const serverVoice = SERVER_VOICES.find((v) => v.id === this.activeVoiceId);
-      if (serverVoice) {
-        this.narratorName = serverVoice.name;
-        this.activeGender = serverVoice.gender;
-      }
+      this.activeVoiceId = getSavedVoiceId();
+
+      const initialVoice = getNaturalBibleVoice(this.activeGender, this.activeVoiceId);
+      this.narratorName = initialVoice.voiceName;
+
       audioContextManager.subscribe(() => {
+        this.notify();
+      });
+
+      // Synchronize stop audio events across tabs and components
+      window.addEventListener("gtc_stop_audio", () => {
+        this.stop();
+      });
+
+      window.addEventListener("gtc_web_voices_loaded", () => {
+        const resolved = getNaturalBibleVoice(this.activeGender, this.activeVoiceId);
+        if (resolved.voice) {
+          this.narratorName = resolved.voice.name;
+          if (!this.activeVoiceId) {
+            this.activeVoiceId = resolved.voice.voiceURI || resolved.voice.name;
+          }
+        }
         this.notify();
       });
     }
@@ -746,6 +910,7 @@ class GlobalAudioEngine {
       currentSegmentIndex: this.currentSegmentIndex,
       totalSegments: total,
       progress,
+      playbackStatus: this.playbackStatus,
       isPlaying: this.isPlaying,
       isFinished: this.isFinished,
       isLoading: this.isLoading,
@@ -756,6 +921,7 @@ class GlobalAudioEngine {
       activeGender: this.activeGender,
       narratorName: this.narratorName,
       hasAutoplayBlock: this.hasAutoplayBlock,
+      errorMessage: this.errorMessage,
       currentVerseNum: currentSeg?.verseNum || null,
       audioContextStatus: audioContextManager.getStatus(),
       isAudioContextReady: audioContextManager.isReady(),
@@ -787,7 +953,7 @@ class GlobalAudioEngine {
   ): boolean {
     if (typeof window === "undefined") return false;
 
-    // Deduplication protection: If the exact same track is already loaded & playing/loading, do not interrupt and abort in-flight play
+    // Deduplication protection: If the exact same track is already active, don't restart needlessly
     const targetStartSeg = options?.startSegment !== undefined ? options.startSegment : 0;
     if (
       this.currentTrack &&
@@ -796,21 +962,28 @@ class GlobalAudioEngine {
       this.currentSegmentIndex === targetStartSeg &&
       Date.now() - this.currentPlaySessionId < 1500
     ) {
-      console.log("[GlobalAudioEngine] Track already playing/loading, skipping redundant start:", track.id);
+      console.log("[GlobalAudioEngine] Track already active, skipping redundant start:", track.id);
       return true;
     }
 
     this.currentPlaySessionId = Date.now();
     const sessionId = this.currentPlaySessionId;
 
-    // 1. Hardware unlock immediately within user touch/click event
+    // 1. Hardware unlock immediately within user touch/click gesture
     unlockAudio();
     this.isMuted = false;
     setSavedMuteState(false);
+    this.errorMessage = null;
 
     // 2. Build segments
     const segments = buildSegmentsFromTrack(track);
-    if (segments.length === 0) return false;
+    if (segments.length === 0) {
+      console.warn("[GlobalAudioEngine] Track has no valid speech segments to narrate:", track.id);
+      this.playbackStatus = "ERROR";
+      this.errorMessage = "No readable scripture text available for this passage.";
+      this.notify();
+      return false;
+    }
 
     // 3. Resolve target voice & gender
     const targetVoice = options?.voiceId || track.voiceId || this.activeVoiceId || getSavedVoiceId();
@@ -818,13 +991,8 @@ class GlobalAudioEngine {
     this.activeVoiceId = targetVoice;
     this.activeGender = targetGender;
 
-    const serverVoice = SERVER_VOICES.find((v) => v.id === targetVoice);
-    if (serverVoice) {
-      this.narratorName = serverVoice.name;
-    } else {
-      const natural = getNaturalBibleVoice(targetGender, targetVoice);
-      this.narratorName = natural.voiceName;
-    }
+    const natural = getNaturalBibleVoice(targetGender, targetVoice);
+    this.narratorName = natural.voiceName;
 
     if (options?.rate) {
       this.playbackRate = options.rate;
@@ -834,6 +1002,13 @@ class GlobalAudioEngine {
     this.segments = segments;
     this.isFinished = false;
     this.hasAutoplayBlock = false;
+    this.playbackStatus = "READY";
+    this.isLoading = true;
+    this.isPlaying = false;
+
+    console.log(
+      `[GlobalAudioEngine] 🎵 Starting Track: "${track.title}" • Voice="${this.activeVoiceId}" (${this.narratorName}) • ${segments.length} segments`
+    );
 
     // 4. Update MediaSession metadata for lock screen & notifications
     this.updateMediaSession(track);
@@ -856,10 +1031,7 @@ class GlobalAudioEngine {
   public pause() {
     this.isPlaying = false;
     this.isLoading = false;
-    const audio = this.getAudioElement();
-    if (audio) {
-      audio.pause();
-    }
+    this.playbackStatus = "PAUSED";
     if (typeof window !== "undefined" && "speechSynthesis" in window) {
       window.speechSynthesis.pause();
     }
@@ -870,14 +1042,14 @@ class GlobalAudioEngine {
     }
     this.stopKeepAlive();
     this.currentTrack?.onPlaybackStateChange?.(false);
+    console.log("[GlobalAudioEngine] ⏸️ Audio playback PAUSED.");
     this.notify();
   }
 
   public resume() {
     unlockAudio();
-    this.isPlaying = true;
-    this.hasAutoplayBlock = false;
     this.isMuted = false;
+    this.errorMessage = null;
     setSavedMuteState(false);
 
     if (typeof navigator !== "undefined" && "mediaSession" in navigator) {
@@ -891,30 +1063,20 @@ class GlobalAudioEngine {
       return;
     }
 
-    const audio = this.getAudioElement();
-    if (audio && audio.paused && audio.src) {
-      audio.muted = false;
-      try {
-        audio.volume = this.volume;
-      } catch {}
-      audio
-        .play()
-        .then(() => {
-          this.hasAutoplayBlock = false;
-          this.notify();
-        })
-        .catch(() => {
-          this.playCurrentSegment(this.currentSegmentIndex, this.currentPlaySessionId);
-        });
-    } else if (typeof window !== "undefined" && "speechSynthesis" in window && window.speechSynthesis.paused) {
-      window.speechSynthesis.resume();
-      this.startKeepAlive();
-      this.notify();
-    } else {
-      this.playCurrentSegment(this.currentSegmentIndex, this.currentPlaySessionId);
+    if (typeof window !== "undefined" && "speechSynthesis" in window) {
+      if (window.speechSynthesis.paused) {
+        window.speechSynthesis.resume();
+        this.playbackStatus = "READING";
+        this.isPlaying = true;
+        this.isLoading = false;
+        this.startKeepAlive();
+        this.currentTrack?.onPlaybackStateChange?.(true);
+        this.notify();
+        return;
+      }
     }
-    this.currentTrack?.onPlaybackStateChange?.(true);
-    this.notify();
+
+    this.playCurrentSegment(this.currentSegmentIndex, this.currentPlaySessionId);
   }
 
   public stop() {
@@ -922,6 +1084,8 @@ class GlobalAudioEngine {
     this.isPlaying = false;
     this.isLoading = false;
     this.isFinished = false;
+    this.playbackStatus = "READY";
+    this.errorMessage = null;
     if (typeof navigator !== "undefined" && "mediaSession" in navigator) {
       try {
         navigator.mediaSession.playbackState = "none";
@@ -932,21 +1096,11 @@ class GlobalAudioEngine {
     this.segments = [];
     this.currentSegmentIndex = 0;
 
-    const audio = this.getAudioElement();
-    if (audio) {
-      audio.pause();
-      audio.onended = null;
-      audio.onerror = null;
-      audio.onplaying = null;
-      try {
-        audio.removeAttribute("src");
-        audio.load();
-      } catch {}
-    }
     if (typeof window !== "undefined" && "speechSynthesis" in window) {
       window.speechSynthesis.cancel();
     }
     this.stopKeepAlive();
+    console.log("[GlobalAudioEngine] ⏹️ Audio playback STOPPED and reset.");
     this.notify();
   }
 
@@ -973,12 +1127,21 @@ class GlobalAudioEngine {
   public setVoice(newVoiceId: string) {
     this.activeVoiceId = newVoiceId;
     setSavedVoiceId(newVoiceId);
-    const serverVoice = SERVER_VOICES.find((v) => v.id === newVoiceId);
-    if (serverVoice) {
-      this.activeGender = serverVoice.gender;
-      this.narratorName = serverVoice.name;
-      setSavedVoiceGender(serverVoice.gender);
+    const resolved = getNaturalBibleVoice(this.activeGender, newVoiceId);
+    if (resolved.voice) {
+      this.narratorName = resolved.voice.name;
+      this.activeGender = resolved.gender;
     }
+    console.log(`[GlobalAudioEngine] Voice selector changed to: "${newVoiceId}" (${this.narratorName})`);
+
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(
+        new CustomEvent("gtc_voice_changed", {
+          detail: { voiceId: newVoiceId, gender: this.activeGender, name: this.narratorName }
+        })
+      );
+    }
+
     this.notify();
     if (this.isPlaying && this.segments.length > 0) {
       this.playCurrentSegment(this.currentSegmentIndex, this.currentPlaySessionId);
@@ -988,17 +1151,21 @@ class GlobalAudioEngine {
   public setGender(gender: VoiceGender) {
     this.activeGender = gender;
     setSavedVoiceGender(gender);
-    const defaultVoice = gender === "female" ? "en-US-JennyNeural" : "en-US-GuyNeural";
-    this.setVoice(defaultVoice);
+    if (typeof window !== "undefined" && "speechSynthesis" in window) {
+      const voices = getAvailableWebVoices();
+      const best = findBestVoiceForGender(voices, gender);
+      if (best) {
+        this.setVoice(best.voiceURI || best.name);
+      }
+    }
   }
 
   public setPlaybackRate(rate: number) {
     this.playbackRate = rate;
-    const audio = this.getAudioElement();
-    if (audio) {
-      audio.playbackRate = rate;
-    }
     this.notify();
+    if (this.isPlaying && this.segments.length > 0) {
+      this.playCurrentSegment(this.currentSegmentIndex, this.currentPlaySessionId);
+    }
   }
 
   public setVolume(vol: number) {
@@ -1012,11 +1179,6 @@ class GlobalAudioEngine {
       this.isMuted = false;
       setSavedMuteState(false);
     }
-    const audio = this.getAudioElement();
-    if (audio) {
-      audio.muted = this.isMuted;
-      audio.volume = this.isMuted ? 0 : clamped;
-    }
     this.notify();
   }
 
@@ -1024,41 +1186,63 @@ class GlobalAudioEngine {
     unlockAudio();
     this.isMuted = !this.isMuted;
     setSavedMuteState(this.isMuted);
-    const audio = this.getAudioElement();
-    if (audio) {
-      audio.muted = this.isMuted;
-      audio.volume = this.isMuted ? 0 : this.volume;
-      if (!this.isMuted && audio.paused && this.isPlaying) {
-        audio.play().catch(() => {});
-      }
-    }
-    if (!this.isMuted && this.hasAutoplayBlock) {
-      this.hasAutoplayBlock = false;
-      this.resume();
-    }
     this.notify();
+  }
+
+  private finishPlayback() {
+    console.log(`[GlobalAudioEngine] 🏁 Continuous narration completed all verses.`);
+    this.isPlaying = false;
+    this.isFinished = true;
+    this.isLoading = false;
+    this.playbackStatus = "FINISHED";
+    this.currentSegmentIndex = Math.max(0, this.segments.length - 1);
+    this.stopKeepAlive();
+    this.notify();
+    this.currentTrack?.onChapterComplete?.();
+    this.currentTrack?.onPlaybackStateChange?.(false);
   }
 
   private playCurrentSegment(index: number, sessionId: number) {
     if (sessionId !== this.currentPlaySessionId) return;
 
     if (index >= this.segments.length) {
-      this.isPlaying = false;
-      this.isFinished = true;
+      this.finishPlayback();
+      return;
+    }
+
+    if (typeof window === "undefined" || !("speechSynthesis" in window)) {
+      console.warn("[GlobalAudioEngine] window.speechSynthesis is not supported in this environment.");
+      this.playbackStatus = "ERROR";
+      this.errorMessage = "Speech synthesis is not supported in this browser.";
       this.isLoading = false;
-      this.currentSegmentIndex = Math.max(0, this.segments.length - 1);
-      this.stopKeepAlive();
+      this.isPlaying = false;
       this.notify();
-      this.currentTrack?.onChapterComplete?.();
-      this.currentTrack?.onPlaybackStateChange?.(false);
+      return;
+    }
+
+    const currentSeg = this.segments[index];
+    const rawText = (currentSeg.text || "").trim();
+    const formattedText = formatBibleTextForSpeech(rawText);
+
+    if (!formattedText) {
+      console.warn(`[GlobalAudioEngine] Segment ${index + 1} text is empty, advancing.`);
+      if (index + 1 < this.segments.length) {
+        this.playCurrentSegment(index + 1, sessionId);
+      } else {
+        this.finishPlayback();
+      }
       return;
     }
 
     this.currentSegmentIndex = index;
     this.isFinished = false;
-    this.isPlaying = true;
+    this.errorMessage = null;
+
+    // Do NOT fake playing state: accurate READY/Loading status before speech starts
+    this.playbackStatus = "READY";
     this.isLoading = true;
-    const currentSeg = this.segments[index];
+    this.isPlaying = false;
+    this.notify();
 
     // Maintain iOS Lock Screen media playback permissions
     if (typeof navigator !== "undefined" && "mediaSession" in navigator) {
@@ -1067,219 +1251,98 @@ class GlobalAudioEngine {
       } catch {}
     }
 
-    // Verse highlight notification
-    if (currentSeg.verseNum && this.currentTrack?.onVerseChange) {
-      this.currentTrack.onVerseChange(currentSeg.verseNum);
-    }
-    this.currentTrack?.onPlaybackStateChange?.(true);
-    this.notify();
-
-    // Cancel speech synthesis if active
-    if (typeof window !== "undefined" && "speechSynthesis" in window) {
+    try {
+      // Cancel previous utterance safely before starting new
       window.speechSynthesis.cancel();
       this.stopKeepAlive();
-    }
 
-    // 1. Browser SpeechSynthesis voice branch
-    if (this.activeVoiceId.startsWith("browser:")) {
-      this.playWithSpeechSynthesis(currentSeg.text, index, sessionId);
-      return;
-    }
+      const utterance = new SpeechSynthesisUtterance(formattedText);
 
-    // 2. Server Neural Voice via Master HTMLAudioElement
-    try {
-      const audio = this.getAudioElement();
-      if (!audio) {
-        this.playWithSpeechSynthesis(currentSeg.text, index, sessionId);
-        return;
-      }
-
-      bluetoothAudioService.registerMediaElement(audio);
-
-      const ttsUrl = this.currentTrack?.audioSrc && this.segments.length === 1
-        ? this.currentTrack.audioSrc
-        : getAudioTTSUrl(currentSeg.text, this.activeVoiceId, this.activeGender);
-
-      const hasValidOrigin = typeof window !== "undefined" && 
-        Boolean(window.location?.origin && window.location.origin !== "null" && window.location.origin.startsWith("http"));
-      const baseUrl = hasValidOrigin ? window.location.origin : "";
-      const absoluteTtsUrl = (ttsUrl.startsWith("http://") || ttsUrl.startsWith("https://") || ttsUrl.startsWith("data:"))
-        ? ttsUrl
-        : (baseUrl ? `${baseUrl}${ttsUrl}` : ttsUrl);
-
-      try {
-        audio.playbackRate = this.playbackRate;
-      } catch {}
-      audio.muted = this.isMuted;
-      try {
-        audio.volume = this.isMuted ? 0 : this.volume;
-      } catch {}
-
-      audio.onended = () => {
-        if (this.isPlaying && this.currentPlaySessionId === sessionId) {
-          this.playCurrentSegment(index + 1, sessionId);
-        }
-      };
-
-      audio.onerror = (e) => {
-        if (!audio.src || audio.src === window.location.href || audio.src.endsWith("/")) {
-          return;
-        }
-        console.warn(`[GlobalAudioEngine] Master audio notice on segment ${index}:`, e);
-        if (this.currentPlaySessionId === sessionId) {
-          // If the user explicitly requested a system/browser voice, route through speechSynthesis
-          if (this.activeVoiceId.startsWith("browser:")) {
-            this.playWithSpeechSynthesis(currentSeg.text, index, sessionId);
-          } else {
-            // For neural voices: do NOT hijack with robotic phone speech synthesis!
-            // Attempt single retry with cache-buster if not already retried
-            if (!audio.src.includes("_retry=")) {
-              console.log(`[GlobalAudioEngine] Retrying segment ${index} with fresh stream...`);
-              const retryUrl = `${absoluteTtsUrl}${absoluteTtsUrl.includes("?") ? "&" : "?"}_retry=${Date.now()}`;
-              audio.src = retryUrl;
-              const p = audio.play();
-              if (p !== undefined) {
-                p.catch(() => {
-                  this.isLoading = false;
-                  this.notify();
-                });
-              }
-            } else {
-              this.isLoading = false;
-              this.notify();
-            }
-          }
-        }
-      };
-
-      audio.onplaying = () => {
-        if (this.currentPlaySessionId === sessionId) {
-          this.isLoading = false;
-          this.hasAutoplayBlock = false;
-          this.notify();
-        }
-      };
-
-      // Only reassign src if it differs from current element src
-      if (audio.src !== absoluteTtsUrl && audio.currentSrc !== absoluteTtsUrl) {
-        audio.src = absoluteTtsUrl;
-      }
-      try {
-        if (audio.currentTime !== 0 && audio.readyState > 0) {
-          audio.currentTime = 0;
-        }
-      } catch {}
-
-      const playPromise = audio.play();
-      if (playPromise !== undefined) {
-        playPromise
-          .then(() => {
-            if (this.currentPlaySessionId === sessionId) {
-              this.isLoading = false;
-              this.hasAutoplayBlock = false;
-              this.notify();
-            }
-          })
-          .catch((err) => {
-            // AbortError is benign and expected when interrupted by user or track change
-            if (err?.name === "AbortError") {
-              return;
-            }
-            console.warn("[GlobalAudioEngine] Audio play notice:", err);
-            if (err?.name === "NotAllowedError") {
-              this.hasAutoplayBlock = true;
-              this.notify();
-              audioContextManager.bindUserInteractionListeners();
-              const resumeOnTouch = () => {
-                audioContextManager.ensureRunning().catch(() => {});
-                audio.play().then(() => {
-                  this.hasAutoplayBlock = false;
-                  this.notify();
-                }).catch(() => {});
-                window.removeEventListener("touchstart", resumeOnTouch, true);
-                window.removeEventListener("pointerdown", resumeOnTouch, true);
-                window.removeEventListener("click", resumeOnTouch, true);
-              };
-              window.addEventListener("touchstart", resumeOnTouch, { once: true, passive: true, capture: true });
-              window.addEventListener("pointerdown", resumeOnTouch, { once: true, passive: true, capture: true });
-              window.addEventListener("click", resumeOnTouch, { once: true, passive: true, capture: true });
-            } else {
-              // Only fallback to speech synthesis if user chose a browser voice
-              if (this.activeVoiceId.startsWith("browser:")) {
-                this.playWithSpeechSynthesis(currentSeg.text, index, sessionId);
-              } else {
-                this.isLoading = false;
-                this.notify();
-              }
-            }
-          });
-      }
-
-      // Prefetch next segment in browser HTTP cache
-      if (index + 1 < this.segments.length) {
-        const nextSeg = this.segments[index + 1];
-        const nextUrl = getAudioTTSUrl(nextSeg.text, this.activeVoiceId, this.activeGender);
-        fetch(nextUrl, { cache: "force-cache" }).catch(() => {});
-      }
-    } catch (e) {
-      this.playWithSpeechSynthesis(currentSeg.text, index, sessionId);
-    }
-  }
-
-  private playWithSpeechSynthesis(text: string, index: number, sessionId: number) {
-    if (typeof window === "undefined" || !("speechSynthesis" in window)) {
-      this.isLoading = false;
-      this.notify();
-      return;
-    }
-
-    try {
-      // On iOS Safari: calling cancel() immediately before speak() cancels the newly queued utterance.
-      // Only cancel if speaking was active.
-      if (window.speechSynthesis.speaking || window.speechSynthesis.pending) {
-        window.speechSynthesis.cancel();
-      }
-      if (window.speechSynthesis.paused) {
-        window.speechSynthesis.resume();
-      }
-
-      const utterance = new SpeechSynthesisUtterance(text);
+      // Resolve voice and ensure it is assigned directly to utterance.voice
       const resolved = getNaturalBibleVoice(this.activeGender, this.activeVoiceId);
-      if (resolved.voice) utterance.voice = resolved.voice;
-      utterance.pitch = resolved.pitch;
-      utterance.rate = this.playbackRate || resolved.rate;
+      if (resolved.voice) {
+        utterance.voice = resolved.voice;
+        this.narratorName = resolved.voice.name;
+      }
+      utterance.pitch = resolved.pitch || 1.0;
+      utterance.rate = this.playbackRate || resolved.rate || 0.95;
+      utterance.volume = this.isMuted ? 0 : this.volume;
 
       utterance.onstart = () => {
-        if (this.currentPlaySessionId === sessionId) {
-          this.isLoading = false;
-          this.hasAutoplayBlock = false;
-          this.startKeepAlive();
-          this.notify();
+        if (this.currentPlaySessionId !== sessionId) return;
+        console.log(
+          `[GlobalAudioEngine:WebSpeech] 🎙️ Reading aloud segment ${index + 1}/${this.segments.length}: ` +
+          `"${formattedText.substring(0, 45)}..." | Voice: ${utterance.voice?.name || "System Default"}`
+        );
+        this.playbackStatus = "READING";
+        this.isPlaying = true;
+        this.isLoading = false;
+        this.hasAutoplayBlock = false;
+        this.errorMessage = null;
+        this.startKeepAlive();
+        this.notify();
+
+        if (currentSeg.verseNum && this.currentTrack?.onVerseChange) {
+          this.currentTrack.onVerseChange(currentSeg.verseNum);
         }
+        this.currentTrack?.onPlaybackStateChange?.(true);
+      };
+
+      utterance.onpause = () => {
+        if (this.currentPlaySessionId !== sessionId) return;
+        this.playbackStatus = "PAUSED";
+        this.isPlaying = false;
+        this.notify();
+        this.currentTrack?.onPlaybackStateChange?.(false);
+      };
+
+      utterance.onresume = () => {
+        if (this.currentPlaySessionId !== sessionId) return;
+        this.playbackStatus = "READING";
+        this.isPlaying = true;
+        this.notify();
+        this.currentTrack?.onPlaybackStateChange?.(true);
       };
 
       utterance.onend = () => {
         this.stopKeepAlive();
-        if (this.isPlaying && this.currentPlaySessionId === sessionId) {
-          this.playCurrentSegment(index + 1, sessionId);
+        if (this.currentPlaySessionId === sessionId) {
+          if (index + 1 < this.segments.length) {
+            this.playCurrentSegment(index + 1, sessionId);
+          } else {
+            this.finishPlayback();
+          }
         }
       };
 
       utterance.onerror = (e) => {
         this.stopKeepAlive();
-        if (e.error === "interrupted" || e.error === "canceled") return;
-        this.isLoading = false;
-        this.notify();
+        if (e.error === "canceled" || e.error === "interrupted") {
+          return;
+        }
+        console.error("[GlobalAudioEngine:WebSpeech] Utterance error:", e);
+        if (this.currentPlaySessionId === sessionId) {
+          this.playbackStatus = "ERROR";
+          this.errorMessage = `Speech synthesis error: ${e.error || "playback failed"}`;
+          this.isLoading = false;
+          this.isPlaying = false;
+          this.notify();
+          this.currentTrack?.onPlaybackStateChange?.(false);
+        }
       };
 
-      // 30ms timeout avoids iOS Safari cancel() race condition
+      // 25ms delay avoids WebKit/Blink cancel-speak race condition
       setTimeout(() => {
         if (this.currentPlaySessionId === sessionId) {
           window.speechSynthesis.speak(utterance);
         }
-      }, 30);
-    } catch (err) {
+      }, 25);
+    } catch (err: any) {
+      console.error("[GlobalAudioEngine:WebSpeech] Failed to speak segment:", err);
+      this.playbackStatus = "ERROR";
+      this.errorMessage = err?.message || "Speech synthesis failed.";
       this.isLoading = false;
+      this.isPlaying = false;
       this.notify();
     }
   }
@@ -1335,9 +1398,11 @@ export function startSynchronousAudioPlayback(
   overrideVoiceId?: string,
   overrideGender?: VoiceGender
 ): boolean {
+  const chosenVoice = overrideVoiceId || track.voiceId || getSavedVoiceId();
+  const chosenGender = overrideGender || getSavedVoiceGender();
   return globalAudioEngine.playTrack(track, {
-    voiceId: overrideVoiceId,
-    gender: overrideGender,
+    voiceId: chosenVoice,
+    gender: chosenGender,
   });
 }
 
@@ -1371,28 +1436,6 @@ if (typeof window !== "undefined" && !hasSetupGlobalUnlock) {
   window.addEventListener("keydown", userInteractionTrigger, { passive: true });
   window.addEventListener("touchstart", userInteractionTrigger, { passive: true });
 }
-
-
-
-// Banned robotic voice names in browser SpeechSynthesis
-export const BANNED_VOICE_NAMES = [
-  "daniel",
-  "alex",
-  "fred",
-  "zarvox",
-  "trinoids",
-  "whisper",
-  "cellos",
-  "bad news",
-  "organ",
-  "deranged",
-  "bells",
-  "boing",
-  "bubbles",
-  "albert",
-  "junior",
-  "ralph"
-];
 
 export const PREFERRED_MALE_VOICES = [
   "Microsoft Guy Online (Natural)",
@@ -1582,31 +1625,10 @@ export function getNaturalBibleVoice(
     }
   }
 
-  // 3. Fallback: select best voice for gender
-  const msVoices = voicePool.filter(
-    (v) => v.name.toLowerCase().includes("microsoft") || v.voiceURI.toLowerCase().includes("microsoft")
-  );
-  const poolToUse = msVoices.length > 0 ? msVoices : voicePool;
+  // 3. Fallback: select best natural browser voice for gender
+  const fallbackMatch = findBestVoiceForGender(voicePool, gender);
 
-  const fallbackMatch =
-    poolToUse.find((v) => {
-      const lower = (v.name + " " + v.voiceURI).toLowerCase();
-      if (gender === "male") {
-        return (
-          lower.includes("guy") ||
-          lower.includes("christopher") ||
-          lower.includes("eric") ||
-          lower.includes("david") ||
-          lower.includes("male")
-        );
-      } else {
-        return lower.includes("jenny") || lower.includes("aria") || lower.includes("zira") || lower.includes("female");
-      }
-    }) ||
-    poolToUse.find((v) => v.lang.startsWith("en")) ||
-    poolToUse[0];
-
-  console.warn(`[SpeechSynthesis] Requested voice "${rawTargetVoiceId}" NOT found in browser voices. Fallback used:`, {
+  console.warn(`[SpeechSynthesis] Requested voice "${rawTargetVoiceId}" NOT directly found in browser voices. Fallback used:`, {
     requestedVoice: rawTargetVoiceId,
     fallbackVoice: fallbackMatch?.name || "System default",
     lang: fallbackMatch?.lang,
@@ -1618,7 +1640,7 @@ export function getNaturalBibleVoice(
     pitch: gender === "male" ? 0.94 : 1.02,
     rate: 0.94,
     gender,
-    voiceName: fallbackMatch ? fallbackMatch.name : (gender === "male" ? "Guy (Natural Male)" : "Jenny (Natural Female)"),
+    voiceName: fallbackMatch ? fallbackMatch.name : (gender === "male" ? "Natural Male" : "Natural Female"),
     requestedVoice: rawTargetVoiceId,
     actualVoiceName: fallbackMatch ? fallbackMatch.name : "System Default",
     fallbackUsed: true,

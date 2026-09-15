@@ -46,9 +46,9 @@ import { Storage } from "../lib/storage";
 import { AudioTrack } from "./AudioPlayerBar";
 import {
   getNaturalBibleVoice,
+  getAvailableWebVoices,
+  findBestVoiceForGender,
   BANNED_VOICE_NAMES,
-  getAudioTTSUrl,
-  getMicrosoftTTSUrl,
   getSavedVoiceGender,
   getSavedVoiceId,
   setSavedVoiceId,
@@ -56,7 +56,6 @@ import {
   setSavedMuteState,
   unlockAudio,
   startSynchronousAudioPlayback,
-  SERVER_VOICES,
   globalAudioEngine
 } from "../lib/audioVoiceHelper";
 
@@ -177,42 +176,38 @@ export const BibleHub: React.FC<BibleHubProps> = ({
     setChapterCompleted(false);
   }, [selectedBook, selectedChapter]);
 
-  // Load voices for Audio Bible (prioritizing Microsoft natural voices and filtering banned voices)
+  // Load voices for Audio Bible via browser Web Speech API
   useEffect(() => {
     const loadVoices = () => {
       if (typeof window !== "undefined" && "speechSynthesis" in window) {
-        const voices = window.speechSynthesis.getVoices();
+        const voices = getAvailableWebVoices();
         if (voices.length > 0) {
-          const englishVoices = voices.filter((v) => {
-            const lower = (v.name + " " + v.voiceURI).toLowerCase();
-            return v.lang.startsWith("en") && !BANNED_VOICE_NAMES.some((banned) => lower.includes(banned));
-          });
-          // Sort with Microsoft Natural voices at the top
-          englishVoices.sort((a, b) => {
-            const aLower = a.name.toLowerCase();
-            const bLower = b.name.toLowerCase();
-            const aMs = aLower.includes("microsoft") ? 2 : (aLower.includes("natural") ? 1 : 0);
-            const bMs = bLower.includes("microsoft") ? 2 : (bLower.includes("natural") ? 1 : 0);
-            return bMs - aMs;
-          });
-          setAvailableVoices(englishVoices.length > 0 ? englishVoices : voices);
-          
-          // Ensure default voice is never assigned a local phone system voice
+          setAvailableVoices(voices);
+
           const savedVoice = getSavedVoiceId();
           if (!savedVoice || !selectedVoiceURI) {
-            setSelectedVoiceURI("en-US-GuyNeural");
-            setSavedVoiceId("en-US-GuyNeural");
+            const best = findBestVoiceForGender(voices, getSavedVoiceGender());
+            const chosen = best ? (best.voiceURI || best.name) : voices[0]?.name || "";
+            setSelectedVoiceURI(chosen);
+            setSavedVoiceId(chosen);
+          } else {
+            const exists = voices.some((v) => v.voiceURI === savedVoice || v.name === savedVoice);
+            if (exists) {
+              setSelectedVoiceURI(savedVoice);
+            }
           }
         }
       }
     };
 
     loadVoices();
+    window.addEventListener("gtc_web_voices_loaded", loadVoices);
     if (typeof window !== "undefined" && "speechSynthesis" in window) {
       window.speechSynthesis.onvoiceschanged = loadVoices;
     }
 
     return () => {
+      window.removeEventListener("gtc_web_voices_loaded", loadVoices);
       if (typeof window !== "undefined" && "speechSynthesis" in window) {
         window.speechSynthesis.cancel();
       }
@@ -1188,7 +1183,7 @@ export const BibleHub: React.FC<BibleHubProps> = ({
                   <div className="flex items-center justify-between mb-1">
                     <label className="text-[11px] font-bold text-[#7A7468]">Narrator Voice:</label>
                     <span className="text-[9px] bg-[#2D2D2D] text-[#C5A059] px-1.5 py-0.5 rounded-full font-bold">
-                      Natural Neural & AI
+                      Web Speech API
                     </span>
                   </div>
                   <select
@@ -1203,28 +1198,16 @@ export const BibleHub: React.FC<BibleHubProps> = ({
                     }}
                     className="w-full p-1.5 bg-white border border-[#E5E0D5] rounded-lg text-xs font-medium focus:outline-none focus:border-[#C5A059]"
                   >
-                    <optgroup label="Microsoft Neural Voices (Recommended)">
-                      {SERVER_VOICES.filter((v) => v.provider === "microsoft").map((v) => (
-                        <option key={v.id} value={v.id}>
-                          {v.name}
+                    {availableVoices.length > 0 ? (
+                      availableVoices.map((voice) => (
+                        <option key={voice.voiceURI || voice.name} value={voice.voiceURI || voice.name}>
+                          {voice.name} ({voice.lang})
                         </option>
-                      ))}
-                    </optgroup>
-                    <optgroup label="Gemini AI Voices">
-                      {SERVER_VOICES.filter((v) => v.provider === "gemini").map((v) => (
-                        <option key={v.id} value={v.id}>
-                          {v.name}
-                        </option>
-                      ))}
-                    </optgroup>
-                    {availableVoices.length > 0 && (
-                      <optgroup label="System / Browser Voices">
-                        {availableVoices.map((voice) => (
-                          <option key={voice.voiceURI} value={`browser:${voice.voiceURI}`}>
-                            {voice.name} ({voice.lang})
-                          </option>
-                        ))}
-                      </optgroup>
+                      ))
+                    ) : (
+                      <option value={selectedVoiceURI || "default"}>
+                        Default Browser Voice
+                      </option>
                     )}
                   </select>
                 </div>
