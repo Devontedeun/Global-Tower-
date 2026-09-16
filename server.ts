@@ -212,47 +212,6 @@ app.post("/api/admin/watchdog/resolve", (req, res) => {
   }
 });
 
-// Resilient Scripture TTS Helper - Uses high-definition neural narration only (zero robotic fallback)
-async function synthesizeReverentNeuralTTS(
-  text: string,
-  voice: string,
-  rate = "-4%"
-): Promise<Buffer | null> {
-  let tts: MsEdgeTTS | null = null;
-  try {
-    tts = new MsEdgeTTS();
-    await tts.setMetadata(voice, OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3);
-    const { audioStream } = tts.toStream(text, { rate, pitch: "+0Hz" });
-    const chunks: Buffer[] = [];
-    return new Promise<Buffer | null>((resolve) => {
-      const timeout = setTimeout(() => {
-        try { tts?.close(); } catch {}
-        resolve(null);
-      }, 10000);
-
-      audioStream.on("data", (c: Buffer) => chunks.push(c));
-      audioStream.on("end", () => {
-        clearTimeout(timeout);
-        try { tts?.close(); } catch {}
-        resolve(Buffer.concat(chunks));
-      });
-      audioStream.on("error", () => {
-        clearTimeout(timeout);
-        try { tts?.close(); } catch {}
-        resolve(null);
-      });
-    });
-  } catch {
-    try { tts?.close(); } catch {}
-    return null;
-  }
-}
-
-// Comprehensive Text-to-Speech Engine
-// Zero-API scripture voice synthesis engine with seamless caching and resilient fallback
-const ttsAudioCache = new Map<string, Buffer>();
-const MAX_TTS_CACHE_SIZE = 500;
-
 // Helper to wrap raw 24kHz 16-bit Mono PCM in a standard RIFF/WAVE header
 function pcmToWav(pcmBuffer: Buffer, sampleRate = 24000, channels = 1, bitsPerSample = 16): Buffer {
   const byteRate = sampleRate * channels * (bitsPerSample / 8);
@@ -275,6 +234,159 @@ function pcmToWav(pcmBuffer: Buffer, sampleRate = 24000, channels = 1, bitsPerSa
 
   return Buffer.concat([header, pcmBuffer]);
 }
+
+// Watchdog Dedicated 5-Minute Ping & Diagnostics
+let lastWatchdogPingTime = Date.now();
+let watchdogPingCount = 0;
+
+app.options("/api/admin/watchdog/ping", (req, res) => {
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Cache-Control, Pragma");
+  res.sendStatus(204);
+});
+
+app.all("/api/admin/watchdog/ping", (req, res) => {
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate, max-age=0");
+  res.setHeader("Pragma", "no-cache");
+  lastWatchdogPingTime = Date.now();
+  watchdogPingCount++;
+  console.log(`[Watchdog:Ping] 5-minute heartbeat received (#${watchdogPingCount}) from client: ${new Date().toISOString()}`);
+  res.json({
+    pong: true,
+    pingCount: watchdogPingCount,
+    lastPingTime: new Date(lastWatchdogPingTime).toISOString(),
+    uptimeSeconds: Math.floor(process.uptime()),
+    expectedIntervalMs: 300000,
+    intervalMinutes: 5,
+    status: "healthy",
+  });
+});
+
+// Periodic server-side 5-minute watchdog heartbeat
+setInterval(() => {
+  const uptime = Math.floor(process.uptime());
+  const mem = process.memoryUsage ? Math.round(process.memoryUsage().rss / (1024 * 1024)) : 0;
+  console.log(`[Watchdog:ServerHeartbeat] 5-minute health check: uptime=${uptime}s, rss=${mem}MB, ai=${process.env.GEMINI_API_KEY ? "active" : "standby"}`);
+}, 5 * 60 * 1000);
+
+// Resilient Gemini AI TTS synthesizer using latest gemini-3.1-flash-tts-preview
+async function synthesizeGeminiTTS(text: string, voiceName: string, maxRetries = 2): Promise<Buffer | null> {
+  if (!process.env.GEMINI_API_KEY) return null;
+  const ai = getGeminiClient();
+  if (!ai) return null;
+
+  try {
+    const cleanVoice = voiceName.replace(/^gemini:/i, "").trim();
+    const allowed = ["Puck", "Charon", "Kore", "Fenrir", "Aoede"];
+    const resolvedVoice = allowed.find(
+      (v) => v.toLowerCase() === cleanVoice.toLowerCase()
+    ) || (cleanVoice.toLowerCase().includes("female") ? "Kore" : "Puck");
+
+    // Clean text for natural biblical narration
+    const cleanText = text
+      .replace(/\[\d+\]/g, "")
+      .replace(/\(\d+\)/g, "")
+      .replace(/[*_#~]/g, "")
+      .trim();
+
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        const geminiRes = await ai.models.generateContent({
+          model: "gemini-3.1-flash-tts-preview",
+          contents: [{ parts: [{ text: cleanText }] }],
+          config: {
+            responseModalities: ["AUDIO"],
+            speechConfig: {
+              voiceConfig: {
+                prebuiltVoiceConfig: { voiceName: resolvedVoice },
+              },
+            },
+          },
+        });
+
+        const b64Data = geminiRes.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+        if (b64Data) {
+          const rawPcm = Buffer.from(b64Data, "base64");
+          return pcmToWav(rawPcm, 24000, 1, 16);
+        }
+      } catch (err: any) {
+        const errMsg = err?.message || String(err);
+        const isRateLimit = errMsg.includes("429") || errMsg.includes("RESOURCE_EXHAUSTED") || errMsg.includes("Quota exceeded");
+        console.warn(`[TTS:Gemini] Synthesis attempt ${attempt + 1}/${maxRetries + 1} for voice "${resolvedVoice}": ${errMsg}`);
+
+        if (attempt < maxRetries) {
+          const delay = isRateLimit ? (attempt + 1) * 2000 : 1000;
+          await new Promise((r) => setTimeout(r, delay));
+        } else {
+          return null;
+        }
+      }
+    }
+    return null;
+  } catch (err: any) {
+    console.warn(`[TTS:Gemini] Synthesis failure notice: ${err?.message || err}`);
+    return null;
+  }
+}
+
+// Resilient Scripture TTS Helper - Uses high-definition neural narration only (zero robotic fallback)
+async function synthesizeReverentNeuralTTS(
+  text: string,
+  voice: string,
+  rate = "-4%"
+): Promise<{ buffer: Buffer; isWav: boolean; engine: string } | null> {
+  let tts: MsEdgeTTS | null = null;
+  try {
+    tts = new MsEdgeTTS();
+    await tts.setMetadata(voice, OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3);
+    const { audioStream } = tts.toStream(text, { rate, pitch: "+0Hz" });
+    const chunks: Buffer[] = [];
+    const edgeResult = await new Promise<Buffer | null>((resolve) => {
+      const timeout = setTimeout(() => {
+        try { tts?.close(); } catch {}
+        resolve(null);
+      }, 7000);
+
+      audioStream.on("data", (c: Buffer) => chunks.push(c));
+      audioStream.on("end", () => {
+        clearTimeout(timeout);
+        try { tts?.close(); } catch {}
+        resolve(Buffer.concat(chunks));
+      });
+      audioStream.on("error", () => {
+        clearTimeout(timeout);
+        try { tts?.close(); } catch {}
+        resolve(null);
+      });
+    });
+
+    if (edgeResult && edgeResult.length > 0) {
+      return { buffer: edgeResult, isWav: false, engine: "Natural-Voice" };
+    }
+  } catch {
+    try { tts?.close(); } catch {}
+  }
+
+  // Backup: if MsEdgeTTS fails, synthesize seamlessly via Gemini AI TTS
+  if (process.env.GEMINI_API_KEY) {
+    const isFemale = /jenny|michelle|emma|female/i.test(voice);
+    const geminiVoice = isFemale ? "Kore" : "Puck";
+    console.log(`[TTS:Fallback] MsEdgeTTS unavailable, synthesizing via Gemini AI TTS ("${geminiVoice}")...`);
+    const geminiBuf = await synthesizeGeminiTTS(text, geminiVoice);
+    if (geminiBuf && geminiBuf.length > 0) {
+      return { buffer: geminiBuf, isWav: true, engine: "Gemini-TTS" };
+    }
+  }
+
+  return null;
+}
+
+// Comprehensive Text-to-Speech Engine
+// Zero-API scripture voice synthesis engine with seamless caching and resilient fallback
+const ttsAudioCache = new Map<string, Buffer>();
+const MAX_TTS_CACHE_SIZE = 500;
 
 function sendAudioWithRange(
   req: express.Request,
@@ -363,11 +475,14 @@ app.get("/api/tts/voices", (req, res) => {
     status: "ok",
     voices: [
       { id: "en-US-GuyNeural", name: "Guy", gender: "male", provider: "standard", description: "Deep, solemn, reverent scripture narrator" },
+      { id: "en-US-JennyNeural", name: "Jenny", gender: "female", provider: "standard", description: "Solemn, reverent, mature female reader" },
+      { id: "gemini:Puck", name: "Puck (Gemini AI)", gender: "male", provider: "gemini", description: "Rich, human-like solemn baritone AI narrator" },
+      { id: "gemini:Kore", name: "Kore (Gemini AI)", gender: "female", provider: "gemini", description: "Peaceful, devotional contemplative AI reader" },
+      { id: "gemini:Charon", name: "Charon (Gemini AI)", gender: "male", provider: "gemini", description: "Resonant, authoritative classical cathedral AI voice" },
       { id: "en-US-ChristopherNeural", name: "Christopher", gender: "male", provider: "standard", description: "Resonant, authoritative, dignified delivery" },
       { id: "en-US-EricNeural", name: "Eric", gender: "male", provider: "standard", description: "Calm, contemplative, prayerful cadence" },
       { id: "en-US-BrianNeural", name: "Brian", gender: "male", provider: "standard", description: "Steady, grounded scripture reader" },
       { id: "en-GB-RyanNeural", name: "Ryan", gender: "male", provider: "standard", description: "Distinguished, classical cathedral delivery" },
-      { id: "en-US-JennyNeural", name: "Jenny", gender: "female", provider: "standard", description: "Solemn, reverent, mature female reader" },
       { id: "en-US-MichelleNeural", name: "Michelle", gender: "female", provider: "standard", description: "Gentle, peaceful, quiet devotional cadence" },
       { id: "en-US-EmmaNeural", name: "Emma", gender: "female", provider: "standard", description: "Measured, clear, dignified narrative delivery" },
     ],
@@ -399,13 +514,24 @@ app.get("/api/tts", async (req, res) => {
     const requestedVoice = ((req.query.voice as string) || "").trim();
     const truncatedText = rawText.length > 2000 ? rawText.substring(0, 2000) : rawText;
 
-    // 1. Check if Gemini AI TTS is requested
-    const isGeminiRequested =
-      requestedVoice.toLowerCase().startsWith("gemini:") ||
-      ["puck", "charon", "kore", "fenrir", "zephyr", "aoede"].includes(requestedVoice.toLowerCase());
+    // 1. Primary High-Fidelity Scripture Synthesis: Gemini AI TTS
+    // Uses Google's official human-grade neural TTS engine (guaranteed zero cloud container blocking)
+    if (process.env.GEMINI_API_KEY) {
+      let geminiVoiceName = "Puck"; // Default rich baritone narrator
+      const lowerReq = requestedVoice.toLowerCase();
 
-    if (isGeminiRequested && process.env.GEMINI_API_KEY) {
-      const geminiVoiceName = requestedVoice.replace(/^gemini:/i, "") || (gender === "female" ? "Kore" : "Puck");
+      if (lowerReq.includes("kore") || lowerReq.includes("jenny") || lowerReq.includes("michelle") || lowerReq.includes("emma") || gender === "female") {
+        geminiVoiceName = "Kore";
+      } else if (lowerReq.includes("charon") || lowerReq.includes("ryan") || lowerReq.includes("cathedral")) {
+        geminiVoiceName = "Charon";
+      } else if (lowerReq.includes("fenrir")) {
+        geminiVoiceName = "Fenrir";
+      } else if (lowerReq.includes("aoede")) {
+        geminiVoiceName = "Aoede";
+      } else {
+        geminiVoiceName = "Puck";
+      }
+
       const geminiCacheKey = `gemini:${geminiVoiceName}:${truncatedText}`;
 
       if (ttsAudioCache.has(geminiCacheKey)) {
@@ -414,47 +540,42 @@ app.get("/api/tts", async (req, res) => {
       }
 
       try {
-        const ai = getGeminiClient();
-        const geminiRes = await ai.models.generateContent({
-          model: "gemini-3.1-flash-tts-preview",
-          contents: [{ parts: [{ text: truncatedText }] }],
-          config: {
-            responseModalities: ["AUDIO"],
-            speechConfig: {
-              voiceConfig: {
-                prebuiltVoiceConfig: { voiceName: geminiVoiceName },
-              },
-            },
-          },
-        });
-
-        const b64Data = geminiRes.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-        if (b64Data) {
-          const rawPcm = Buffer.from(b64Data, "base64");
-          const wavBuffer = pcmToWav(rawPcm, 24000, 1, 16);
-
+        const wavBuffer = await synthesizeGeminiTTS(truncatedText, geminiVoiceName);
+        if (wavBuffer && wavBuffer.length > 0) {
           if (ttsAudioCache.size >= MAX_TTS_CACHE_SIZE) {
             const firstKey = ttsAudioCache.keys().next().value;
             if (firstKey) ttsAudioCache.delete(firstKey);
           }
           ttsAudioCache.set(geminiCacheKey, wavBuffer);
 
-          console.log(`[TTS:Gemini] Synthesized "${geminiVoiceName}", size=${wavBuffer.length} bytes`);
+          console.log(`[TTS:Gemini] Synthesized human voice "${geminiVoiceName}", size=${wavBuffer.length} bytes`);
           return sendAudioWithRange(req, res, wavBuffer, geminiVoiceName, false, "audio/wav", "Gemini-TTS", requestedVoice, false);
+        } else {
+          console.warn(`[TTS] Gemini TTS returned empty buffer for "${geminiVoiceName}". Pacing response.`);
+          return res.status(429).json({
+            error: "Gemini AI neural voice is pacing requests. Please retry in a moment.",
+            retryAfter: 3
+          });
         }
       } catch (geminiErr: any) {
-        console.warn(`[TTS] Gemini TTS notice: ${geminiErr?.message || geminiErr}. Falling back to default narrator voice.`);
-        // Fall through to voice synthesis below
+        console.warn(`[TTS] Gemini TTS notice: ${geminiErr?.message || geminiErr}`);
+        return res.status(503).json({
+          error: "Gemini AI voice temporarily unavailable. Please retry.",
+          retryAfter: 3
+        });
       }
     }
 
-    // 2. High-Fidelity Scripture Voice Synthesis Pipeline (Zero-API Required)
+    // 2. Secondary Engine: Studio Edge Neural (Fallback if Gemini is unavailable)
     let selectedVoice = requestedVoice;
     let fallbackUsed = false;
 
-    // Clean voice identifier if it has prefixes like "browser:"
+    // Clean voice identifier if it has prefixes like "browser:" or "gemini:"
     if (selectedVoice.startsWith("browser:")) {
       selectedVoice = selectedVoice.replace("browser:", "");
+    }
+    if (selectedVoice.startsWith("gemini:")) {
+      selectedVoice = selectedVoice.replace("gemini:", "");
     }
 
     // Ban and redirect any bubbly, perky, or irreverent voices
@@ -502,16 +623,27 @@ app.get("/api/tts", async (req, res) => {
     const timeout = setTimeout(async () => {
       cleanup();
       if (!res.headersSent) {
-        console.warn(`[TTS] Voice generation timed out for voice "${selectedVoice}". Retrying canonical reverent voice...`);
+        console.warn(`[TTS] Voice generation timed out for voice "${selectedVoice}". Retrying with resilient synthesis...`);
         const fallbackVoice = gender === "female" ? "en-US-JennyNeural" : "en-US-GuyNeural";
-        const fallbackBuf = await synthesizeReverentNeuralTTS(truncatedText, fallbackVoice);
-        if (fallbackBuf && !res.headersSent) {
-          ttsAudioCache.set(cacheKey, fallbackBuf);
-          return sendAudioWithRange(req, res, fallbackBuf, fallbackVoice, false, "audio/mpeg", "Natural-Voice", requestedVoice, true, voiceLocale);
+        const fallbackResult = await synthesizeReverentNeuralTTS(truncatedText, fallbackVoice);
+        if (fallbackResult && !res.headersSent) {
+          ttsAudioCache.set(cacheKey, fallbackResult.buffer);
+          return sendAudioWithRange(
+            req,
+            res,
+            fallbackResult.buffer,
+            fallbackVoice,
+            false,
+            fallbackResult.isWav ? "audio/wav" : "audio/mpeg",
+            fallbackResult.engine,
+            requestedVoice,
+            true,
+            voiceLocale
+          );
         }
         res.status(504).json({ error: "TTS generation timed out" });
       }
-    }, 12000);
+    }, 10000);
 
     audioStream.on("data", (chunk: Buffer) => chunks.push(chunk));
     audioStream.on("end", () => {
@@ -532,17 +664,26 @@ app.get("/api/tts", async (req, res) => {
     audioStream.on("error", async (err: any) => {
       clearTimeout(timeout);
       cleanup();
-      console.warn(`[TTS] Voice stream error for voice "${selectedVoice}":`, err?.message || err);
+      console.warn(`[TTS] Voice stream notice for voice "${selectedVoice}":`, err?.message || err);
 
-      // Retry with canonical reverent voice (Guy or Jenny)
+      // Resilient fallback to Gemini AI TTS or canonical voice
       const defaultVoice = gender === "female" ? "en-US-JennyNeural" : "en-US-GuyNeural";
-      if (selectedVoice !== defaultVoice) {
-        console.log(`[TTS] Retrying with canonical reverent voice "${defaultVoice}"...`);
-        const fallbackBuf = await synthesizeReverentNeuralTTS(truncatedText, defaultVoice);
-        if (fallbackBuf && !res.headersSent) {
-          ttsAudioCache.set(cacheKey, fallbackBuf);
-          return sendAudioWithRange(req, res, fallbackBuf, defaultVoice, false, "audio/mpeg", "Natural-Voice", requestedVoice, true, voiceLocale);
-        }
+      console.log(`[TTS] Executing resilient fallback for scripture narration...`);
+      const fallbackResult = await synthesizeReverentNeuralTTS(truncatedText, defaultVoice);
+      if (fallbackResult && !res.headersSent) {
+        ttsAudioCache.set(cacheKey, fallbackResult.buffer);
+        return sendAudioWithRange(
+          req,
+          res,
+          fallbackResult.buffer,
+          defaultVoice,
+          false,
+          fallbackResult.isWav ? "audio/wav" : "audio/mpeg",
+          fallbackResult.engine,
+          requestedVoice,
+          true,
+          voiceLocale
+        );
       }
 
       if (!res.headersSent) {

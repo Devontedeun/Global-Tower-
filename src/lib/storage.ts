@@ -393,6 +393,7 @@ export const Storage = {
     const list = this.getBookmarks();
     const updated = [bookmark, ...(Array.isArray(list) ? list.filter(b => b && b.id !== bookmark.id) : [])];
     localStorage.setItem(STORAGE_KEYS.BOOKMARKS, JSON.stringify(updated));
+    this.recordActivity(`Bookmarked ${bookmark.book} ${bookmark.chapter}:${bookmark.verseNumber}`);
     return updated;
   },
   removeBookmark(id: string) {
@@ -421,6 +422,7 @@ export const Storage = {
     const list = this.getHighlights();
     const updated = [highlight, ...(Array.isArray(list) ? list.filter(h => !(h && h.book === highlight.book && h.chapter === highlight.chapter && h.verseNumber === highlight.verseNumber)) : [])];
     localStorage.setItem(STORAGE_KEYS.HIGHLIGHTS, JSON.stringify(updated));
+    this.recordActivity(`Highlighted ${highlight.book} ${highlight.chapter}:${highlight.verseNumber}`);
     return updated;
   },
   removeHighlight(book: string, chapter: number, verseNumber: number) {
@@ -449,6 +451,7 @@ export const Storage = {
     const list = this.getNotes();
     const updated = [note, ...(Array.isArray(list) ? list.filter(n => n && n.id !== note.id) : [])];
     localStorage.setItem(STORAGE_KEYS.NOTES, JSON.stringify(updated));
+    this.recordActivity(`Saved Scripture Note: ${note.title || "Study Note"}`);
     if (typeof window !== "undefined") {
       window.dispatchEvent(new CustomEvent("gtc_notes_updated", { detail: updated }));
     }
@@ -531,18 +534,22 @@ export const Storage = {
     const list = this.getPrayers();
     const updated = [item, ...(Array.isArray(list) ? list.filter(p => p && p.id !== item.id) : [])];
     localStorage.setItem(STORAGE_KEYS.PRAYERS, JSON.stringify(updated));
+    this.recordActivity(`Offered Prayer: ${item.title || "Intercessory Prayer"}`);
     return updated;
   },
   incrementPrayerCount(id: string) {
     const list = this.getPrayers();
+    let prayerTitle = "Intercessory Prayer";
     const updated = (Array.isArray(list) ? list : []).map(p => {
       if (p && p.id === id) {
+        prayerTitle = p.title || prayerTitle;
         const nextCount = (p.prayedCount || 0) + 1;
         return { ...p, prayedCount: nextCount, hasUserPrayed: true };
       }
       return p;
     });
     localStorage.setItem(STORAGE_KEYS.PRAYERS, JSON.stringify(updated));
+    this.recordActivity(`Prayed with the Saints: ${prayerTitle}`);
     return updated;
   },
 

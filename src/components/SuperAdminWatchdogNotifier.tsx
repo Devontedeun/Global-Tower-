@@ -32,7 +32,6 @@ import {
 import { isSuperAdminEmail, Storage } from "../lib/storage";
 import { useAuth } from "../lib/AuthContext";
 import { watchdogThunderService } from "../lib/watchdogThunderService";
-import { WatchdogThunderOverlay } from "./WatchdogThunderOverlay";
 
 interface SuperAdminWatchdogNotifierProps {
   // Optional override if passed directly
@@ -173,9 +172,6 @@ export function SuperAdminWatchdogNotifier({ isSuperAdmin: propIsSuperAdmin }: S
 
   return (
     <>
-      {/* 0. WATCHDOG THUNDER SCREEN OVERLAY (Lightning flash, shockwave ring) */}
-      <WatchdogThunderOverlay />
-
       {/* 1. FLOATING SUPER ADMIN WATCHDOG ALERT BANNER (Only pops up for Super Admin when problem is detected) */}
       <AnimatePresence>
         {activeAlert && !activeAlert.resolved && (
@@ -442,7 +438,20 @@ export function SuperAdminWatchdogNotifier({ isSuperAdmin: propIsSuperAdmin }: S
                     </button>
                   )}
 
-                  {/* Test Thunder & Vibration Button */}
+                  {/* Test Approved Ping Blessing Button (God Rays & Floating Doves) */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      backgroundMaintenance.triggerTestApproval();
+                    }}
+                    className="px-3 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white font-bold text-xs flex items-center gap-1.5 transition-all shadow-md cursor-pointer"
+                    title="Simulate 5-minute approved ping with God rays, floating doves & peaceful chirping"
+                  >
+                    <Sparkles className="w-3.5 h-3.5 text-amber-200" />
+                    <span>Test Approved Ping (Doves & Rays)</span>
+                  </button>
+
+                  {/* Test Thunder & Vibration Button (Uh Oh) */}
                   <button
                     type="button"
                     onClick={() => {
@@ -450,8 +459,8 @@ export function SuperAdminWatchdogNotifier({ isSuperAdmin: propIsSuperAdmin }: S
                         intensity: "apocalyptic",
                         incident: {
                           id: `test-${Date.now()}`,
-                          title: "Thunder Screen Vibration Test Probe",
-                          problem: "Simulated Watchdog incident triggered by Apostle R.Sango.",
+                          title: "Thunder Screen Vibration Test Probe (Uh Oh)",
+                          problem: "Simulated Watchdog anomaly probe triggered by Super Admin.",
                           remedyActionTaken: "Web Audio thunder acoustic synthesizer & haptic screen tremor active.",
                           subsystem: "api",
                           severity: "critical",
@@ -460,10 +469,10 @@ export function SuperAdminWatchdogNotifier({ isSuperAdmin: propIsSuperAdmin }: S
                       });
                     }}
                     className="px-3 py-1 rounded-lg bg-[#C5A059] hover:bg-[#D4AF37] active:scale-95 text-[#19150E] font-bold text-xs flex items-center gap-1.5 transition-all shadow-md cursor-pointer"
-                    title="Vibrate the screen and play acoustic rolling thunder"
+                    title="Vibrate the screen and play acoustic rolling thunder for an uh-oh"
                   >
                     <Zap className="w-3.5 h-3.5 text-[#19150E] fill-[#19150E]" />
-                    <span>Test Thunder & Vibrate</span>
+                    <span>Test Thunder (Uh Oh)</span>
                   </button>
                 </div>
               </div>

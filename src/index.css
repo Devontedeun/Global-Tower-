@@ -379,3 +379,89 @@ html.dark ::-webkit-scrollbar-thumb:hover {
   pointer-events: none;
 }
 
+/* =========================================================
+   WATCHDOG APPROVAL BLESSING: GOD RAYS & FLOATING DOVES
+   ========================================================= */
+
+@keyframes godRaysShimmer {
+  0% {
+    opacity: 0.82;
+    transform: scale(1) translateY(0);
+  }
+  50% {
+    opacity: 0.98;
+    transform: scale(1.04) translateY(-8px);
+  }
+  100% {
+    opacity: 0.82;
+    transform: scale(1) translateY(0);
+  }
+}
+
+@keyframes godRaysStream {
+  0% {
+    background-position: 0% 0%;
+  }
+  50% {
+    background-position: 50% 100%;
+  }
+  100% {
+    background-position: 100% 0%;
+  }
+}
+
+@keyframes doveGlideFlight {
+  0% {
+    transform: translate(0, -60px) rotate(-4deg);
+  }
+  25% {
+    transform: translate(25px, 25vh) rotate(3deg);
+  }
+  50% {
+    transform: translate(-20px, 55vh) rotate(-3deg);
+  }
+  75% {
+    transform: translate(18px, 80vh) rotate(2deg);
+  }
+  100% {
+    transform: translate(-10px, 115vh) rotate(-2deg);
+  }
+}
+
+@keyframes doveWingFlap {
+  0%, 100% {
+    transform: scaleY(1) rotate(0deg);
+  }
+  50% {
+    transform: scaleY(0.45) rotate(-6deg);
+  }
+}
+
+@keyframes celestialDustDrift {
+  0% {
+    transform: translateY(-20px) translateX(0) scale(0.6);
+    opacity: 0;
+  }
+  15% {
+    opacity: 0.9;
+  }
+  85% {
+    opacity: 0.8;
+  }
+  100% {
+    transform: translateY(105vh) translateX(40px) scale(1.1);
+    opacity: 0;
+  }
+}
+
+.god-rays-beam {
+  animation: godRaysShimmer 4s ease-in-out infinite alternate;
+  will-change: transform, opacity;
+}
+
+.dove-flapping-wings {
+  animation: doveWingFlap 0.38s ease-in-out infinite;
+  transform-origin: center center;
+}
+
+

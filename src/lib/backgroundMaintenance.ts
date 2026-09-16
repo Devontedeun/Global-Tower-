@@ -12,6 +12,7 @@
 
 import { unlockAudio, audioContextManager } from "./audioVoiceHelper";
 import { watchdogThunderService } from "./watchdogThunderService";
+import { watchdogApprovalService } from "./watchdogApprovalService";
 
 export interface WatchdogIncident {
   id: string;
@@ -56,6 +57,12 @@ export interface SystemHealthReport {
     success: boolean;
   };
   activeIncidentsCount: number;
+  watchdogPing?: {
+    intervalMinutes: number;
+    lastPingTimestamp: number;
+    nextPingRemainingSeconds: number;
+    pingCount: number;
+  };
 }
 
 class BackgroundMaintenanceWatchdog {
@@ -68,9 +75,24 @@ class BackgroundMaintenanceWatchdog {
   private lastHealAction: { action: string; timestamp: string; success: boolean } | undefined = undefined;
   private incidents: WatchdogIncident[] = [];
   private lastAlertTimestamps: Record<string, number> = {};
+  private lastPingTimestamp: number = Date.now();
+  private pingCount: number = 0;
 
   constructor() {
     this.loadPersistedIncidents();
+  }
+
+  public getLastPingTimestamp(): number {
+    return this.lastPingTimestamp;
+  }
+
+  public getNextPingRemainingSeconds(): number {
+    const elapsed = Date.now() - this.lastPingTimestamp;
+    return Math.max(0, 300 - Math.floor(elapsed / 1000));
+  }
+
+  public getPingCount(): number {
+    return this.pingCount;
   }
 
   private loadPersistedIncidents() {
@@ -126,12 +148,13 @@ class BackgroundMaintenanceWatchdog {
       this.runSelfHealingCheck().catch(() => {});
     }, 3000);
 
-    // 5. Dormant background check every 90 seconds (lightweight ping)
+    // 5. Watchdog self-healing diagnostic heartbeat every 5 minutes (300,000 ms)
+    const WATCHDOG_INTERVAL_MS = 5 * 60 * 1000;
     this.checkIntervalTimer = setInterval(() => {
       this.runSelfHealingCheck().catch(() => {});
-    }, 90000);
+    }, WATCHDOG_INTERVAL_MS);
 
-    console.log("[Maintenance Watchdog] Background self-healing watchdog initialized.");
+    console.log("[Maintenance Watchdog] Background self-healing watchdog active (5-minute ping interval).");
   }
 
   /**
@@ -363,7 +386,49 @@ class BackgroundMaintenanceWatchdog {
     if (speechEngineOk) score += 15;
     if (networkOk) score += 10;
 
+    // Ping dedicated watchdog ping endpoint to verify 5-minute heartbeat
+    let pingSucceeded = false;
+    try {
+      const pingRes = await fetch("/api/admin/watchdog/ping");
+      pingSucceeded = pingRes.ok;
+    } catch (e) {
+      pingSucceeded = false;
+    }
+
+    this.lastPingTimestamp = Date.now();
+    this.pingCount++;
+
     const unresolvedIncidents = this.incidents.filter((i) => !i.resolved);
+
+    // If ping approves and everything is healthy (score >= 90 and zero unresolved incidents):
+    if (pingSucceeded && score >= 90 && unresolvedIncidents.length === 0) {
+      watchdogApprovalService.triggerApproval({
+        pingCount: this.pingCount,
+        score,
+        latencyMs,
+        serverUptimeSeconds: serverUptime,
+        message: `Watchdog heartbeat #${this.pingCount} approved! God rays and peaceful doves confirmed all sanctuary services in 100% reverent health.`,
+        source: "periodic_5m_ping",
+      });
+    } else if (!pingSucceeded && serverOk) {
+      // Uh Oh: Watchdog ping endpoint failed or timed out
+      this.reportIncident({
+        subsystem: "api",
+        severity: "warning",
+        title: "Watchdog 5-Minute Heartbeat Verification Failed",
+        problem: "Dedicated 5-minute watchdog ping endpoint did not respond with HTTP 200.",
+        technicalDetails: "Endpoint /api/admin/watchdog/ping failed to respond.",
+        howToFix: {
+          summary: "Trigger a diagnostic API ping or restart the background service container.",
+          steps: [
+            "Verify container network binding on port 3000.",
+            "Inspect reverse proxy health.",
+            "Click 'Ping API Subsystem' to re-verify.",
+          ],
+          recommendedOneClickAction: "ping_api",
+        },
+      });
+    }
 
     const report: SystemHealthReport = {
       score,
@@ -387,6 +452,12 @@ class BackgroundMaintenanceWatchdog {
       },
       lastHealAction: this.lastHealAction,
       activeIncidentsCount: unresolvedIncidents.length,
+      watchdogPing: {
+        intervalMinutes: 5,
+        lastPingTimestamp: this.lastPingTimestamp,
+        nextPingRemainingSeconds: this.getNextPingRemainingSeconds(),
+        pingCount: this.pingCount,
+      },
     };
 
     this.lastReport = report;
@@ -812,6 +883,22 @@ class BackgroundMaintenanceWatchdog {
         ],
         recommendedOneClickAction: "ping_api",
       },
+    });
+  }
+
+  /**
+   * Simulates a successful approved 5-minute ping check with God rays and peaceful doves
+   */
+  public triggerTestApproval(): void {
+    this.pingCount++;
+    this.lastPingTimestamp = Date.now();
+    watchdogApprovalService.triggerApproval({
+      pingCount: this.pingCount,
+      score: this.lastReport?.score || 100,
+      latencyMs: this.lastReport?.latencyMs || 12,
+      serverUptimeSeconds: this.lastReport?.details?.serverUptimeSeconds || 3600,
+      message: `Watchdog heartbeat #${this.pingCount} approved! God rays and peaceful doves confirmed all sanctuary services in 100% reverent health.`,
+      source: "manual_probe",
     });
   }
 

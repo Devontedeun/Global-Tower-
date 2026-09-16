@@ -50,6 +50,9 @@ import { WebAppTopBar } from "./components/WebAppTopBar";
 import { ThemeToggle } from "./components/ThemeToggle";
 import { VersionUpdateNotifier } from "./components/VersionUpdateNotifier";
 import { SuperAdminWatchdogNotifier, SuperAdminWatchdogBadge } from "./components/SuperAdminWatchdogNotifier";
+import { WatchdogApprovalOverlay } from "./components/WatchdogApprovalOverlay";
+import { WatchdogThunderOverlay } from "./components/WatchdogThunderOverlay";
+import { AchievementCelebrationOverlay } from "./components/AchievementCelebrationOverlay";
 
 export default function App() {
   const { currentUser, userProfile, loading, updateProfileData } = useAuth();
@@ -193,12 +196,12 @@ export default function App() {
     );
   }
 
-  // 1.8 Welcome Ceremony for New Believers (10-15 seconds overall with smooth transitions)
+  // 1.8 Welcome Ceremony for New Believers (25-35s duration with slower central axis rotation, scripture reading, and heavenly sound)
   if (welcomeCeremonyData) {
     return (
       <WelcomeCeremony
         userName={welcomeCeremonyData.userName}
-        totalDurationSeconds={12}
+        totalDurationSeconds={30}
         onComplete={() => {
           setWelcomeCeremonyData(null);
           try {
@@ -773,6 +776,13 @@ export default function App() {
 
       {/* Feedback Modal */}
       <FeedbackModal isOpen={isFeedbackOpen} onClose={() => setIsFeedbackOpen(false)} />
+
+      {/* Watchdog Visual Overlays (Thunder on anomaly; God Rays & Floating Doves on approved ping) */}
+      <WatchdogThunderOverlay />
+      <WatchdogApprovalOverlay />
+
+      {/* Achievement Celebrations: Heavenly Sound & 3-Second Central Axis Rotation Overlay */}
+      <AchievementCelebrationOverlay />
 
       {/* Super Admin Watchdog Notifier (Exclusive alerts & diagnostic remediation for Super Admin only) */}
       <SuperAdminWatchdogNotifier isSuperAdmin={isSuperAdmin} />

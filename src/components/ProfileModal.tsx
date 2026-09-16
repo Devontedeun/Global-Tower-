@@ -659,6 +659,33 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
             )}
           </div>
 
+          {/* Welcome Consecration Ceremony Experience */}
+          <div className="p-3.5 bg-[#FAF6EE] border border-[#C5A059]/40 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="space-y-0.5">
+              <div className="text-xs font-bold text-[#2D2D2D] font-serif flex items-center gap-1.5">
+                <Sparkles className="w-3.5 h-3.5 text-[#C5A059]" />
+                <span>Sanctuary Welcome Ceremony (25–35s)</span>
+              </div>
+              <p className="text-[11px] text-[#7A7468] font-sans">
+                Experience the consecration ceremony with God rays, scripture meditation, and the heavenly sound.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                onClose();
+                window.dispatchEvent(
+                  new CustomEvent("gtc_welcome_ceremony_trigger", {
+                    detail: { userName: name || user.name || "Beloved Believer" }
+                  })
+                );
+              }}
+              className="px-3.5 py-1.5 bg-[#C5A059] hover:bg-[#B48F48] text-white rounded-xl text-xs font-bold font-serif whitespace-nowrap shadow-xs transition-colors cursor-pointer shrink-0"
+            >
+              Replay Ceremony
+            </button>
+          </div>
+
           {/* Ministry Founder Card */}
           <div className="p-4 bg-[#FDFCF9] border border-[#E5E0D5] rounded-[24px] space-y-1">
             <span className="text-[10px] font-bold text-[#C5A059] uppercase tracking-wider font-serif">Ministry Leadership</span>

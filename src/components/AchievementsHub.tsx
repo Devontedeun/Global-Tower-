@@ -26,7 +26,8 @@ import {
   Filter,
   X,
   Share2,
-  Layers
+  Layers,
+  RotateCw
 } from "lucide-react";
 import {
   ACHIEVEMENTS_LIST,
@@ -36,6 +37,8 @@ import {
 } from "../data/achievementsData";
 import { SpiritualJourneyMetrics } from "../types";
 import { Storage } from "../lib/storage";
+import { RotatingAchievementMedallion } from "./AchievementCelebrationOverlay";
+import { achievementCelebrationService } from "../lib/achievementCelebrationService";
 
 interface AchievementsHubProps {
   metrics?: SpiritualJourneyMetrics;
@@ -59,6 +62,13 @@ export const AchievementsHub: React.FC<AchievementsHubProps> = ({
   const [selectedCategory, setSelectedCategory] = useState<AchievementCategory>("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [activeModalAchievement, setActiveModalAchievement] = useState<Achievement | null>(null);
+  const [modalSpinTrigger, setModalSpinTrigger] = useState(0);
+
+  const handleSelectAchievement = (achievement: Achievement) => {
+    setActiveModalAchievement(achievement);
+    setModalSpinTrigger((prev) => prev + 1);
+    achievementCelebrationService.playHeavenlySound();
+  };
 
   const summary = useMemo(() => {
     return calculateAchievementsSummary(metrics, isRegistered);
@@ -174,6 +184,22 @@ export const AchievementsHub: React.FC<AchievementsHubProps> = ({
             <p className="text-xs sm:text-sm text-[#7A7468] dark:text-slate-400 max-w-xl">
               {spiritualTitle.desc} • Every chapter read, prayer offered, note written, and audio scripture heard advances your sanctified walk.
             </p>
+
+            {/* Quick Interactive Celebration Trigger */}
+            <div className="pt-1 flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  const unlockedItem = summary.results.find((r) => r.isUnlocked)?.achievement || ACHIEVEMENTS_LIST[0];
+                  achievementCelebrationService.triggerCelebration(unlockedItem, false);
+                }}
+                className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-[#C5A059] to-[#D4AF37] hover:brightness-110 active:scale-95 text-[#18140D] font-bold text-xs shadow-sm transition-all cursor-pointer flex items-center gap-1.5"
+                title="Experience the heavenly sound and 3D rotating achievement on its central axis"
+              >
+                <Sparkles className="w-3.5 h-3.5 text-[#18140D]" />
+                <span>Celebrate Milestone (Heavenly Sound & 3s Spin)</span>
+              </button>
+            </div>
           </div>
 
           {/* Points & Progress Badges */}
@@ -292,7 +318,7 @@ export const AchievementsHub: React.FC<AchievementsHubProps> = ({
                 key={achievement.id}
                 whileHover={{ y: -3 }}
                 transition={{ duration: 0.2 }}
-                onClick={() => setActiveModalAchievement(achievement)}
+                onClick={() => handleSelectAchievement(achievement)}
                 className={`p-4.5 rounded-2xl border transition-all cursor-pointer relative overflow-hidden flex flex-col justify-between group ${
                   isUnlocked
                     ? `bg-white dark:bg-slate-800 border-[#E5E0D5] dark:border-slate-700 hover:border-emerald-400 dark:hover:border-emerald-500 shadow-sm hover:shadow-md`
@@ -400,10 +426,40 @@ export const AchievementsHub: React.FC<AchievementsHubProps> = ({
 
               {/* Modal Content */}
               <div className="text-center space-y-4 pt-2">
-                <div
-                  className={`w-20 h-20 rounded-3xl mx-auto flex items-center justify-center shadow-lg bg-gradient-to-br ${activeModalAchievement.badgeColor.gradient} text-white`}
-                >
-                  {renderIcon(activeModalAchievement.iconName, "w-10 h-10")}
+                {/* 3D Rotating Achievement Medallion on Central Vertical Axis */}
+                <div className="py-2 flex flex-col items-center justify-center">
+                  <RotatingAchievementMedallion
+                    achievement={activeModalAchievement}
+                    spinTrigger={modalSpinTrigger}
+                    size="md"
+                  />
+                  <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setModalSpinTrigger((c) => c + 1);
+                        achievementCelebrationService.playHeavenlySound();
+                      }}
+                      className="px-3 py-1 rounded-full bg-amber-500/15 hover:bg-amber-500/25 active:scale-95 text-amber-700 dark:text-amber-300 text-[11px] font-bold flex items-center gap-1.5 transition-all cursor-pointer border border-amber-400/30"
+                      title="Spin on central axis for 3 seconds with heavenly sound"
+                    >
+                      <RotateCw className="w-3.5 h-3.5" />
+                      <span>Replay 3s Spin & Heavenly Sound</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const ach = activeModalAchievement;
+                        setActiveModalAchievement(null);
+                        achievementCelebrationService.triggerCelebration(ach, false);
+                      }}
+                      className="px-3 py-1 rounded-full bg-gradient-to-r from-amber-500 to-amber-600 hover:brightness-110 active:scale-95 text-white text-[11px] font-bold flex items-center gap-1.5 shadow-xs transition-all cursor-pointer"
+                      title="Full screen celebration with God rays & heavenly sound"
+                    >
+                      <Sparkles className="w-3.5 h-3.5 text-amber-100" />
+                      <span>Full Screen Celebration</span>
+                    </button>
+                  </div>
                 </div>
 
                 <div>

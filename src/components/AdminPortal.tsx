@@ -1282,12 +1282,26 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                 <button
                   type="button"
                   onClick={() => {
+                    backgroundMaintenance.triggerTestApproval();
+                    setWatchdogHealth(backgroundMaintenance.getLastReport());
+                    setWatchdogFixMsg("Watchdog approved: God rays and peaceful doves confirmed all subsystems 100% optimal.");
+                    setTimeout(() => setWatchdogFixMsg(null), 4500);
+                  }}
+                  className="px-3.5 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-xs font-bold rounded-xl border border-emerald-300 shadow-xs transition-all cursor-pointer flex items-center gap-1.5"
+                  title="Simulate approved ping: God rays, floating doves, and peaceful chirping"
+                >
+                  <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
+                  <span>Test Approved Ping (Doves & God Rays)</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
                     backgroundMaintenance.triggerTestProbe();
                     watchdogThunderService.triggerThunder({
                       intensity: "apocalyptic",
                       incident: {
                         id: `probe-${Date.now()}`,
-                        title: "Watchdog Thunder Screen Vibration Probe",
+                        title: "Watchdog Thunder Screen Vibration Probe (Uh Oh)",
                         problem: "Admin-initiated test incident confirming screen tremor, lightning flash, and audio notification delivery.",
                         subsystem: "api",
                         severity: "critical",
@@ -1305,10 +1319,10 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                     setWatchdogIncidents(backgroundMaintenance.getIncidents());
                   }}
                   className="px-3.5 py-2 bg-amber-50 hover:bg-amber-100/80 text-amber-900 text-xs font-bold rounded-xl border border-amber-300 shadow-xs transition-all cursor-pointer flex items-center gap-1.5"
-                  title="Simulate a diagnostic alert: vibrates the screen with thunder"
+                  title="Simulate a diagnostic alert: vibrates the screen with thunder for an uh-oh"
                 >
                   <Zap className="w-3.5 h-3.5 text-amber-600 fill-amber-500 animate-pulse" />
-                  <span>Test Alert (Thunder & Vibrate)</span>
+                  <span>Test Anomaly (Thunder & Vibrate)</span>
                 </button>
                 <button
                   type="button"
@@ -1377,6 +1391,19 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                   Primed
                 </div>
                 <span className="text-[10px] text-stone-500 font-medium">Auto-Reset on Audio Stall</span>
+              </div>
+
+              <div className="p-3.5 bg-white rounded-2xl border border-[#E5E0D5] space-y-1">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] uppercase font-bold text-[#8A8478]">5-Min Watchdog Ping</span>
+                  <Radio className="w-3.5 h-3.5 text-emerald-500 animate-pulse" />
+                </div>
+                <div className="text-xl font-mono font-bold text-[#2D2D2D]">
+                  {watchdogHealth?.watchdogPing ? `${watchdogHealth.watchdogPing.nextPingRemainingSeconds}s` : "Every 5m"}
+                </div>
+                <span className="text-[10px] text-emerald-600 font-medium">
+                  {watchdogHealth?.watchdogPing ? `Ping #${watchdogHealth.watchdogPing.pingCount} OK (5m cycle)` : "5-Min Heartbeat Active"}
+                </span>
               </div>
 
               <div className="p-3.5 bg-white rounded-2xl border border-[#E5E0D5] space-y-1">

@@ -139,6 +139,22 @@ export const BibleHub: React.FC<BibleHubProps> = ({
     return () => window.removeEventListener("gtc_voice_changed", handleVoiceChange);
   }, [selectedVoiceURI]);
 
+  // Keep BibleHub audio status synchronized with GlobalAudioEngine
+  useEffect(() => {
+    const unsubscribe = globalAudioEngine.subscribe((state) => {
+      const isBible = state.currentTrack?.id?.startsWith("bible-");
+      if (isBible) {
+        setIsAudioPlaying(state.isPlaying || state.isLoading);
+        setAudioVerseNum(state.currentVerseNum);
+        setIsMuted(state.isMuted);
+      } else if (!state.isPlaying && !state.isLoading) {
+        setIsAudioPlaying(false);
+        setAudioVerseNum(null);
+      }
+    });
+    return unsubscribe;
+  }, []);
+
   // Keep mute state in sync with global audio player events
   useEffect(() => {
     const handleMuteChange = (e: any) => {
@@ -1158,7 +1174,7 @@ export const BibleHub: React.FC<BibleHubProps> = ({
                   <div className="flex items-center justify-between mb-1">
                     <label className="text-[11px] font-bold text-[#7A7468]">Narrator Voice:</label>
                     <span className="text-[9px] bg-[#2D2D2D] text-[#C5A059] px-1.5 py-0.5 rounded-full font-bold">
-                      Zero-API Voice
+                      Natural Neural Audio
                     </span>
                   </div>
                   <select
