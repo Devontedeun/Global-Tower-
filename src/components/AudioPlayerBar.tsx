@@ -88,6 +88,16 @@ export const AudioPlayerBar: React.FC<AudioPlayerBarProps> = ({
     return unsubscribe;
   }, []);
 
+  // Track authentic audio listening time across the app
+  useEffect(() => {
+    if (!engineState.isPlaying) return;
+    const interval = setInterval(() => {
+      // Record 5 seconds of real listening time
+      Storage.recordAudioMinutes(5 / 60);
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [engineState.isPlaying]);
+
   // Sync track with GlobalAudioEngine
   useEffect(() => {
     if (!currentTrack) {
@@ -314,10 +324,14 @@ export const AudioPlayerBar: React.FC<AudioPlayerBarProps> = ({
 
               {/* Real-time Web Speech Synthesis & Playback Status Badge */}
               {errorMessage ? (
-                <span className="inline-flex items-center gap-1 text-[10px] bg-rose-50 text-rose-800 border border-rose-200 px-2 py-0.5 rounded-full font-bold">
+                <button
+                  onClick={handleForceUnblockAndPlay}
+                  className="inline-flex items-center gap-1 text-[10px] bg-rose-50 hover:bg-rose-100 text-rose-800 border border-rose-200 px-2 py-0.5 rounded-full font-bold cursor-pointer transition-colors"
+                  title="Click to clear notice and resume audio"
+                >
                   <span className="w-1.5 h-1.5 rounded-full bg-rose-500" />
-                  <span>Speech Error</span>
-                </span>
+                  <span>Speech Notice • Tap to Retry</span>
+                </button>
               ) : isLoading ? (
                 <span className="inline-flex items-center gap-1 text-[10px] bg-amber-50 text-amber-800 border border-amber-200 px-2 py-0.5 rounded-full font-bold">
                   <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-ping" />

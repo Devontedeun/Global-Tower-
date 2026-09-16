@@ -76,17 +76,34 @@ export function formatPersonVoiceName(rawName?: string | null): string {
   return "Narrator";
 }
 
-// Catalog of High-Quality Person Narrator Voices (Zero API Needed + Gemini AI)
+// Catalog of High-Quality Person Narrator Voices (Zero-API High Fidelity + Gemini AI)
 // Strictly reverent, solemn, and natural readers for Holy Scripture
 export const SERVER_VOICES: VoiceOption[] = [
-  // Gemini AI Neural Voices (Ultra-Natural Human Scripture Narration)
+  // High-Fidelity Studio Neural Voices (Default - Instant, Studio Quality, Zero Rate-Limits)
+  {
+    id: "en-US-GuyNeural",
+    name: "Guy (Studio Neural)",
+    gender: "male",
+    provider: "standard",
+    description: "Deep, solemn, reverent studio scripture narrator",
+    isDefault: true,
+  },
+  {
+    id: "en-US-JennyNeural",
+    name: "Jenny (Studio Neural)",
+    gender: "female",
+    provider: "standard",
+    description: "Solemn, reverent, mature studio female reader",
+    isDefault: true,
+  },
+
+  // Gemini AI Neural Voices (Expressive Human Scripture Narration)
   {
     id: "gemini:Puck",
     name: "Puck (Gemini AI)",
     gender: "male",
     provider: "gemini",
     description: "Rich, deeply human solemn baritone scripture voice",
-    isDefault: true,
   },
   {
     id: "gemini:Kore",
@@ -94,7 +111,6 @@ export const SERVER_VOICES: VoiceOption[] = [
     gender: "female",
     provider: "gemini",
     description: "Gentle, peaceful devotional contemplative AI reader",
-    isDefault: true,
   },
   {
     id: "gemini:Charon",
@@ -111,27 +127,11 @@ export const SERVER_VOICES: VoiceOption[] = [
     description: "Deep, solemn classical narrative baritone",
   },
   {
-    id: "gemini:Aoede",
-    name: "Aoede (Gemini AI)",
+    id: "gemini:Zephyr",
+    name: "Zephyr (Gemini AI)",
     gender: "female",
     provider: "gemini",
     description: "Lyrical, expressive, devotional alto narration",
-  },
-
-  // High-Fidelity Studio Neural Voices
-  {
-    id: "en-US-GuyNeural",
-    name: "Guy (Studio Neural)",
-    gender: "male",
-    provider: "standard",
-    description: "Deep, solemn, reverent studio scripture narrator",
-  },
-  {
-    id: "en-US-JennyNeural",
-    name: "Jenny (Studio Neural)",
-    gender: "female",
-    provider: "standard",
-    description: "Solemn, reverent, mature studio female reader",
   },
 
   // Additional High-Fidelity Studio Narrators
@@ -358,7 +358,7 @@ export function setSavedVoiceGender(gender: VoiceGender) {
     localStorage.setItem(GENDER_STORAGE_KEY, gender);
 
     // Default to the high-fidelity natural voice for the selected gender
-    const defaultVoice = gender === "female" ? "gemini:Kore" : "gemini:Puck";
+    const defaultVoice = gender === "female" ? "en-US-JennyNeural" : "en-US-GuyNeural";
     const currentSaved = localStorage.getItem(VOICE_STORAGE_KEY);
     const naturalMatch = SERVER_VOICES.find((v) => v.id === currentSaved);
     
@@ -367,7 +367,7 @@ export function setSavedVoiceGender(gender: VoiceGender) {
       localStorage.setItem(VOICE_STORAGE_KEY, defaultVoice);
       window.dispatchEvent(
         new CustomEvent("gtc_voice_changed", {
-          detail: { voiceId: defaultVoice, gender, name: gender === "female" ? "Kore" : "Puck" }
+          detail: { voiceId: defaultVoice, gender, name: gender === "female" ? "Jenny" : "Guy" }
         })
       );
     } else {
@@ -388,15 +388,14 @@ export function setSavedVoiceGender(gender: VoiceGender) {
  */
 export function getSavedVoiceId(): string {
   const gender = getSavedVoiceGender();
-  const defaultVoice = gender === "female" ? "gemini:Kore" : "gemini:Puck";
+  const defaultVoice = gender === "female" ? "en-US-JennyNeural" : "en-US-GuyNeural";
   if (typeof window === "undefined") return defaultVoice;
   try {
     const saved = localStorage.getItem(VOICE_STORAGE_KEY);
     if (saved && saved.trim()) {
       const trimmed = saved.trim();
-      // Upgrade legacy edge voice defaults to ultra-natural Gemini AI voice
-      if (trimmed === "en-US-GuyNeural") return "gemini:Puck";
-      if (trimmed === "en-US-JennyNeural") return "gemini:Kore";
+      // Upgrade legacy voice defaults or invalid aliases
+      if (trimmed === "gemini:Aoede") return "gemini:Zephyr";
       return trimmed;
     }
   } catch (e) {
@@ -516,6 +515,7 @@ export interface AudioTrack {
   book?: string;
   chapter?: number;
   voiceId?: string;
+  startSegment?: number;
   onVerseChange?: (verseNum: number) => void;
   onChapterComplete?: () => void;
   onPlaybackStateChange?: (isPlaying: boolean) => void;
@@ -1102,7 +1102,9 @@ class GlobalAudioEngine {
     this.updateMediaSession(track);
 
     // 5. Play initial segment
-    const startIdx = options?.startSegment !== undefined ? options.startSegment : 0;
+    const startIdx = options?.startSegment !== undefined
+      ? options.startSegment
+      : (track.startSegment !== undefined ? track.startSegment : 0);
     this.playCurrentSegment(startIdx, sessionId);
     return true;
   }
@@ -1282,7 +1284,7 @@ class GlobalAudioEngine {
   public setGender(gender: VoiceGender) {
     this.activeGender = gender;
     setSavedVoiceGender(gender);
-    const defaultVoice = gender === "female" ? "gemini:Kore" : "gemini:Puck";
+    const defaultVoice = gender === "female" ? "en-US-JennyNeural" : "en-US-GuyNeural";
     this.setVoice(defaultVoice);
   }
 
@@ -1342,7 +1344,7 @@ class GlobalAudioEngine {
   private playCurrentSegment(index: number, sessionId: number, retryCount = 0) {
     if (sessionId !== this.currentPlaySessionId) return;
 
-    if (index >= this.segments.length) {
+    if (!this.segments || this.segments.length === 0 || index >= this.segments.length || !this.segments[index]) {
       this.finishPlayback();
       return;
     }
@@ -1379,7 +1381,7 @@ class GlobalAudioEngine {
     }
 
     // High-fidelity natural voice streaming via /api/tts
-    const targetVoice = this.activeVoiceId || getSavedVoiceId() || (this.activeGender === "female" ? "gemini:Kore" : "gemini:Puck");
+    const targetVoice = this.activeVoiceId || getSavedVoiceId() || (this.activeGender === "female" ? "en-US-JennyNeural" : "en-US-GuyNeural");
     const audio = this.getAudioElement();
 
     if (audio) {
@@ -1388,11 +1390,16 @@ class GlobalAudioEngine {
 
         const audioUrl = getAudioTTSUrl(formattedText, targetVoice, this.activeGender);
 
-        audio.playbackRate = this.playbackRate;
-        audio.volume = this.isMuted ? 0 : this.volume;
-        audio.muted = this.isMuted;
-        audio.src = audioUrl;
+        try {
+          audio.pause();
+        } catch {}
 
+        audio.playbackRate = this.playbackRate;
+        audio.volume = this.isMuted ? 0 : Math.max(0.01, this.volume);
+        audio.muted = this.isMuted;
+        audio.preload = "auto";
+
+        // Assign listeners BEFORE setting src to avoid missed events
         audio.onplay = () => {
           if (this.currentPlaySessionId !== sessionId) return;
           console.log(
@@ -1411,20 +1418,16 @@ class GlobalAudioEngine {
           }
           this.currentTrack?.onPlaybackStateChange?.(true);
 
-          // Paced background prefetch: Only prefetch after verse begins playing smoothly
+          // Fast background prefetch for next verse to ensure seamless zero-gap transitions
           if (index + 1 < this.segments.length) {
-            setTimeout(() => {
-              if (this.currentPlaySessionId === sessionId && this.isPlaying) {
-                const nextSeg = this.segments[index + 1];
-                const nextText = formatBibleTextForSpeech(nextSeg.text);
-                if (nextText) {
-                  const prefetchUrl = getAudioTTSUrl(nextText, targetVoice, this.activeGender);
-                  const prefetchAudio = new Audio();
-                  prefetchAudio.preload = "auto";
-                  prefetchAudio.src = prefetchUrl;
-                }
-              }
-            }, 3000);
+            const nextSeg = this.segments[index + 1];
+            const nextText = formatBibleTextForSpeech(nextSeg.text);
+            if (nextText) {
+              const prefetchUrl = getAudioTTSUrl(nextText, targetVoice, this.activeGender);
+              const prefetchAudio = new Audio();
+              prefetchAudio.preload = "auto";
+              prefetchAudio.src = prefetchUrl;
+            }
           }
         };
 
@@ -1451,27 +1454,21 @@ class GlobalAudioEngine {
           if (this.currentPlaySessionId !== sessionId) return;
           console.warn(`[GlobalAudioEngine:Audio] Audio stream notice (attempt ${retryCount + 1}):`, e);
 
-          // Strictly high-fidelity neural audio retries (never degrade to robotic browser speech)
-          if (retryCount < 3) {
-            const delay = (retryCount + 1) * 1500;
-            console.log(`[GlobalAudioEngine:Audio] Buffering high-fidelity neural voice, retrying in ${delay}ms...`);
-            this.isLoading = true;
-            this.notify();
-            setTimeout(() => {
-              if (this.currentPlaySessionId === sessionId) {
-                this.playCurrentSegment(index, sessionId, retryCount + 1);
-              }
-            }, delay);
+          // If a Gemini AI voice failed or timed out, immediately recover with Studio Neural
+          if (targetVoice.startsWith("gemini:") || retryCount === 0) {
+            const fallbackVoice = this.activeGender === "female" ? "en-US-JennyNeural" : "en-US-GuyNeural";
+            console.log(`[GlobalAudioEngine:Audio] Recovering with high-reliability Studio Neural voice ("${fallbackVoice}")...`);
+            this.activeVoiceId = fallbackVoice;
+            this.playCurrentSegment(index, sessionId, retryCount + 1);
             return;
           }
 
-          this.isLoading = false;
-          this.isPlaying = false;
-          this.playbackStatus = "ERROR";
-          this.errorMessage = "Neural voice stream paused. Tap Play to resume.";
-          this.notify();
-          this.currentTrack?.onPlaybackStateChange?.(false);
+          // Resilient fallback to browser speech synthesis if server is completely unreachable
+          this.fallbackToNaturalWebSpeech(formattedText, index, sessionId);
         };
+
+        audio.src = audioUrl;
+        audio.load();
 
         const playPromise = audio.play();
         if (playPromise !== undefined) {
@@ -1486,52 +1483,102 @@ class GlobalAudioEngine {
               this.notify();
             } else if (err.name !== "AbortError") {
               console.warn(`[GlobalAudioEngine:Audio] Playback exception (attempt ${retryCount + 1}):`, err);
-              if (retryCount < 2) {
-                setTimeout(() => {
-                  if (this.currentPlaySessionId === sessionId) {
-                    this.playCurrentSegment(index, sessionId, retryCount + 1);
-                  }
-                }, 1200);
+              if (retryCount === 0) {
+                const fallbackVoice = this.activeGender === "female" ? "en-US-JennyNeural" : "en-US-GuyNeural";
+                this.activeVoiceId = fallbackVoice;
+                this.playCurrentSegment(index, sessionId, 1);
               } else {
-                this.isLoading = false;
-                this.isPlaying = false;
-                this.playbackStatus = "READY";
-                this.errorMessage = "Audio paused. Tap Play to resume.";
-                this.notify();
+                this.fallbackToNaturalWebSpeech(formattedText, index, sessionId);
               }
             }
           });
         }
         return;
       } catch (err) {
-        console.warn("[GlobalAudioEngine:Audio] Error setting audio stream:", err);
+        console.warn("[GlobalAudioEngine:Audio] Error configuring audio stream:", err);
       }
     }
 
-    // Audio element unavailable or unexpected error: retry cleanly
-    if (retryCount < 2) {
-      setTimeout(() => {
-        if (this.currentPlaySessionId === sessionId) {
-          this.playCurrentSegment(index, sessionId, retryCount + 1);
-        }
-      }, 1000);
-    } else {
-      this.playbackStatus = "ERROR";
-      this.errorMessage = "Audio initialization paused. Tap Play to resume.";
-      this.isLoading = false;
-      this.isPlaying = false;
-      this.notify();
-    }
+    // Audio element unavailable: try Web Speech synthesis
+    this.fallbackToNaturalWebSpeech(formattedText, index, sessionId);
   }
 
   private fallbackToNaturalWebSpeech(formattedText: string, index: number, sessionId: number) {
-    // Strictly high-fidelity neural narration - never degrade to robotic browser speech synthesis
-    console.log(`[GlobalAudioEngine] Sustaining high-fidelity neural voice stream for segment ${index + 1}...`);
-    setTimeout(() => {
-      if (this.currentPlaySessionId === sessionId) {
-        this.playCurrentSegment(index, sessionId, 1);
+    if (typeof window === "undefined" || !("speechSynthesis" in window)) {
+      this.isLoading = false;
+      this.isPlaying = false;
+      this.playbackStatus = "READY";
+      this.errorMessage = null;
+      this.notify();
+      this.currentTrack?.onPlaybackStateChange?.(false);
+      return;
+    }
+
+    try {
+      window.speechSynthesis.cancel();
+      const utterance = new SpeechSynthesisUtterance(formattedText);
+      utterance.rate = this.playbackRate * 0.95;
+
+      const voices = window.speechSynthesis.getVoices();
+      const englishVoices = voices.filter((v) => v.lang.startsWith("en"));
+      if (englishVoices.length > 0) {
+        const preferred = englishVoices.find((v) =>
+          this.activeGender === "female"
+            ? /female|zira|samantha|victoria|karen/i.test(v.name)
+            : /male|david|george|alex|daniel/i.test(v.name)
+        ) || englishVoices[0];
+        utterance.voice = preferred;
       }
-    }, 1200);
+
+      utterance.onstart = () => {
+        if (this.currentPlaySessionId !== sessionId) {
+          window.speechSynthesis.cancel();
+          return;
+        }
+        this.playbackStatus = "PLAYING";
+        this.isPlaying = true;
+        this.isLoading = false;
+        this.errorMessage = null;
+        this.hasAutoplayBlock = false;
+        this.notify();
+
+        const currentSeg = this.segments[index];
+        if (currentSeg?.verseNum && this.currentTrack?.onVerseChange) {
+          this.currentTrack.onVerseChange(currentSeg.verseNum);
+        }
+        this.currentTrack?.onPlaybackStateChange?.(true);
+        this.startKeepAlive();
+      };
+
+      utterance.onend = () => {
+        if (this.currentPlaySessionId !== sessionId) return;
+        this.stopKeepAlive();
+        if (index + 1 < this.segments.length) {
+          this.playCurrentSegment(index + 1, sessionId);
+        } else {
+          this.finishPlayback();
+        }
+      };
+
+      utterance.onerror = (err) => {
+        console.warn("[GlobalAudioEngine] SpeechSynthesis notice:", err);
+        this.stopKeepAlive();
+        if (this.currentPlaySessionId !== sessionId) return;
+        if (index + 1 < this.segments.length) {
+          this.playCurrentSegment(index + 1, sessionId);
+        } else {
+          this.finishPlayback();
+        }
+      };
+
+      window.speechSynthesis.speak(utterance);
+    } catch (e) {
+      console.warn("[GlobalAudioEngine] SpeechSynthesis exception:", e);
+      this.isLoading = false;
+      this.isPlaying = false;
+      this.playbackStatus = "READY";
+      this.notify();
+    }
   }
 
   private startKeepAlive() {
@@ -1588,6 +1635,7 @@ export function startSynchronousAudioPlayback(
   const chosenVoice = overrideVoiceId || track.voiceId || getSavedVoiceId();
   const chosenGender = overrideGender || getSavedVoiceGender();
   return globalAudioEngine.playTrack(track, {
+    startSegment: track.startSegment,
     voiceId: chosenVoice,
     gender: chosenGender,
   });
@@ -1682,7 +1730,7 @@ export function getNaturalTTSUrl(text: string, genderOrVoice?: VoiceGender | str
     // If the saved voice matches the requested gender, use the saved voice
     const targetVoice = (savedGender === genderOrVoice)
       ? savedVoiceId
-      : (genderOrVoice === "female" ? "gemini:Kore" : "gemini:Puck");
+      : (genderOrVoice === "female" ? "en-US-JennyNeural" : "en-US-GuyNeural");
     return getAudioTTSUrl(text, targetVoice, genderOrVoice);
   }
   return getAudioTTSUrl(text, genderOrVoice);

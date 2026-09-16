@@ -189,6 +189,7 @@ export const BibleHub: React.FC<BibleHubProps> = ({
   // Continuous Full Bible Audio State
   const [isContinuousBible, setIsContinuousBible] = useState<boolean>(true);
   const [chapterCompleted, setChapterCompleted] = useState<boolean>(false);
+  const autoAdvanceAudioRef = useRef<boolean>(false);
 
   useEffect(() => {
     setChapterCompleted(false);
@@ -216,6 +217,14 @@ export const BibleHub: React.FC<BibleHubProps> = ({
         setIsVerified(res.isVerified && res.verses.length > 0);
         currentVersesRef.current = res.verses;
         setIsVerifying(false);
+
+        // Auto-advance: Seamlessly continue continuous audio playback into next chapter
+        if (autoAdvanceAudioRef.current && res.verses.length > 0) {
+          autoAdvanceAudioRef.current = false;
+          setTimeout(() => {
+            playChapterTrack(res.verses, selectedBook, selectedChapter, 0);
+          }, 150);
+        }
       }
     }
 
@@ -228,13 +237,24 @@ export const BibleHub: React.FC<BibleHubProps> = ({
     Storage.setRecentReading({ book: selectedBook, chapter: selectedChapter });
     Storage.recordChapterRead(selectedBook, selectedChapter);
 
-    // Stop previous audio on chapter change
-    stopAudio();
+    // Stop previous audio on manual chapter change (preserve continuous playback when auto-advancing)
+    if (!autoAdvanceAudioRef.current) {
+      stopAudio();
+    }
 
     return () => {
       isCancelled = true;
     };
   }, [selectedBook, selectedChapter, translation]);
+
+  // Track authentic audio scripture listening duration in Bible Hub
+  useEffect(() => {
+    if (!isAudioPlaying) return;
+    const interval = setInterval(() => {
+      Storage.recordAudioMinutes(5 / 60);
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [isAudioPlaying]);
 
   const currentBookData = BIBLE_BOOKS.find((b) => b.name === selectedBook) || BIBLE_BOOKS[0];
   const fullChapterText = versesList.map((v) => v.text).join(" ");
@@ -274,109 +294,67 @@ export const BibleHub: React.FC<BibleHubProps> = ({
     }
   };
 
+  const playChapterTrack = (
+    verses = versesList,
+    book = selectedBook,
+    chapter = selectedChapter,
+    startVerseIdx = 0
+  ) => {
+    if (!verses || verses.length === 0) return;
+    setChapterCompleted(false);
+    setIsMuted(false);
+    setSavedMuteState(false);
+    unlockAudio();
+
+    const fullChapterText = verses.map((v) => v.text).join(" ");
+    const track: AudioTrack = {
+      id: `bible-${book}-${chapter}`,
+      title: `${book} Chapter ${chapter}`,
+      subtitle: `Audio Bible • ${translation} Translation • Continuous Chapter Mode`,
+      textToRead: `${book}, chapter ${chapter}. ${fullChapterText}`,
+      verses: verses.map((v) => ({ num: v.num, text: v.text })),
+      book,
+      chapter,
+      voiceId: selectedVoiceURI,
+      startSegment: startVerseIdx,
+      onVerseChange: (num: number) => {
+        setAudioVerseNum(num);
+        setIsAudioPlaying(true);
+        setChapterCompleted(false);
+      },
+      onChapterComplete: () => {
+        setIsAudioPlaying(false);
+        setAudioVerseNum(null);
+        setChapterCompleted(true);
+        if (isContinuousBible) {
+          handleNextChapter(true);
+        }
+      },
+      onPlaybackStateChange: (playing: boolean) => {
+        setIsAudioPlaying(playing);
+        if (!playing) setAudioVerseNum(null);
+      }
+    };
+
+    if (onPlayAudio) {
+      onPlayAudio(track);
+      setIsAudioPlaying(true);
+    } else {
+      globalAudioEngine.playTrack(track, { startSegment: startVerseIdx, voiceId: selectedVoiceURI });
+      setIsAudioPlaying(true);
+    }
+  };
+
   const playVerseByIndex = (index: number, book = selectedBook, chapter = selectedChapter) => {
     const verses = currentVersesRef.current;
-    if (index >= verses.length) {
-      if (isContinuousBible) {
-        // Continuous Whole Bible Mode: Auto-advance to next chapter and keep narrating
-        const bookData = BIBLE_BOOKS.find((b) => b.name === book) || BIBLE_BOOKS[0];
-        if (chapter < bookData.chaptersCount) {
-          const nextChap = chapter + 1;
-          setSelectedChapter(nextChap);
-          setActiveVerseNum(null);
-          // Wait for next chapter to load, then resume playback from verse 0
-          setTimeout(() => {
-            playVerseByIndex(0, book, nextChap);
-          }, 800);
-          return;
-        } else {
-          const curIndex = BIBLE_BOOKS.findIndex((b) => b.name === book);
-          if (curIndex < BIBLE_BOOKS.length - 1) {
-            const nextBook = BIBLE_BOOKS[curIndex + 1].name;
-            setSelectedBook(nextBook);
-            setSelectedChapter(1);
-            setActiveVerseNum(null);
-            setTimeout(() => {
-              playVerseByIndex(0, nextBook, 1);
-            }, 1000);
-            return;
-          }
-        }
-      }
+    if (!verses || verses.length === 0 || index >= verses.length) {
       stopAudio();
       return;
     }
 
     const verse = verses[index];
     setAudioVerseNum(verse.num);
-    setIsAudioPlaying(true);
-
-    if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
-
-    window.speechSynthesis.cancel();
-    // Only recite chapter number when starting (index 0); do not recite verse numbers
-    const utteranceText = index === 0
-      ? `${book} chapter ${chapter}. ${verse.text}`
-      : verse.text;
-    const utterance = new SpeechSynthesisUtterance(utteranceText);
-    
-    const resolved = getNaturalBibleVoice(getSavedVoiceGender(), selectedVoiceURI);
-    if (resolved.voice) {
-      utterance.voice = resolved.voice;
-    }
-
-    console.log("[BibleHub:SpeechSynthesis] Utterance active:", {
-      requestedVoice: selectedVoiceURI,
-      actualVoice: resolved.actualVoiceName,
-      fallbackUsed: resolved.fallbackUsed,
-      provider: resolved.provider
-    });
-
-    // Use natural pitch (0.94 for deeper reverent male voice)
-    utterance.pitch = resolved.pitch;
-    utterance.rate = playbackSpeed || resolved.rate;
-
-    utterance.onend = () => {
-      if (index + 1 < verses.length) {
-        playVerseByIndex(index + 1, book, chapter);
-      } else {
-        if (isContinuousBible) {
-          const bookData = BIBLE_BOOKS.find((b) => b.name === book) || BIBLE_BOOKS[0];
-          if (chapter < bookData.chaptersCount) {
-            const nextChap = chapter + 1;
-            setSelectedChapter(nextChap);
-            setActiveVerseNum(null);
-            setTimeout(() => {
-              playVerseByIndex(0, book, nextChap);
-            }, 800);
-          } else {
-            const curIndex = BIBLE_BOOKS.findIndex((b) => b.name === book);
-            if (curIndex < BIBLE_BOOKS.length - 1) {
-              const nextBook = BIBLE_BOOKS[curIndex + 1].name;
-              setSelectedBook(nextBook);
-              setSelectedChapter(1);
-              setActiveVerseNum(null);
-              setTimeout(() => {
-                playVerseByIndex(0, nextBook, 1);
-              }, 1000);
-            } else {
-              stopAudio();
-              setChapterCompleted(true);
-            }
-          }
-        } else {
-          stopAudio();
-          setChapterCompleted(true);
-        }
-      }
-    };
-
-    utterance.onerror = () => {
-      stopAudio();
-    };
-
-    synthRef.current = utterance;
-    window.speechSynthesis.speak(utterance);
+    playChapterTrack(verses, book, chapter, index);
   };
 
   const toggleChapterAudio = () => {
@@ -385,47 +363,7 @@ export const BibleHub: React.FC<BibleHubProps> = ({
       stopAudio();
     } else {
       if (versesList.length === 0) return;
-      setChapterCompleted(false);
-      // Ensure audio sound is unmuted and immediately plays aloud
-      setIsMuted(false);
-      setSavedMuteState(false);
-
-      const track: AudioTrack = {
-        id: `bible-${selectedBook}-${selectedChapter}`,
-        title: `${selectedBook} Chapter ${selectedChapter}`,
-        subtitle: `Audio Bible • ${translation} Translation • Continuous Chapter Mode`,
-        textToRead: `${selectedBook}, chapter ${selectedChapter}. ${fullChapterText}`,
-        verses: versesList.map((v) => ({ num: v.num, text: v.text })),
-        book: selectedBook,
-        chapter: selectedChapter,
-        voiceId: selectedVoiceURI,
-        onVerseChange: (num: number) => {
-          setAudioVerseNum(num);
-          setIsAudioPlaying(true);
-          setChapterCompleted(false);
-        },
-        onChapterComplete: () => {
-          setIsAudioPlaying(false);
-          setAudioVerseNum(null);
-          setChapterCompleted(true);
-          if (isContinuousBible) {
-            handleNextChapter();
-          }
-        },
-        onPlaybackStateChange: (playing: boolean) => {
-          setIsAudioPlaying(playing);
-          if (!playing) setAudioVerseNum(null);
-        }
-      };
-
-      // Route audio output cleanly without double-invocation race conditions
-      if (onPlayAudio) {
-        onPlayAudio(track);
-        setIsAudioPlaying(true);
-      } else {
-        startSynchronousAudioPlayback(track, selectedVoiceURI);
-        setIsAudioPlaying(true);
-      }
+      playChapterTrack(versesList, selectedBook, selectedChapter, 0);
     }
   };
 
@@ -443,6 +381,7 @@ export const BibleHub: React.FC<BibleHubProps> = ({
       book: selectedBook,
       chapter: selectedChapter,
       voiceId: selectedVoiceURI,
+      startSegment: 0,
       onVerseChange: (num: number) => {
         setAudioVerseNum(num);
         setIsAudioPlaying(true);
@@ -463,11 +402,14 @@ export const BibleHub: React.FC<BibleHubProps> = ({
     if (onPlayAudio) {
       onPlayAudio(track);
     } else {
-      startSynchronousAudioPlayback(track, selectedVoiceURI);
+      globalAudioEngine.playTrack(track, { startSegment: 0, voiceId: selectedVoiceURI });
     }
   };
 
-  const handleNextChapter = () => {
+  const handleNextChapter = (autoPlayNext = false) => {
+    if (autoPlayNext) {
+      autoAdvanceAudioRef.current = true;
+    }
     if (selectedChapter < currentBookData.chaptersCount) {
       setSelectedChapter(selectedChapter + 1);
       setActiveVerseNum(null);

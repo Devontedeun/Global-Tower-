@@ -176,6 +176,10 @@ export const StudyPlansHub: React.FC<StudyPlansHubProps> = ({
 
     if (newlyCompletedPlan) {
       setActivePlan(newlyCompletedPlan);
+      const isNowCompleted = newlyCompletedPlan.days?.find((d, idx) => (d.dayNumber ?? d.day ?? idx + 1) === dayNum)?.isCompleted;
+      if (isNowCompleted) {
+        Storage.recordActivity(`Completed Day ${dayNum} of ${newlyCompletedPlan.title}`);
+      }
       // Confetti celebration
       confetti({
         particleCount: 50,

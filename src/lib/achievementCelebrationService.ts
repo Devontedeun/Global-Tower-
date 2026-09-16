@@ -46,9 +46,42 @@ class AchievementCelebrationService {
     this.isSoundMuted = muted;
   }
 
+  public isUserRegistered(): boolean {
+    try {
+      const user = Storage.getUser();
+      return !!(user && user.email && user.email.trim().length > 0 && !user.id?.includes("guest"));
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Comprehensive whole-app verification of an achievement status
+   */
+  public verifyAchievementStatus(
+    achievement: Achievement,
+    isRegisteredUser?: boolean
+  ): {
+    isUnlocked: boolean;
+    currentProgress: number;
+    targetCount: number;
+    percent: number;
+  } {
+    const metrics = Storage.getSpiritualMetrics();
+    const registered = isRegisteredUser !== undefined ? isRegisteredUser : this.isUserRegistered();
+    const check = achievement.checkUnlocked(metrics, { isRegisteredUser: registered });
+    const percent = Math.min(100, Math.round((check.currentProgress / achievement.targetCount) * 100));
+    return {
+      isUnlocked: check.isUnlocked,
+      currentProgress: check.currentProgress,
+      targetCount: achievement.targetCount,
+      percent
+    };
+  }
+
   /**
    * Initializes baseline achievements on first app load so we don't bombard
-   * the user with 5 historical achievements at the very first second of opening,
+   * the user with historical achievements at the very first second of opening,
    * but will celebrate any subsequent achievements earned.
    */
   public initializeBaseline(): void {
@@ -58,9 +91,10 @@ class AchievementCelebrationService {
     try {
       const raw = localStorage.getItem(STORAGE_KEY_SEEN_ACHIEVEMENTS);
       if (!raw) {
-        // First session: mark existing unlocked items as already known
+        // First session: mark existing genuinely unlocked items as already known
         const metrics = Storage.getSpiritualMetrics();
-        const summary = calculateAchievementsSummary(metrics, true);
+        const registered = this.isUserRegistered();
+        const summary = calculateAchievementsSummary(metrics, registered);
         summary.results.forEach((r) => {
           if (r.isUnlocked) {
             this.celebratedSet.add(r.achievement.id);
@@ -76,12 +110,13 @@ class AchievementCelebrationService {
   /**
    * Checks current spiritual metrics and triggers celebration for any newly unlocked achievement!
    */
-  public checkAndCelebrateNewAchievements(isRegisteredUser = true): Achievement[] {
+  public checkAndCelebrateNewAchievements(isRegisteredUser?: boolean): Achievement[] {
     if (typeof window === "undefined") return [];
 
     try {
+      const registered = isRegisteredUser !== undefined ? isRegisteredUser : this.isUserRegistered();
       const metrics = Storage.getSpiritualMetrics();
-      const summary = calculateAchievementsSummary(metrics, isRegisteredUser);
+      const summary = calculateAchievementsSummary(metrics, registered);
       const newlyEarned: Achievement[] = [];
 
       for (const res of summary.results) {
@@ -105,15 +140,38 @@ class AchievementCelebrationService {
   }
 
   /**
-   * Triggers the full Achievement Celebration:
-   * 1. Heavenly soundscape (Web Audio API)
-   * 2. Visual 3D rotating achievement badge on central axis for exactly 3 seconds
-   * 3. Dispatches custom DOM event for React Celebration Overlay
+   * Triggers the full Achievement Celebration ONLY if the achievement has been verified as earned!
+   * 1. Verifies achievement across the entire app
+   * 2. Heavenly soundscape (Web Audio API)
+   * 3. Visual 3D rotating achievement badge on central axis for exactly 3 seconds
+   * 4. Dispatches custom DOM event for React Celebration Overlay
    */
-  public triggerCelebration(achievement: Achievement, isFirstUnlock = false): void {
-    if (typeof window === "undefined") return;
+  public triggerCelebration(achievement: Achievement, isFirstUnlock = false): boolean {
+    if (typeof window === "undefined") return false;
 
-    console.log(`[AchievementCelebration] 🏆 Celebrating achievement: ${achievement.title}`);
+    // Strict App-Wide Verification Check:
+    // Never allow collecting or celebrating an achievement the user has not earned!
+    const status = this.verifyAchievementStatus(achievement);
+    if (!status.isUnlocked) {
+      console.warn(
+        `[AchievementCelebration] ❌ Blocked celebration attempt: "${achievement.title}" is locked. Progress: ${status.currentProgress}/${status.targetCount} (${status.percent}%).`
+      );
+
+      window.dispatchEvent(
+        new CustomEvent("gtc_achievement_locked_attempt", {
+          detail: {
+            achievement,
+            currentProgress: status.currentProgress,
+            targetCount: status.targetCount,
+            percent: status.percent,
+            message: `Milestone in Progress: You have not unlocked "${achievement.title}" yet (${status.currentProgress}/${status.targetCount}). Complete the requirement to earn this celebration!`
+          }
+        })
+      );
+      return false;
+    }
+
+    console.log(`[AchievementCelebration] 🏆 Celebrating verified achievement: ${achievement.title}`);
 
     // 1. Play heavenly angelic sound
     if (!this.isSoundMuted) {
@@ -132,6 +190,7 @@ class AchievementCelebrationService {
         detail,
       })
     );
+    return true;
   }
 
   /**

@@ -337,22 +337,24 @@ class BackgroundMaintenanceWatchdog {
     // C. Audio Subsystem Health Check & Auto-Priming
     const audioState = this.checkAndHealAudio();
 
-    // D. Speech Synthesis Engine Check
-    const speechEngineOk = typeof window !== "undefined" && "speechSynthesis" in window;
+    // D. Speech Synthesis & Audio Narration Engine Check
+    const speechEngineOk = typeof window !== "undefined" && (Boolean(window.Audio) || "speechSynthesis" in window);
     if (!speechEngineOk && typeof window !== "undefined") {
       this.reportIncident({
         subsystem: "speech",
         severity: "warning",
-        title: "Browser Web Speech Engine Unavailable",
-        problem: "Client browser does not expose window.speechSynthesis or permissions are restricted.",
+        title: "Audio Narration Engine Restricted",
+        problem: "Client browser environment does not support audio playback or speech synthesis.",
         howToFix: {
-          summary: "Sanctuary will automatically fallback to the high-fidelity Neural Edge TTS backend (/api/tts).",
+          summary: "Ensure audio permissions are granted for this browser window.",
           steps: [
-            "No manual action required: The sanctuary's server-side Neural Edge TTS engine handles voice reading automatically.",
-            "If on an embedded webview, ensure microphone/audio permissions are granted.",
+            "Enable audio playback in your browser settings for this site.",
+            "Interact with the page (tap anywhere) to unlock audio playback context.",
           ],
         },
       });
+    } else {
+      this.resolveIncident("speech");
     }
 
     // E. Network Connectivity Check

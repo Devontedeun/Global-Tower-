@@ -189,6 +189,11 @@ export const CommunityService = {
       console.warn(e);
     }
 
+    Storage.recordActivity(`Offered Community Prayer: ${newPost.title || "Prayer Request"}`);
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("gtc_metrics_updated"));
+    }
+
     // Attempt to persist to Firestore
     if (db) {
       try {
@@ -203,8 +208,10 @@ export const CommunityService = {
 
   async prayForPost(postId: string): Promise<CommunityPost[]> {
     const current = this.getPosts();
+    let targetTitle = "Intercessory Prayer";
     const updated = current.map((p) => {
       if (p.id === postId) {
+        targetTitle = p.title || targetTitle;
         const hasPrayed = p.hasUserPrayed;
         return {
           ...p,
@@ -219,6 +226,11 @@ export const CommunityService = {
       localStorage.setItem("gtc_community_posts_v2", JSON.stringify(updated));
     } catch (e) {
       console.warn(e);
+    }
+
+    Storage.recordActivity(`Prayed with the Saints: ${targetTitle}`);
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("gtc_metrics_updated"));
     }
 
     if (db) {
@@ -266,6 +278,11 @@ export const CommunityService = {
       localStorage.setItem("gtc_community_posts_v2", JSON.stringify(updated));
     } catch (e) {
       console.warn(e);
+    }
+
+    Storage.recordActivity(`Offered Prayer Response to the Saints`);
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("gtc_metrics_updated"));
     }
 
     if (db) {

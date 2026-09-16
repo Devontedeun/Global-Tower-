@@ -486,12 +486,20 @@ export const Storage = {
     const list = this.getDreams();
     const updated = [dream, ...(Array.isArray(list) ? list.filter(d => d && d.id !== dream.id) : [])];
     localStorage.setItem(STORAGE_KEYS.DREAMS, JSON.stringify(updated));
+    this.recordActivity(`Logged Spiritual Dream: ${dream.title || "Spiritual Dream"}`);
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("gtc_dreams_updated", { detail: updated }));
+    }
     return updated;
   },
   deleteDream(id: string) {
     const list = this.getDreams();
     const updated = Array.isArray(list) ? list.filter(d => d && d.id !== id) : [];
     localStorage.setItem(STORAGE_KEYS.DREAMS, JSON.stringify(updated));
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("gtc_dreams_updated", { detail: updated }));
+      window.dispatchEvent(new CustomEvent("gtc_metrics_updated"));
+    }
     return updated;
   },
 
@@ -512,12 +520,20 @@ export const Storage = {
     const list = this.getVisions();
     const updated = [vision, ...(Array.isArray(list) ? list.filter(v => v && v.id !== vision.id) : [])];
     localStorage.setItem(STORAGE_KEYS.VISIONS, JSON.stringify(updated));
+    this.recordActivity(`Logged Prophetic Vision: ${vision.title || "Prophetic Vision"}`);
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("gtc_visions_updated", { detail: updated }));
+    }
     return updated;
   },
   deleteVision(id: string) {
     const list = this.getVisions();
     const updated = Array.isArray(list) ? list.filter(v => v && v.id !== id) : [];
     localStorage.setItem(STORAGE_KEYS.VISIONS, JSON.stringify(updated));
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("gtc_visions_updated", { detail: updated }));
+      window.dispatchEvent(new CustomEvent("gtc_metrics_updated"));
+    }
     return updated;
   },
 
@@ -604,6 +620,10 @@ export const Storage = {
   },
   saveStudyPlans(plans: BibleStudyPlan[]) {
     localStorage.setItem(STORAGE_KEYS.STUDY_PLANS, JSON.stringify(plans));
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("gtc_study_plans_updated", { detail: plans }));
+      window.dispatchEvent(new CustomEvent("gtc_metrics_updated"));
+    }
   },
 
   getEvents(): LiveEvent[] {
@@ -1148,60 +1168,153 @@ export const Storage = {
   },
 
   getSpiritualMetrics(): SpiritualJourneyMetrics {
-    const isCleared = this.isMockDataCleared();
+    const currentUser = this.getUser();
 
-    // 1. Chapters Read
-    let chaptersList: string[] = [];
+    // 1. Chapters Read - Comprehensive Entire App Scan
+    // Aggregates: BibleHub reads, recent reading, bookmarks, highlights, study notes, completed study plan scripture assignments
+    const chaptersReadSet = new Set<string>();
     try {
       const raw = localStorage.getItem("gtc_chapters_read_set");
       if (raw) {
-        chaptersList = JSON.parse(raw);
-      } else if (!isCleared) {
-        chaptersList = ["Genesis 1", "Psalms 23", "Proverbs 3", "Matthew 5", "John 1", "Romans 8", "Hebrews 11"];
+        const list = JSON.parse(raw);
+        if (Array.isArray(list)) {
+          list.forEach((item) => {
+            if (typeof item === "string" && item.trim()) chaptersReadSet.add(item.trim());
+          });
+        }
       }
-    } catch {
-      chaptersList = [];
-    }
-    const totalChaptersRead = chaptersList.length;
+    } catch {}
 
-    // 2. Audio Minutes
+    // Scan recent reading
+    try {
+      const recent = this.getRecentReading();
+      if (recent && recent.book && recent.chapter) {
+        chaptersReadSet.add(`${recent.book} ${recent.chapter}`.trim());
+      }
+    } catch {}
+
+    // Scan bookmarks across the app
+    const bookmarks = this.getBookmarks();
+    bookmarks.forEach((bm) => {
+      if (bm.book && bm.chapter) {
+        chaptersReadSet.add(`${bm.book} ${bm.chapter}`.trim());
+      }
+    });
+
+    // Scan highlights across the app
+    const highlights = this.getHighlights();
+    highlights.forEach((hl) => {
+      if (hl.book && hl.chapter) {
+        chaptersReadSet.add(`${hl.book} ${hl.chapter}`.trim());
+      }
+    });
+
+    // Scan notes across the app
+    const notes = this.getNotes();
+    notes.forEach((nt) => {
+      if (nt.book && nt.chapter) {
+        chaptersReadSet.add(`${nt.book} ${nt.chapter}`.trim());
+      }
+    });
+
+    // Scan completed study plan passages
+    const studyPlans = this.getStudyPlans();
+    studyPlans.forEach((plan) => {
+      (plan.days || []).forEach((day) => {
+        if (day.isCompleted) {
+          const refs: string[] = [];
+          if (Array.isArray(day.assignedPassages)) refs.push(...day.assignedPassages);
+          if (day.scriptureRef) refs.push(day.scriptureRef);
+          refs.forEach((ref) => {
+            const match = ref.match(/^([0-9]?[a-zA-Z\s]+?)\s+([0-9]+)/);
+            if (match) {
+              const bookPart = match[1].trim();
+              const chapPart = match[2].trim();
+              chaptersReadSet.add(`${bookPart} ${chapPart}`);
+            }
+          });
+        }
+      });
+    });
+
+    // Persist verified unified set
+    try {
+      localStorage.setItem("gtc_chapters_read_set", JSON.stringify(Array.from(chaptersReadSet)));
+    } catch {}
+
+    const totalChaptersRead = chaptersReadSet.size;
+
+    // 2. Audio Minutes - Authentic tracked listening duration across AudioPlayerBar and BibleHub
     let audioListeningMinutes = 0;
     try {
       const raw = localStorage.getItem("gtc_audio_minutes_total");
       if (raw) {
         audioListeningMinutes = Math.round(parseFloat(raw));
-      } else if (!isCleared) {
-        audioListeningMinutes = 48;
       }
     } catch {
       audioListeningMinutes = 0;
     }
 
     // 3. User Notes, Bookmarks, Highlights, Dreams & Visions
-    const notes = this.getNotes();
-    const bookmarks = this.getBookmarks();
-    const highlights = this.getHighlights();
     const dreams = this.getDreams();
     const visions = this.getVisions();
     const prayers = this.getPrayers();
-    const studyPlans = this.getStudyPlans();
 
     const studyNotesCount = notes.length;
     const bookmarksCount = bookmarks.length;
     const highlightsCount = highlights.length;
     const dreamsVisionsLoggedCount = dreams.length + visions.length;
 
-    // 4. Intercessory & Personal Prayers Offered
-    const prayersOfferedCount = prayers.reduce((acc, p) => {
-      return acc + (p.hasUserPrayed ? 1 : 0) + (p.prayedCount ? 1 : 0);
-    }, isCleared ? 0 : 7);
+    // 4. Intercessory & Personal Prayers Offered - Full App Verification
+    // Checks personal prayers, community posts prayed for, prayer responses, and activity log prayer entries
+    let prayersOfferedCount = 0;
+    const countedPrayerIds = new Set<string>();
 
-    // 5. Study Plans Progress
+    // Personal prayers
+    prayers.forEach((p) => {
+      if (p.hasUserPrayed) {
+        prayersOfferedCount++;
+        countedPrayerIds.add(p.id);
+      }
+      if (p.isUserCreated && !countedPrayerIds.has(p.id)) {
+        prayersOfferedCount++;
+        countedPrayerIds.add(p.id);
+      }
+      if (p.prayedCount && p.prayedCount > 0 && !p.hasUserPrayed && !p.isUserCreated) {
+        prayersOfferedCount += p.prayedCount;
+      }
+    });
+
+    // Community prayers in Prayer Hub
+    try {
+      const rawComm = localStorage.getItem("gtc_community_posts_v2");
+      if (rawComm) {
+        const commPosts: CommunityPost[] = JSON.parse(rawComm);
+        if (Array.isArray(commPosts)) {
+          commPosts.forEach((post) => {
+            if (post.hasUserPrayed && !countedPrayerIds.has(post.id)) {
+              prayersOfferedCount++;
+              countedPrayerIds.add(post.id);
+            }
+            if (currentUser?.id && post.authorId === currentUser.id && !countedPrayerIds.has(post.id)) {
+              prayersOfferedCount++;
+              countedPrayerIds.add(post.id);
+            }
+            if (currentUser?.id && Array.isArray(post.prayerResponses)) {
+              const myResponses = post.prayerResponses.filter((r) => r.authorId === currentUser.id);
+              prayersOfferedCount += myResponses.length;
+            }
+          });
+        }
+      }
+    } catch {}
+
+    // 5. Study Plans Progress - Authentic count of completed curriculum days
     const enrolledPlans = studyPlans.filter((p) => p.isEnrolled || (p.completedDays && p.completedDays > 0));
-    const studyPlansEnrolledCount = enrolledPlans.length > 0 ? enrolledPlans.length : (isCleared ? 0 : 1);
-    const studyPlanDaysCompleted = studyPlans.reduce((acc, p) => acc + (p.completedDays || 0), isCleared ? 0 : 4);
+    const studyPlansEnrolledCount = enrolledPlans.length;
+    const studyPlanDaysCompleted = studyPlans.reduce((acc, p) => acc + (p.completedDays || 0), 0);
 
-    // 6. Activity log & streak calculation
+    // 6. Activity log & Authentic Streak calculation
     let activityLog: Record<string, string[]> = {};
     try {
       const raw = localStorage.getItem("gtc_activity_days_log");
@@ -1213,10 +1326,6 @@ export const Storage = {
     const now = new Date();
     const todayStr = now.toISOString().split("T")[0];
 
-    if (!activityLog[todayStr] && !isCleared) {
-      activityLog[todayStr] = ["Daily Manna & Scripture Devotional"];
-    }
-
     const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
     const weeklyRhythm: DayActivityStatus[] = [];
 
@@ -1226,7 +1335,7 @@ export const Storage = {
       const dateStr = d.toISOString().split("T")[0];
       const isToday = i === 0;
       const acts = activityLog[dateStr] || [];
-      const hasActs = acts.length > 0 || (!isCleared && i <= 3);
+      const hasActs = acts.length > 0;
 
       weeklyRhythm.push({
         dayName: dayNames[d.getDay()],
@@ -1234,26 +1343,60 @@ export const Storage = {
         dateString: dateStr,
         isToday,
         hasActivity: hasActs,
-        activities: acts.length > 0 ? acts : (hasActs ? ["Daily Word Meditation"] : [])
+        activities: acts
       });
     }
 
-    let streak = 0;
-    for (let i = 0; i < 30; i++) {
-      const checkDate = new Date(now);
-      checkDate.setDate(checkDate.getDate() - i);
-      const checkStr = checkDate.toISOString().split("T")[0];
-      if (activityLog[checkStr] && activityLog[checkStr].length > 0) {
-        streak++;
-      } else if (i === 0 && !isCleared) {
-        streak = 5;
-        break;
-      } else {
-        break;
+    // Accurate calculation of current streak
+    const isTodayActive = (activityLog[todayStr] || []).length > 0;
+    const yesterday = new Date(now);
+    yesterday.setDate(yesterday.getDate() - 1);
+    const yesterdayStr = yesterday.toISOString().split("T")[0];
+    const isYesterdayActive = (activityLog[yesterdayStr] || []).length > 0;
+
+    let currentStreakDays = 0;
+    if (isTodayActive || isYesterdayActive) {
+      // Start counting from today if active, else from yesterday
+      const startOffset = isTodayActive ? 0 : 1;
+      for (let i = startOffset; i < 365; i++) {
+        const checkDate = new Date(now);
+        checkDate.setDate(checkDate.getDate() - i);
+        const checkStr = checkDate.toISOString().split("T")[0];
+        if (activityLog[checkStr] && activityLog[checkStr].length > 0) {
+          currentStreakDays++;
+        } else {
+          break;
+        }
       }
     }
-    const currentStreakDays = Math.max(streak, isCleared ? 0 : 5);
-    const longestStreakDays = Math.max(currentStreakDays, isCleared ? 0 : 12);
+
+    // Longest streak calculation
+    let longestStreakDays = currentStreakDays;
+    try {
+      const activeDates = Object.keys(activityLog)
+        .filter((k) => activityLog[k] && activityLog[k].length > 0)
+        .sort();
+
+      let tempStreak = 0;
+      let prevDate: Date | null = null;
+      activeDates.forEach((dateStr) => {
+        const curDate = new Date(dateStr);
+        if (prevDate) {
+          const diffDays = Math.round((curDate.getTime() - prevDate.getTime()) / (1000 * 3600 * 24));
+          if (diffDays === 1) {
+            tempStreak++;
+          } else if (diffDays > 1) {
+            tempStreak = 1;
+          }
+        } else {
+          tempStreak = 1;
+        }
+        prevDate = curDate;
+        if (tempStreak > longestStreakDays) {
+          longestStreakDays = tempStreak;
+        }
+      });
+    } catch {}
 
     // 7. Overall Spiritual Milestone
     const totalEngagementScore =
@@ -1264,8 +1407,8 @@ export const Storage = {
       currentStreakDays * 2;
 
     let milestoneTitle = "Spiritual Disciple (Tier I)";
-    let milestoneProgressPercent = 35;
-    let nextMilestoneGoal = "Read 3 more chapters or pray to reach Tier II";
+    let milestoneProgressPercent = 0;
+    let nextMilestoneGoal = "Read scripture, pray, or listen to audio to begin your walk";
 
     if (totalEngagementScore >= 80) {
       milestoneTitle = "Kingdom Conqueror (Dominion & Victory)";
@@ -1279,6 +1422,10 @@ export const Storage = {
       milestoneTitle = "Scripture Scribe (Tier II)";
       milestoneProgressPercent = Math.min(95, Math.round(((totalEngagementScore - 20) / 25) * 100));
       nextMilestoneGoal = "Reach 7-day reading streak to reach Watchman on the Wall";
+    } else if (totalEngagementScore > 0) {
+      milestoneTitle = "Spiritual Disciple (Tier I)";
+      milestoneProgressPercent = Math.min(95, Math.round((totalEngagementScore / 20) * 100));
+      nextMilestoneGoal = "Earn 20 points through prayer and scripture study to reach Tier II";
     }
 
     return {
@@ -1297,7 +1444,7 @@ export const Storage = {
       milestoneTitle,
       milestoneProgressPercent,
       nextMilestoneGoal,
-      lastActiveFormatted: "Today, Active"
+      lastActiveFormatted: isTodayActive ? "Today, Active" : "In Progress"
     };
   }
 };

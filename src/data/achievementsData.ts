@@ -192,7 +192,7 @@ export const ACHIEVEMENTS_LIST: Achievement[] = [
     },
     checkUnlocked: (m) => ({
       isUnlocked: m.currentStreakDays >= 1 || m.longestStreakDays >= 1,
-      currentProgress: Math.max(m.currentStreakDays, m.longestStreakDays, 1)
+      currentProgress: Math.min(1, Math.max(m.currentStreakDays, m.longestStreakDays))
     })
   },
   {

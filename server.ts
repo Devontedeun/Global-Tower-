@@ -272,17 +272,28 @@ setInterval(() => {
 }, 5 * 60 * 1000);
 
 // Resilient Gemini AI TTS synthesizer using latest gemini-3.1-flash-tts-preview
-async function synthesizeGeminiTTS(text: string, voiceName: string, maxRetries = 2): Promise<Buffer | null> {
+async function synthesizeGeminiTTS(text: string, voiceName: string, maxRetries = 1): Promise<Buffer | null> {
   if (!process.env.GEMINI_API_KEY) return null;
   const ai = getGeminiClient();
   if (!ai) return null;
 
   try {
     const cleanVoice = voiceName.replace(/^gemini:/i, "").trim();
-    const allowed = ["Puck", "Charon", "Kore", "Fenrir", "Aoede"];
-    const resolvedVoice = allowed.find(
+    const allowed = ["Puck", "Charon", "Kore", "Fenrir", "Zephyr"];
+    let resolvedVoice = allowed.find(
       (v) => v.toLowerCase() === cleanVoice.toLowerCase()
-    ) || (cleanVoice.toLowerCase().includes("female") ? "Kore" : "Puck");
+    );
+    if (!resolvedVoice) {
+      if (cleanVoice.toLowerCase().includes("aoede") || cleanVoice.toLowerCase().includes("female") || cleanVoice.toLowerCase().includes("kore") || cleanVoice.toLowerCase().includes("zephyr")) {
+        resolvedVoice = "Zephyr";
+      } else if (cleanVoice.toLowerCase().includes("charon")) {
+        resolvedVoice = "Charon";
+      } else if (cleanVoice.toLowerCase().includes("fenrir")) {
+        resolvedVoice = "Fenrir";
+      } else {
+        resolvedVoice = "Puck";
+      }
+    }
 
     // Clean text for natural biblical narration
     const cleanText = text
@@ -313,12 +324,10 @@ async function synthesizeGeminiTTS(text: string, voiceName: string, maxRetries =
         }
       } catch (err: any) {
         const errMsg = err?.message || String(err);
-        const isRateLimit = errMsg.includes("429") || errMsg.includes("RESOURCE_EXHAUSTED") || errMsg.includes("Quota exceeded");
         console.warn(`[TTS:Gemini] Synthesis attempt ${attempt + 1}/${maxRetries + 1} for voice "${resolvedVoice}": ${errMsg}`);
 
         if (attempt < maxRetries) {
-          const delay = isRateLimit ? (attempt + 1) * 2000 : 1000;
-          await new Promise((r) => setTimeout(r, delay));
+          await new Promise((r) => setTimeout(r, 600));
         } else {
           return null;
         }
@@ -510,24 +519,31 @@ app.get("/api/tts", async (req, res) => {
       return res.status(400).json({ error: "Text parameter is required" });
     }
 
+    // Clean brackets and footnotes from scripture text for pristine TTS synthesis
+    const sanitizedText = rawText
+      .replace(/\[\d+\]/g, "")
+      .replace(/\[[a-z]\]/gi, "")
+      .replace(/\s+/g, " ")
+      .trim();
+
     const gender = ((req.query.gender as string) || "male").toLowerCase();
     const requestedVoice = ((req.query.voice as string) || "").trim();
-    const truncatedText = rawText.length > 2000 ? rawText.substring(0, 2000) : rawText;
+    const truncatedText = sanitizedText.length > 2000 ? sanitizedText.substring(0, 2000) : sanitizedText;
 
-    // 1. Primary High-Fidelity Scripture Synthesis: Gemini AI TTS
-    // Uses Google's official human-grade neural TTS engine (guaranteed zero cloud container blocking)
-    if (process.env.GEMINI_API_KEY) {
+    // 1. Check if Gemini AI voice was explicitly requested or default
+    const isGeminiVoice = requestedVoice.startsWith("gemini:") || 
+      /^(puck|charon|kore|fenrir|zephyr|aoede)$/i.test(requestedVoice);
+
+    if (process.env.GEMINI_API_KEY && isGeminiVoice) {
       let geminiVoiceName = "Puck"; // Default rich baritone narrator
       const lowerReq = requestedVoice.toLowerCase();
 
-      if (lowerReq.includes("kore") || lowerReq.includes("jenny") || lowerReq.includes("michelle") || lowerReq.includes("emma") || gender === "female") {
-        geminiVoiceName = "Kore";
-      } else if (lowerReq.includes("charon") || lowerReq.includes("ryan") || lowerReq.includes("cathedral")) {
+      if (lowerReq.includes("zephyr") || lowerReq.includes("aoede") || lowerReq.includes("kore") || lowerReq.includes("female") || gender === "female") {
+        geminiVoiceName = lowerReq.includes("kore") ? "Kore" : "Zephyr";
+      } else if (lowerReq.includes("charon") || lowerReq.includes("cathedral")) {
         geminiVoiceName = "Charon";
       } else if (lowerReq.includes("fenrir")) {
         geminiVoiceName = "Fenrir";
-      } else if (lowerReq.includes("aoede")) {
-        geminiVoiceName = "Aoede";
       } else {
         geminiVoiceName = "Puck";
       }
@@ -551,22 +567,14 @@ app.get("/api/tts", async (req, res) => {
           console.log(`[TTS:Gemini] Synthesized human voice "${geminiVoiceName}", size=${wavBuffer.length} bytes`);
           return sendAudioWithRange(req, res, wavBuffer, geminiVoiceName, false, "audio/wav", "Gemini-TTS", requestedVoice, false);
         } else {
-          console.warn(`[TTS] Gemini TTS returned empty buffer for "${geminiVoiceName}". Pacing response.`);
-          return res.status(429).json({
-            error: "Gemini AI neural voice is pacing requests. Please retry in a moment.",
-            retryAfter: 3
-          });
+          console.warn(`[TTS] Gemini TTS returned empty buffer for "${geminiVoiceName}". Seamlessly falling back to Edge Neural TTS...`);
         }
       } catch (geminiErr: any) {
-        console.warn(`[TTS] Gemini TTS notice: ${geminiErr?.message || geminiErr}`);
-        return res.status(503).json({
-          error: "Gemini AI voice temporarily unavailable. Please retry.",
-          retryAfter: 3
-        });
+        console.warn(`[TTS] Gemini TTS notice: ${geminiErr?.message || geminiErr}. Seamlessly falling back to Edge Neural TTS...`);
       }
     }
 
-    // 2. Secondary Engine: Studio Edge Neural (Fallback if Gemini is unavailable)
+    // 2. Secondary / Direct Engine: Studio Edge Neural (Fast, unlimited, reverent)
     let selectedVoice = requestedVoice;
     let fallbackUsed = false;
 
@@ -643,7 +651,7 @@ app.get("/api/tts", async (req, res) => {
         }
         res.status(504).json({ error: "TTS generation timed out" });
       }
-    }, 10000);
+    }, 4500);
 
     audioStream.on("data", (chunk: Buffer) => chunks.push(chunk));
     audioStream.on("end", () => {

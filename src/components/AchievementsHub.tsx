@@ -66,8 +66,13 @@ export const AchievementsHub: React.FC<AchievementsHubProps> = ({
 
   const handleSelectAchievement = (achievement: Achievement) => {
     setActiveModalAchievement(achievement);
-    setModalSpinTrigger((prev) => prev + 1);
-    achievementCelebrationService.playHeavenlySound();
+    const result = summary.results.find((r) => r.achievement.id === achievement.id);
+    if (result?.isUnlocked) {
+      setModalSpinTrigger((prev) => prev + 1);
+      achievementCelebrationService.playHeavenlySound();
+    } else {
+      setModalSpinTrigger(0);
+    }
   };
 
   const summary = useMemo(() => {
@@ -185,21 +190,32 @@ export const AchievementsHub: React.FC<AchievementsHubProps> = ({
               {spiritualTitle.desc} • Every chapter read, prayer offered, note written, and audio scripture heard advances your sanctified walk.
             </p>
 
-            {/* Quick Interactive Celebration Trigger */}
-            <div className="pt-1 flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => {
-                  const unlockedItem = summary.results.find((r) => r.isUnlocked)?.achievement || ACHIEVEMENTS_LIST[0];
-                  achievementCelebrationService.triggerCelebration(unlockedItem, false);
-                }}
-                className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-[#C5A059] to-[#D4AF37] hover:brightness-110 active:scale-95 text-[#18140D] font-bold text-xs shadow-sm transition-all cursor-pointer flex items-center gap-1.5"
-                title="Experience the heavenly sound and 3D rotating achievement on its central axis"
-              >
-                <Sparkles className="w-3.5 h-3.5 text-[#18140D]" />
-                <span>Celebrate Milestone (Heavenly Sound & 3s Spin)</span>
-              </button>
-            </div>
+            {/* Milestone Celebration Status */}
+            {summary.unlockedCount > 0 ? (
+              <div className="pt-1 flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const unlockedItem = summary.results.find((r) => r.isUnlocked)?.achievement;
+                    if (unlockedItem) {
+                      achievementCelebrationService.triggerCelebration(unlockedItem, false);
+                    }
+                  }}
+                  className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-[#C5A059] to-[#D4AF37] hover:brightness-110 active:scale-95 text-[#18140D] font-bold text-xs shadow-sm transition-all cursor-pointer flex items-center gap-1.5"
+                  title="Celebrate your unlocked spiritual milestone"
+                >
+                  <Sparkles className="w-3.5 h-3.5 text-[#18140D]" />
+                  <span>Celebrate Unlocked Milestone ({summary.unlockedCount} Earned)</span>
+                </button>
+              </div>
+            ) : (
+              <div className="pt-1 flex items-center gap-2">
+                <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-800 dark:text-amber-300 text-xs font-semibold">
+                  <Lock className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+                  <span>Milestones in Progress • 0 of {summary.totalCount} Unlocked</span>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Points & Progress Badges */}
@@ -433,33 +449,47 @@ export const AchievementsHub: React.FC<AchievementsHubProps> = ({
                     spinTrigger={modalSpinTrigger}
                     size="md"
                   />
-                  <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setModalSpinTrigger((c) => c + 1);
-                        achievementCelebrationService.playHeavenlySound();
-                      }}
-                      className="px-3 py-1 rounded-full bg-amber-500/15 hover:bg-amber-500/25 active:scale-95 text-amber-700 dark:text-amber-300 text-[11px] font-bold flex items-center gap-1.5 transition-all cursor-pointer border border-amber-400/30"
-                      title="Spin on central axis for 3 seconds with heavenly sound"
-                    >
-                      <RotateCw className="w-3.5 h-3.5" />
-                      <span>Replay 3s Spin & Heavenly Sound</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const ach = activeModalAchievement;
-                        setActiveModalAchievement(null);
-                        achievementCelebrationService.triggerCelebration(ach, false);
-                      }}
-                      className="px-3 py-1 rounded-full bg-gradient-to-r from-amber-500 to-amber-600 hover:brightness-110 active:scale-95 text-white text-[11px] font-bold flex items-center gap-1.5 shadow-xs transition-all cursor-pointer"
-                      title="Full screen celebration with God rays & heavenly sound"
-                    >
-                      <Sparkles className="w-3.5 h-3.5 text-amber-100" />
-                      <span>Full Screen Celebration</span>
-                    </button>
-                  </div>
+                  {summary.results.find((r) => r.achievement.id === activeModalAchievement.id)?.isUnlocked ? (
+                    <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setModalSpinTrigger((c) => c + 1);
+                          achievementCelebrationService.playHeavenlySound();
+                        }}
+                        className="px-3 py-1 rounded-full bg-amber-500/15 hover:bg-amber-500/25 active:scale-95 text-amber-700 dark:text-amber-300 text-[11px] font-bold flex items-center gap-1.5 transition-all cursor-pointer border border-amber-400/30"
+                        title="Spin on central axis for 3 seconds with heavenly sound"
+                      >
+                        <RotateCw className="w-3.5 h-3.5" />
+                        <span>Replay 3s Spin & Heavenly Sound</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const ach = activeModalAchievement;
+                          setActiveModalAchievement(null);
+                          achievementCelebrationService.triggerCelebration(ach, false);
+                        }}
+                        className="px-3 py-1 rounded-full bg-gradient-to-r from-amber-500 to-amber-600 hover:brightness-110 active:scale-95 text-white text-[11px] font-bold flex items-center gap-1.5 shadow-xs transition-all cursor-pointer"
+                        title="Full screen celebration with God rays & heavenly sound"
+                      >
+                        <Sparkles className="w-3.5 h-3.5 text-amber-100" />
+                        <span>Full Screen Celebration</span>
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="mt-3 flex flex-col items-center justify-center gap-1 px-4 py-2 rounded-xl bg-amber-500/10 border border-amber-500/20 text-stone-700 dark:text-stone-300 text-xs">
+                      <div className="flex items-center gap-1.5 text-amber-700 dark:text-amber-400 font-bold">
+                        <Lock className="w-3.5 h-3.5" />
+                        <span>
+                          Milestone Locked • Progress: {summary.results.find((r) => r.achievement.id === activeModalAchievement.id)?.currentProgress || 0} / {activeModalAchievement.targetCount} ({summary.results.find((r) => r.achievement.id === activeModalAchievement.id)?.percent || 0}%)
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-stone-500 dark:text-stone-400 text-center">
+                        Celebrations can only be collected once this milestone is fully earned.
+                      </p>
+                    </div>
+                  )}
                 </div>
 
                 <div>

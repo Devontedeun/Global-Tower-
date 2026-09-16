@@ -24,7 +24,8 @@ import {
   X,
   VolumeX,
   ChevronRight,
-  Share2
+  Share2,
+  Lock
 } from "lucide-react";
 import { Achievement } from "../data/achievementsData";
 import {
@@ -193,9 +194,15 @@ export const RotatingAchievementMedallion: React.FC<{
 
 export const AchievementCelebrationOverlay: React.FC = () => {
   const [currentCelebration, setCurrentCelebration] = useState<AchievementCelebrationEvent | null>(null);
+  const [lockedAttemptNotice, setLockedAttemptNotice] = useState<{
+    title: string;
+    message: string;
+    progress: string;
+  } | null>(null);
   const [spinCount, setSpinCount] = useState<number>(1);
   const [hasStoppedSpinning, setHasStoppedSpinning] = useState<boolean>(false);
   const autoCloseTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const lockedNoticeTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     // Initialize baseline on mount
@@ -204,6 +211,13 @@ export const AchievementCelebrationOverlay: React.FC = () => {
     const handleAchievementUnlocked = (e: any) => {
       const event: AchievementCelebrationEvent = e.detail;
       if (!event?.achievement) return;
+
+      // Double-check verification across entire app:
+      const status = achievementCelebrationService.verifyAchievementStatus(event.achievement);
+      if (!status.isUnlocked) {
+        console.warn("[CelebrationOverlay] ❌ Ignored celebration: milestone not yet earned:", event.achievement.title);
+        return;
+      }
 
       setCurrentCelebration(event);
       setSpinCount((prev) => prev + 1);
@@ -216,18 +230,36 @@ export const AchievementCelebrationOverlay: React.FC = () => {
       }, 10000);
     };
 
+    const handleLockedAttempt = (e: any) => {
+      const detail = e.detail;
+      if (!detail) return;
+      setLockedAttemptNotice({
+        title: detail.achievement?.title || "Spiritual Milestone in Progress",
+        message: detail.message || "You haven't unlocked this milestone yet. Continue your walk to earn it!",
+        progress: `${detail.currentProgress || 0} / ${detail.targetCount || 1}`
+      });
+
+      if (lockedNoticeTimerRef.current) clearTimeout(lockedNoticeTimerRef.current);
+      lockedNoticeTimerRef.current = setTimeout(() => {
+        setLockedAttemptNotice(null);
+      }, 4500);
+    };
+
     window.addEventListener("gtc_achievement_unlocked", handleAchievementUnlocked);
+    window.addEventListener("gtc_achievement_locked_attempt", handleLockedAttempt);
 
     // Also listen to metrics update to automatically check for newly unlocked achievements
     const handleMetricsUpdated = () => {
-      achievementCelebrationService.checkAndCelebrateNewAchievements(true);
+      achievementCelebrationService.checkAndCelebrateNewAchievements();
     };
     window.addEventListener("gtc_metrics_updated", handleMetricsUpdated);
 
     return () => {
       window.removeEventListener("gtc_achievement_unlocked", handleAchievementUnlocked);
+      window.removeEventListener("gtc_achievement_locked_attempt", handleLockedAttempt);
       window.removeEventListener("gtc_metrics_updated", handleMetricsUpdated);
       if (autoCloseTimerRef.current) clearTimeout(autoCloseTimerRef.current);
+      if (lockedNoticeTimerRef.current) clearTimeout(lockedNoticeTimerRef.current);
     };
   }, []);
 
@@ -247,13 +279,50 @@ export const AchievementCelebrationOverlay: React.FC = () => {
     setCurrentCelebration(null);
   };
 
-  if (!currentCelebration) return null;
-
-  const { achievement } = currentCelebration;
+  const achievement = currentCelebration?.achievement;
 
   return (
     <AnimatePresence>
-      <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4 select-none">
+      {/* Locked Milestone Attempt Gentle Warning Toast */}
+      {lockedAttemptNotice && (
+        <motion.div
+          key="locked-attempt-toast"
+          initial={{ opacity: 0, y: -20, scale: 0.95 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          exit={{ opacity: 0, y: -20, scale: 0.95 }}
+          className="fixed top-5 left-1/2 -translate-x-1/2 z-[10001] w-11/12 max-w-md bg-stone-900/95 text-stone-100 p-4 rounded-2xl shadow-2xl border border-amber-500/40 backdrop-blur-md flex items-start gap-3 select-none"
+        >
+          <div className="p-2 bg-amber-500/20 text-amber-400 rounded-xl shrink-0 mt-0.5">
+            <Lock className="w-5 h-5" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center justify-between gap-2">
+              <h4 className="text-xs font-bold text-amber-300 uppercase tracking-wider">
+                Milestone in Progress
+              </h4>
+              <span className="text-[11px] font-bold text-stone-400">
+                {lockedAttemptNotice.progress}
+              </span>
+            </div>
+            <p className="text-xs font-semibold text-white mt-0.5">
+              {lockedAttemptNotice.title}
+            </p>
+            <p className="text-[11px] text-stone-300 mt-1 leading-relaxed">
+              {lockedAttemptNotice.message}
+            </p>
+          </div>
+          <button
+            onClick={() => setLockedAttemptNotice(null)}
+            className="p-1 text-stone-400 hover:text-white transition-colors cursor-pointer shrink-0"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </motion.div>
+      )}
+
+      {/* Full Celebration Modal Overlay */}
+      {currentCelebration && achievement && (
+        <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4 select-none">
         {/* Darkened Backdrop Blur with Divine Golden Ambient Glow */}
         <motion.div
           initial={{ opacity: 0 }}
@@ -387,6 +456,7 @@ export const AchievementCelebrationOverlay: React.FC = () => {
           </div>
         </motion.div>
       </div>
+      )}
     </AnimatePresence>
   );
 };
