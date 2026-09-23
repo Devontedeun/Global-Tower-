@@ -3,7 +3,6 @@ import path from "path";
 import fs from "fs";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI } from "@google/genai";
-import { MsEdgeTTS, OUTPUT_FORMAT } from "msedge-tts";
 import dotenv from "dotenv";
 import {
   analyzeSpiritualInquiry,
@@ -340,49 +339,127 @@ async function synthesizeGeminiTTS(text: string, voiceName: string, maxRetries =
   }
 }
 
-// Resilient Scripture TTS Helper - Uses high-definition neural narration only (zero robotic fallback)
-async function synthesizeReverentNeuralTTS(
-  text: string,
-  voice: string,
-  rate = "-4%"
-): Promise<{ buffer: Buffer; isWav: boolean; engine: string } | null> {
-  let tts: MsEdgeTTS | null = null;
-  try {
-    tts = new MsEdgeTTS();
-    await tts.setMetadata(voice, OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3);
-    const { audioStream } = tts.toStream(text, { rate, pitch: "+0Hz" });
-    const chunks: Buffer[] = [];
-    const edgeResult = await new Promise<Buffer | null>((resolve) => {
-      const timeout = setTimeout(() => {
-        try { tts?.close(); } catch {}
-        resolve(null);
-      }, 7000);
+// Kokoro TTS Cloud Run Service Configuration (OpenAI-compatible /v1/audio/speech)
+const KOKORO_TTS_ENDPOINT = process.env.KOKORO_TTS_ENDPOINT || "https://kokoro-tts-751619998879.europe-west2.run.app/v1/audio/speech";
 
-      audioStream.on("data", (c: Buffer) => chunks.push(c));
-      audioStream.on("end", () => {
-        clearTimeout(timeout);
-        try { tts?.close(); } catch {}
-        resolve(Buffer.concat(chunks));
-      });
-      audioStream.on("error", () => {
-        clearTimeout(timeout);
-        try { tts?.close(); } catch {}
-        resolve(null);
-      });
-    });
+export interface KokoroVoiceDefinition {
+  id: string;
+  name: string;
+  gender: "female" | "male";
+  provider: "kokoro";
+  description: string;
+  isDefault?: boolean;
+}
 
-    if (edgeResult && edgeResult.length > 0) {
-      return { buffer: edgeResult, isWav: false, engine: "Natural-Voice" };
-    }
-  } catch {
-    try { tts?.close(); } catch {}
+export const KOKORO_VOICES: KokoroVoiceDefinition[] = [
+  { id: "af_heart", name: "Heart (Kokoro)", gender: "female", provider: "kokoro", description: "Warm, reverent female scripture narrator", isDefault: true },
+  { id: "am_adam", name: "Adam (Kokoro)", gender: "male", provider: "kokoro", description: "Resonant, solemn male scripture narrator", isDefault: true },
+  { id: "am_michael", name: "Michael (Kokoro)", gender: "male", provider: "kokoro", description: "Solemn, classical scripture reader" },
+  { id: "am_eric", name: "Eric (Kokoro)", gender: "male", provider: "kokoro", description: "Deep, clear narrative voice" },
+  { id: "af_bella", name: "Bella (Kokoro)", gender: "female", provider: "kokoro", description: "Gentle, peaceful devotional reader" },
+  { id: "af_nicole", name: "Nicole (Kokoro)", gender: "female", provider: "kokoro", description: "Clear, authoritative narrative delivery" },
+  { id: "af_sarah", name: "Sarah (Kokoro)", gender: "female", provider: "kokoro", description: "Dignified, warm scripture reader" },
+  { id: "af_sky", name: "Sky (Kokoro)", gender: "female", provider: "kokoro", description: "Bright, uplifting scripture narrator" },
+];
+
+function resolveKokoroVoice(requestedVoice?: string, gender?: string): string {
+  const req = (requestedVoice || "").trim().toLowerCase();
+
+  // Direct ID match
+  const direct = KOKORO_VOICES.find((v) => v.id.toLowerCase() === req);
+  if (direct) return direct.id;
+
+  // Name match
+  if (req.includes("heart")) return "af_heart";
+  if (req.includes("adam")) return "am_adam";
+  if (req.includes("michael")) return "am_michael";
+  if (req.includes("eric")) return "am_eric";
+  if (req.includes("bella")) return "af_bella";
+  if (req.includes("nicole")) return "af_nicole";
+  if (req.includes("sarah")) return "af_sarah";
+  if (req.includes("sky")) return "af_sky";
+
+  // Gender or legacy aliases
+  const gen = (gender || "").toLowerCase();
+  if (gen === "female" || req.includes("female") || req.includes("jenny") || req.includes("michelle") || req.includes("emma") || req.includes("kore") || req.includes("zephyr")) {
+    return "af_heart";
+  }
+  if (gen === "male" || req.includes("male") || req.includes("guy") || req.includes("christopher") || req.includes("brian") || req.includes("ryan") || req.includes("puck") || req.includes("charon") || req.includes("fenrir")) {
+    return "am_adam";
   }
 
-  // Backup: if MsEdgeTTS fails, synthesize seamlessly via Gemini AI TTS
+  return "af_heart";
+}
+
+async function synthesizeKokoroTTS(
+  text: string,
+  voice: string = "af_heart",
+  maxRetries = 1
+): Promise<Buffer | null> {
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 30000);
+
+      const response = await fetch(KOKORO_TTS_ENDPOINT, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Accept": "audio/mpeg"
+        },
+        body: JSON.stringify({
+          model: "kokoro",
+          input: text,
+          voice: voice,
+          response_format: "mp3"
+        }),
+        signal: controller.signal
+      });
+
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => "");
+        console.warn(`[TTS:Kokoro] HTTP ${response.status} from Kokoro endpoint (attempt ${attempt + 1}/${maxRetries + 1}): ${errorText}`);
+        if (attempt < maxRetries) {
+          await new Promise((r) => setTimeout(r, 500));
+          continue;
+        }
+        return null;
+      }
+
+      const arrayBuffer = await response.arrayBuffer();
+      const buffer = Buffer.from(arrayBuffer);
+      if (buffer.length > 0) {
+        return buffer;
+      }
+    } catch (err: any) {
+      console.warn(`[TTS:Kokoro] Fetch notice (attempt ${attempt + 1}/${maxRetries + 1}):`, err?.message || err);
+      if (attempt < maxRetries) {
+        await new Promise((r) => setTimeout(r, 500));
+      }
+    }
+  }
+  return null;
+}
+
+// Resilient Scripture TTS Helper - Primary Kokoro with seamless fallbacks
+async function synthesizeReverentNeuralTTS(
+  text: string,
+  voice: string
+): Promise<{ buffer: Buffer; isWav: boolean; engine: string } | null> {
+  // 1. Try Kokoro with default voice and retry
+  const kokoroVoice = resolveKokoroVoice(voice);
+  const kokoroBuf = await synthesizeKokoroTTS(text, kokoroVoice, 1);
+  if (kokoroBuf && kokoroBuf.length > 0) {
+    return { buffer: kokoroBuf, isWav: false, engine: "Kokoro-TTS" };
+  }
+
+  // 2. Backup: Gemini AI TTS if configured
   if (process.env.GEMINI_API_KEY) {
-    const isFemale = /jenny|michelle|emma|female/i.test(voice);
+    const isFemale = /heart|bella|nicole|sarah|female|jenny/i.test(voice);
     const geminiVoice = isFemale ? "Kore" : "Puck";
-    console.log(`[TTS:Fallback] MsEdgeTTS unavailable, synthesizing via Gemini AI TTS ("${geminiVoice}")...`);
+    console.log(`[TTS:Fallback] Kokoro retry unavailable, synthesizing via Gemini AI TTS ("${geminiVoice}")...`);
     const geminiBuf = await synthesizeGeminiTTS(text, geminiVoice);
     if (geminiBuf && geminiBuf.length > 0) {
       return { buffer: geminiBuf, isWav: true, engine: "Gemini-TTS" };
@@ -460,61 +537,41 @@ function sendAudioWithRange(
 
 app.options("/api/tts", (req, res) => {
   res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS");
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, HEAD, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Range, Content-Type, Accept-Encoding");
-  res.setHeader("Access-Control-Expose-Headers", "Content-Range, Content-Length, Accept-Ranges");
+  res.setHeader("Access-Control-Expose-Headers", "Content-Range, Content-Length, Accept-Ranges, X-Voice-Engine, X-Voice-Name, X-Voice-Requested, X-Voice-Locale, X-Voice-Fallback");
   res.sendStatus(204);
 });
 
-// List of verified voices supported out of the box (strictly reverent, solemn narrators)
-const VERIFIED_EDGE_VOICES = new Set([
-  "en-US-GuyNeural",
-  "en-US-ChristopherNeural",
-  "en-US-EricNeural",
-  "en-US-BrianNeural",
-  "en-GB-RyanNeural",
-  "en-US-JennyNeural",
-  "en-US-MichelleNeural",
-  "en-US-EmmaNeural",
-]);
-
-// Endpoint returning available reverent voices catalog
+// Endpoint returning available reverent Kokoro voices catalog
 app.get("/api/tts/voices", (req, res) => {
   res.json({
     status: "ok",
-    voices: [
-      { id: "en-US-GuyNeural", name: "Guy", gender: "male", provider: "standard", description: "Deep, solemn, reverent scripture narrator" },
-      { id: "en-US-JennyNeural", name: "Jenny", gender: "female", provider: "standard", description: "Solemn, reverent, mature female reader" },
-      { id: "gemini:Puck", name: "Puck (Gemini AI)", gender: "male", provider: "gemini", description: "Rich, human-like solemn baritone AI narrator" },
-      { id: "gemini:Kore", name: "Kore (Gemini AI)", gender: "female", provider: "gemini", description: "Peaceful, devotional contemplative AI reader" },
-      { id: "gemini:Charon", name: "Charon (Gemini AI)", gender: "male", provider: "gemini", description: "Resonant, authoritative classical cathedral AI voice" },
-      { id: "en-US-ChristopherNeural", name: "Christopher", gender: "male", provider: "standard", description: "Resonant, authoritative, dignified delivery" },
-      { id: "en-US-EricNeural", name: "Eric", gender: "male", provider: "standard", description: "Calm, contemplative, prayerful cadence" },
-      { id: "en-US-BrianNeural", name: "Brian", gender: "male", provider: "standard", description: "Steady, grounded scripture reader" },
-      { id: "en-GB-RyanNeural", name: "Ryan", gender: "male", provider: "standard", description: "Distinguished, classical cathedral delivery" },
-      { id: "en-US-MichelleNeural", name: "Michelle", gender: "female", provider: "standard", description: "Gentle, peaceful, quiet devotional cadence" },
-      { id: "en-US-EmmaNeural", name: "Emma", gender: "female", provider: "standard", description: "Measured, clear, dignified narrative delivery" },
-    ],
+    engine: "kokoro",
+    defaultVoice: "af_heart",
+    defaultMaleVoice: "am_adam",
+    voices: KOKORO_VOICES,
   });
 });
 
-app.get("/api/tts", async (req, res) => {
-  let ttsInstance: MsEdgeTTS | null = null;
-  let isClosed = false;
+// Primary Scripture Text-to-Speech Endpoint powered by Cloud Run Kokoro TTS
+app.all("/api/tts", async (req, res) => {
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, HEAD, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Range, Content-Type, Accept-Encoding");
+  res.setHeader("Access-Control-Expose-Headers", "Content-Range, Content-Length, Accept-Ranges, X-Voice-Engine, X-Voice-Name, X-Voice-Requested, X-Voice-Locale, X-Voice-Fallback");
 
-  const cleanup = () => {
-    if (!isClosed && ttsInstance) {
-      isClosed = true;
-      try {
-        ttsInstance.close();
-      } catch (e) {
-        // ignore
-      }
-    }
-  };
+  if (req.method === "OPTIONS") {
+    return res.sendStatus(204);
+  }
 
   try {
-    const rawText = ((req.query.text as string) || "").trim();
+    const rawText = (
+      (req.query.text as string) ||
+      (req.body && (req.body.text as string || req.body.input as string)) ||
+      ""
+    ).trim();
+
     if (!rawText) {
       return res.status(400).json({ error: "Text parameter is required" });
     }
@@ -526,183 +583,83 @@ app.get("/api/tts", async (req, res) => {
       .replace(/\s+/g, " ")
       .trim();
 
-    const gender = ((req.query.gender as string) || "male").toLowerCase();
-    const requestedVoice = ((req.query.voice as string) || "").trim();
-    const truncatedText = sanitizedText.length > 2000 ? sanitizedText.substring(0, 2000) : sanitizedText;
+    const gender = ((req.query.gender as string) || (req.body && req.body.gender) || "female").toLowerCase();
+    const requestedVoice = ((req.query.voice as string) || (req.body && req.body.voice) || "").trim();
+    const truncatedText = sanitizedText.length > 2500 ? sanitizedText.substring(0, 2500) : sanitizedText;
 
-    // 1. Check if Gemini AI voice was explicitly requested or default
-    const isGeminiVoice = requestedVoice.startsWith("gemini:") || 
-      /^(puck|charon|kore|fenrir|zephyr|aoede)$/i.test(requestedVoice);
+    const resolvedVoice = resolveKokoroVoice(requestedVoice, gender);
+    const cacheKey = `kokoro:${resolvedVoice}:${truncatedText}`;
 
-    if (process.env.GEMINI_API_KEY && isGeminiVoice) {
-      let geminiVoiceName = "Puck"; // Default rich baritone narrator
-      const lowerReq = requestedVoice.toLowerCase();
-
-      if (lowerReq.includes("zephyr") || lowerReq.includes("aoede") || lowerReq.includes("kore") || lowerReq.includes("female") || gender === "female") {
-        geminiVoiceName = lowerReq.includes("kore") ? "Kore" : "Zephyr";
-      } else if (lowerReq.includes("charon") || lowerReq.includes("cathedral")) {
-        geminiVoiceName = "Charon";
-      } else if (lowerReq.includes("fenrir")) {
-        geminiVoiceName = "Fenrir";
-      } else {
-        geminiVoiceName = "Puck";
-      }
-
-      const geminiCacheKey = `gemini:${geminiVoiceName}:${truncatedText}`;
-
-      if (ttsAudioCache.has(geminiCacheKey)) {
-        const cached = ttsAudioCache.get(geminiCacheKey)!;
-        return sendAudioWithRange(req, res, cached, geminiVoiceName, true, "audio/wav", "Gemini-TTS", requestedVoice, false);
-      }
-
-      try {
-        const wavBuffer = await synthesizeGeminiTTS(truncatedText, geminiVoiceName);
-        if (wavBuffer && wavBuffer.length > 0) {
-          if (ttsAudioCache.size >= MAX_TTS_CACHE_SIZE) {
-            const firstKey = ttsAudioCache.keys().next().value;
-            if (firstKey) ttsAudioCache.delete(firstKey);
-          }
-          ttsAudioCache.set(geminiCacheKey, wavBuffer);
-
-          console.log(`[TTS:Gemini] Synthesized human voice "${geminiVoiceName}", size=${wavBuffer.length} bytes`);
-          return sendAudioWithRange(req, res, wavBuffer, geminiVoiceName, false, "audio/wav", "Gemini-TTS", requestedVoice, false);
-        } else {
-          console.warn(`[TTS] Gemini TTS returned empty buffer for "${geminiVoiceName}". Seamlessly falling back to Edge Neural TTS...`);
-        }
-      } catch (geminiErr: any) {
-        console.warn(`[TTS] Gemini TTS notice: ${geminiErr?.message || geminiErr}. Seamlessly falling back to Edge Neural TTS...`);
-      }
-    }
-
-    // 2. Secondary / Direct Engine: Studio Edge Neural (Fast, unlimited, reverent)
-    let selectedVoice = requestedVoice;
-    let fallbackUsed = false;
-
-    // Clean voice identifier if it has prefixes like "browser:" or "gemini:"
-    if (selectedVoice.startsWith("browser:")) {
-      selectedVoice = selectedVoice.replace("browser:", "");
-    }
-    if (selectedVoice.startsWith("gemini:")) {
-      selectedVoice = selectedVoice.replace("gemini:", "");
-    }
-
-    // Ban and redirect any bubbly, perky, or irreverent voices
-    if (/aria|bubbly|perky|cheerful/i.test(selectedVoice)) {
-      selectedVoice = "en-US-JennyNeural";
-      fallbackUsed = true;
-    } else if (/sonia/i.test(selectedVoice)) {
-      selectedVoice = "en-US-EmmaNeural";
-      fallbackUsed = true;
-    }
-
-    // If no voice specified or voice is not a direct valid Edge Neural voice, resolve cleanly
-    if (!selectedVoice || !VERIFIED_EDGE_VOICES.has(selectedVoice)) {
-      const matched = Array.from(VERIFIED_EDGE_VOICES).find(
-        (v) => v.toLowerCase() === selectedVoice.toLowerCase() || v.toLowerCase().includes(selectedVoice.toLowerCase())
-      );
-      if (matched) {
-        selectedVoice = matched;
-      } else {
-        selectedVoice = gender === "female" ? "en-US-JennyNeural" : "en-US-GuyNeural";
-        fallbackUsed = selectedVoice !== requestedVoice;
-      }
-    }
-
-    // Extract exact matching language/locale from the voice name (e.g. "en-US", "en-GB")
-    const voiceLocale = selectedVoice.startsWith("en-GB") ? "en-GB" : "en-US";
-
-    const cacheKey = `edge:${selectedVoice}:${truncatedText}`;
-
+    // 1. Check in-memory audio cache
     if (ttsAudioCache.has(cacheKey)) {
       const cached = ttsAudioCache.get(cacheKey)!;
-      return sendAudioWithRange(req, res, cached, selectedVoice, true, "audio/mpeg", "Natural-Voice", requestedVoice, fallbackUsed, voiceLocale);
+      console.log(`[TTS:Kokoro] Cache HIT for voice="${resolvedVoice}", size=${cached.length} bytes`);
+      return sendAudioWithRange(
+        req,
+        res,
+        cached,
+        resolvedVoice,
+        true,
+        "audio/mpeg",
+        "Kokoro-TTS",
+        requestedVoice,
+        resolvedVoice !== requestedVoice
+      );
     }
 
-    // High-Fidelity Reverent Scripture Voice Synthesis (Zero-API Required)
-    console.log(`[TTS:NaturalVoice] Synthesizing reverent voice="${selectedVoice}", locale="${voiceLocale}", textLen=${truncatedText.length}...`);
-    ttsInstance = new MsEdgeTTS();
-    await ttsInstance.setMetadata(selectedVoice, OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3);
-    const { audioStream } = ttsInstance.toStream(truncatedText, {
-      rate: "-4%", // Solemn, measured, dignified pace for Holy Scripture
-      pitch: "+0Hz",
-    });
+    // 2. Synthesize via Kokoro TTS
+    console.log(`[TTS:Kokoro] Synthesizing scripture audio: voice="${resolvedVoice}", textLen=${truncatedText.length}...`);
+    const mp3Buffer = await synthesizeKokoroTTS(truncatedText, resolvedVoice);
 
-    const chunks: Buffer[] = [];
-    const timeout = setTimeout(async () => {
-      cleanup();
-      if (!res.headersSent) {
-        console.warn(`[TTS] Voice generation timed out for voice "${selectedVoice}". Retrying with resilient synthesis...`);
-        const fallbackVoice = gender === "female" ? "en-US-JennyNeural" : "en-US-GuyNeural";
-        const fallbackResult = await synthesizeReverentNeuralTTS(truncatedText, fallbackVoice);
-        if (fallbackResult && !res.headersSent) {
-          ttsAudioCache.set(cacheKey, fallbackResult.buffer);
-          return sendAudioWithRange(
-            req,
-            res,
-            fallbackResult.buffer,
-            fallbackVoice,
-            false,
-            fallbackResult.isWav ? "audio/wav" : "audio/mpeg",
-            fallbackResult.engine,
-            requestedVoice,
-            true,
-            voiceLocale
-          );
-        }
-        res.status(504).json({ error: "TTS generation timed out" });
-      }
-    }, 4500);
-
-    audioStream.on("data", (chunk: Buffer) => chunks.push(chunk));
-    audioStream.on("end", () => {
-      clearTimeout(timeout);
-      cleanup();
-
-      const audioBuffer = Buffer.concat(chunks);
+    if (mp3Buffer && mp3Buffer.length > 0) {
       if (ttsAudioCache.size >= MAX_TTS_CACHE_SIZE) {
         const firstKey = ttsAudioCache.keys().next().value;
         if (firstKey) ttsAudioCache.delete(firstKey);
       }
-      ttsAudioCache.set(cacheKey, audioBuffer);
+      ttsAudioCache.set(cacheKey, mp3Buffer);
 
-      console.log(`[TTS:Voice] Synthesized reverent voice="${selectedVoice}", size=${audioBuffer.length} bytes, fallback=${fallbackUsed}`);
-      sendAudioWithRange(req, res, audioBuffer, selectedVoice, false, "audio/mpeg", "Natural-Voice", requestedVoice, fallbackUsed, voiceLocale);
-    });
+      console.log(`[TTS:Kokoro] Successfully synthesized voice="${resolvedVoice}", size=${mp3Buffer.length} bytes`);
+      return sendAudioWithRange(
+        req,
+        res,
+        mp3Buffer,
+        resolvedVoice,
+        false,
+        "audio/mpeg",
+        "Kokoro-TTS",
+        requestedVoice,
+        resolvedVoice !== requestedVoice
+      );
+    }
 
-    audioStream.on("error", async (err: any) => {
-      clearTimeout(timeout);
-      cleanup();
-      console.warn(`[TTS] Voice stream notice for voice "${selectedVoice}":`, err?.message || err);
+    // 3. Fallback if Kokoro failed
+    console.warn(`[TTS:Kokoro] Primary Kokoro TTS synthesis failed for voice "${resolvedVoice}". Attempting resilient fallback...`);
+    const fallbackResult = await synthesizeReverentNeuralTTS(truncatedText, resolvedVoice);
+    if (fallbackResult && !res.headersSent) {
+      ttsAudioCache.set(cacheKey, fallbackResult.buffer);
+      return sendAudioWithRange(
+        req,
+        res,
+        fallbackResult.buffer,
+        resolvedVoice,
+        false,
+        fallbackResult.isWav ? "audio/wav" : "audio/mpeg",
+        fallbackResult.engine,
+        requestedVoice,
+        true
+      );
+    }
 
-      // Resilient fallback to Gemini AI TTS or canonical voice
-      const defaultVoice = gender === "female" ? "en-US-JennyNeural" : "en-US-GuyNeural";
-      console.log(`[TTS] Executing resilient fallback for scripture narration...`);
-      const fallbackResult = await synthesizeReverentNeuralTTS(truncatedText, defaultVoice);
-      if (fallbackResult && !res.headersSent) {
-        ttsAudioCache.set(cacheKey, fallbackResult.buffer);
-        return sendAudioWithRange(
-          req,
-          res,
-          fallbackResult.buffer,
-          defaultVoice,
-          false,
-          fallbackResult.isWav ? "audio/wav" : "audio/mpeg",
-          fallbackResult.engine,
-          requestedVoice,
-          true,
-          voiceLocale
-        );
-      }
-
-      if (!res.headersSent) {
-        res.status(500).json({ error: "Scripture narration temporarily unavailable" });
-      }
-    });
-  } catch (err: any) {
-    cleanup();
-    console.warn("TTS endpoint notice:", err?.message || err);
     if (!res.headersSent) {
-      res.status(500).json({ error: "Scripture narration error", details: err?.message });
+      return res.status(503).json({
+        error: "TTS_REQUEST_FAILED",
+        details: "Kokoro TTS service is currently unreachable. Please retry in a few moments."
+      });
+    }
+  } catch (err: any) {
+    console.warn("[TTS] Endpoint error:", err?.message || err);
+    if (!res.headersSent) {
+      return res.status(500).json({ error: "HTTP_ERROR", details: err?.message || "Internal audio server error" });
     }
   }
 });

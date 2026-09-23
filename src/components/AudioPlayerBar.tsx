@@ -264,21 +264,29 @@ export const AudioPlayerBar: React.FC<AudioPlayerBarProps> = ({
       )}
 
       {/* Audio Synthesis / Playback Error Banner */}
-      {errorMessage && (
+      {(errorMessage || playbackStatus === "ERROR") && (
         <div
           id="audio-error-banner"
-          className="w-full bg-rose-50 border border-rose-200 text-rose-800 px-3.5 py-2 rounded-2xl text-xs flex items-center justify-between shadow-xs"
+          className="w-full bg-rose-50 border border-rose-200 text-rose-800 px-3.5 py-2.5 rounded-2xl text-xs flex flex-wrap items-center justify-between gap-2 shadow-xs"
         >
           <div className="flex items-center gap-2 min-w-0">
-            <span className="w-2 h-2 rounded-full bg-rose-500 shrink-0" />
-            <span className="font-semibold truncate">{errorMessage}</span>
+            <span className="w-2 h-2 rounded-full bg-rose-500 shrink-0 animate-pulse" />
+            <span className="font-semibold text-xs">{errorMessage || "Unable to generate audio. Please try again."}</span>
           </div>
-          <button
-            onClick={handleForceUnblockAndPlay}
-            className="px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-[11px] font-bold shrink-0 transition-colors cursor-pointer ml-2"
-          >
-            Retry
-          </button>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              onClick={() => globalAudioEngine.retryCurrentSegment()}
+              className="px-3 py-1 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-[11px] font-bold transition-colors cursor-pointer shadow-xs"
+            >
+              Retry
+            </button>
+            <button
+              onClick={handleStop}
+              className="px-3 py-1 bg-white hover:bg-rose-100 text-rose-700 border border-rose-300 rounded-xl text-[11px] font-bold transition-colors cursor-pointer shadow-2xs"
+            >
+              Stop playback
+            </button>
+          </div>
         </div>
       )}
 
@@ -322,21 +330,34 @@ export const AudioPlayerBar: React.FC<AudioPlayerBarProps> = ({
                 Natural Audio Bible
               </span>
 
-              {/* Real-time Web Speech Synthesis & Playback Status Badge */}
-              {errorMessage ? (
+              {/* Real-time Kokoro TTS Synthesis & Playback Status Badge */}
+              {errorMessage || playbackStatus === "ERROR" ? (
                 <button
-                  onClick={handleForceUnblockAndPlay}
-                  className="inline-flex items-center gap-1 text-[10px] bg-rose-50 hover:bg-rose-100 text-rose-800 border border-rose-200 px-2 py-0.5 rounded-full font-bold cursor-pointer transition-colors"
-                  title="Click to clear notice and resume audio"
+                  onClick={() => globalAudioEngine.retryCurrentSegment()}
+                  className="inline-flex items-center gap-1.5 text-[10px] bg-rose-50 hover:bg-rose-100 text-rose-800 border border-rose-200 px-2.5 py-0.5 rounded-full font-bold cursor-pointer transition-colors"
+                  title="Click to retry playback"
                 >
                   <span className="w-1.5 h-1.5 rounded-full bg-rose-500" />
-                  <span>Speech Notice • Tap to Retry</span>
+                  <span>{errorMessage || "Audio Error"} • Tap to Retry</span>
                 </button>
-              ) : isLoading ? (
-                <span className="inline-flex items-center gap-1 text-[10px] bg-amber-50 text-amber-800 border border-amber-200 px-2 py-0.5 rounded-full font-bold">
+              ) : isLoading || playbackStatus === "GENERATING" ? (
+                <span className="inline-flex items-center gap-1.5 text-[10px] bg-amber-50 text-amber-900 border border-amber-200 px-2.5 py-0.5 rounded-full font-bold shadow-2xs">
                   <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-ping" />
-                  <span>Starting Voice...</span>
+                  <span>Preparing audio…</span>
                 </span>
+              ) : playbackStatus === "READY" && !isPlaying ? (
+                <button
+                  onClick={togglePlay}
+                  className={`inline-flex items-center gap-1.5 text-[10px] px-2.5 py-0.5 rounded-full font-bold cursor-pointer transition-colors shadow-2xs ${
+                    hasAutoplayBlock
+                      ? "bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 ring-2 ring-emerald-400/40 animate-pulse"
+                      : "bg-slate-100 text-slate-700 border border-slate-200"
+                  }`}
+                  title={hasAutoplayBlock ? "Tap to begin audio playback" : "Audio ready"}
+                >
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                  <span>{hasAutoplayBlock ? "Audio ready • Tap to Play" : "Audio ready"}</span>
+                </button>
               ) : playbackStatus === "READING" || isPlaying ? (
                 <span className="inline-flex items-center gap-1 text-[10px] bg-emerald-50 text-emerald-800 border border-emerald-200 px-2 py-0.5 rounded-full font-bold">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
@@ -538,6 +559,8 @@ export const AudioPlayerBar: React.FC<AudioPlayerBarProps> = ({
               className={`w-10 h-10 rounded-full text-white flex items-center justify-center shadow-md transition-all active:scale-95 cursor-pointer ${
                 isFinished
                   ? "bg-amber-600 hover:bg-amber-700 ring-4 ring-amber-400/50 shadow-amber-600/30 animate-pulse"
+                  : hasAutoplayBlock
+                  ? "bg-emerald-600 hover:bg-emerald-700 ring-4 ring-emerald-400/60 shadow-emerald-600/30 animate-pulse"
                   : "bg-[#C5A059] hover:bg-[#B48F48] shadow-[#C5A059]/25"
               }`}
             >

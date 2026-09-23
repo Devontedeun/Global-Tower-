@@ -391,7 +391,8 @@ export const UserFriendlyMetrics: React.FC<UserFriendlyMetricsProps> = ({
         <AchievementsHub
           metrics={metrics}
           onOpenBible={() => onNavigate("bible")}
-          onOpenPrayers={() => onNavigate("prayer")}
+          onOpenPrayers={() => onNavigate("prayers")}
+          onNavigate={onNavigate}
         />
       ) : (
         /* Fellowship Pulse View (Global Ministry Reach) */

@@ -584,7 +584,7 @@ class BackgroundMaintenanceWatchdog {
           player.networkState !== HTMLMediaElement.NETWORK_NO_SOURCE
         );
 
-        if (player.error && hasActiveMediaSource) {
+        if (player.error && hasActiveMediaSource && !currentSrc.startsWith("blob:")) {
           console.warn("[Maintenance Watchdog] Audio element encountered error on active stream, auto-resetting source.");
           const errorCode = player.error.code;
           const errorMsg = player.error.message;

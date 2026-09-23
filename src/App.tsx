@@ -138,8 +138,43 @@ export default function App() {
 
   const mainContentRef = React.useRef<HTMLElement | null>(null);
 
+  const normalizeView = (v: string): string => {
+    switch (v) {
+      case "prayer":
+      case "prayers":
+        return "prayers";
+      case "plan":
+      case "plans":
+      case "study-plan":
+      case "study-plans":
+      case "studyPlans":
+        return "study-plans";
+      case "quiz":
+      case "quizzes":
+      case "youth":
+        return "youth";
+      case "insight":
+      case "spiritual-insight":
+      case "spiritualInsight":
+        return "spiritual-insight";
+      case "dream":
+      case "dreams":
+      case "journal":
+        return "journal";
+      case "encouragement":
+      case "encouragements":
+        return "encouragements";
+      case "scripture":
+      case "bible":
+        return "bible";
+      default:
+        return v;
+    }
+  };
+
   const handleNavigate = (view: string, data?: any) => {
-    setCurrentView(view);
+    const target = normalizeView(view);
+    setCurrentView(target);
     setViewParams(data || null);
     setIsMobileMenuOpen(false);
     window.scrollTo({ top: 0, behavior: "smooth" });

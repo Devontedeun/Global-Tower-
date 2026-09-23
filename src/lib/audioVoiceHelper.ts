@@ -25,15 +25,23 @@ export interface VoiceOption {
 export const GENDER_STORAGE_KEY = "gtc_narrator_voice_gender";
 export const VOICE_STORAGE_KEY = "gtc_selected_narrator_voice";
 
+export const KOKORO_DEFAULT_VOICE = "af_heart";
+export const KOKORO_DEFAULT_MALE_VOICE = "am_adam";
+
 /**
  * Formats any raw voice identifier or browser/server voice string into strictly
- * a clean human person's name (e.g. "Guy", "Jenny", "Christopher", "Eric", "Brian", "Ryan", "Aria", "Michelle", "Sonia", "David", "Samantha").
- * Removes all vendor branding ("Microsoft", "Azure", "Google", "Apple"), engine labels ("Neural", "Online (Natural)", "Desktop"),
- * and locale codes so only the person's name is shown.
+ * a clean human person's name (e.g. "Heart", "Adam", "Michael", "Bella", "Nicole", "Sarah").
+ * Removes all vendor branding, engine labels, and locale codes.
  */
 export function formatPersonVoiceName(rawName?: string | null): string {
-  if (!rawName) return "Narrator";
+  if (!rawName) return "Heart";
   let cleaned = String(rawName).trim();
+
+  // If it's a Kokoro voice ID like "af_heart", "am_adam", "am_michael"
+  if (/^a[fm]_[a-z]+/i.test(cleaned)) {
+    const namePart = cleaned.replace(/^a[fm]_/i, "");
+    return namePart.charAt(0).toUpperCase() + namePart.slice(1);
+  }
 
   // If it's a code-like ID such as "en-US-GuyNeural" or "en-GB-RyanNeural"
   const neuralMatch = cleaned.match(/^[a-z]{2}-[A-Z]{2}-([A-Za-z]+)Neural$/i);
@@ -42,11 +50,11 @@ export function formatPersonVoiceName(rawName?: string | null): string {
   }
 
   // Remove prefixes
-  cleaned = cleaned.replace(/^(browser:|server:|gemini:)/i, "");
+  cleaned = cleaned.replace(/^(browser:|server:|gemini:|kokoro:)/i, "");
 
   // Remove vendor and engine words
   cleaned = cleaned
-    .replace(/\b(Microsoft|Azure|Google|Apple|Amazon|Samsung|Android)\b/gi, "")
+    .replace(/\b(Microsoft|Azure|Google|Apple|Amazon|Samsung|Android|Kokoro)\b/gi, "")
     .replace(/\b(Online|Natural|Neural|Desktop|Mobile|Synthesizer|Standard|Wavenet|Voice|Speech|TTS|Preview)\b/gi, "")
     .replace(/\(.*?\)/g, "") // remove parentheticals like "(Natural)" or "(en-US)"
     .replace(/\[.*?\]/g, "")
@@ -73,111 +81,73 @@ export function formatPersonVoiceName(rawName?: string | null): string {
     return fallback.charAt(0).toUpperCase() + fallback.slice(1);
   }
 
-  return "Narrator";
+  return "Heart";
 }
 
-// Catalog of High-Quality Person Narrator Voices (Zero-API High Fidelity + Gemini AI)
+// Catalog of High-Quality Kokoro Scripture Narrator Voices
 // Strictly reverent, solemn, and natural readers for Holy Scripture
-export const SERVER_VOICES: VoiceOption[] = [
-  // High-Fidelity Studio Neural Voices (Default - Instant, Studio Quality, Zero Rate-Limits)
+export const KOKORO_VOICES: VoiceOption[] = [
   {
-    id: "en-US-GuyNeural",
-    name: "Guy (Studio Neural)",
-    gender: "male",
+    id: "af_heart",
+    name: "Heart (Kokoro)",
+    gender: "female",
     provider: "standard",
-    description: "Deep, solemn, reverent studio scripture narrator",
+    description: "Warm, reverent female scripture narrator",
     isDefault: true,
   },
   {
-    id: "en-US-JennyNeural",
-    name: "Jenny (Studio Neural)",
-    gender: "female",
+    id: "am_adam",
+    name: "Adam (Kokoro)",
+    gender: "male",
     provider: "standard",
-    description: "Solemn, reverent, mature studio female reader",
+    description: "Resonant, solemn male scripture narrator",
     isDefault: true,
   },
-
-  // Gemini AI Neural Voices (Expressive Human Scripture Narration)
   {
-    id: "gemini:Puck",
-    name: "Puck (Gemini AI)",
-    gender: "male",
-    provider: "gemini",
-    description: "Rich, deeply human solemn baritone scripture voice",
-  },
-  {
-    id: "gemini:Kore",
-    name: "Kore (Gemini AI)",
-    gender: "female",
-    provider: "gemini",
-    description: "Gentle, peaceful devotional contemplative AI reader",
-  },
-  {
-    id: "gemini:Charon",
-    name: "Charon (Gemini AI)",
-    gender: "male",
-    provider: "gemini",
-    description: "Resonant, authoritative classical cathedral AI voice",
-  },
-  {
-    id: "gemini:Fenrir",
-    name: "Fenrir (Gemini AI)",
-    gender: "male",
-    provider: "gemini",
-    description: "Deep, solemn classical narrative baritone",
-  },
-  {
-    id: "gemini:Zephyr",
-    name: "Zephyr (Gemini AI)",
-    gender: "female",
-    provider: "gemini",
-    description: "Lyrical, expressive, devotional alto narration",
-  },
-
-  // Additional High-Fidelity Studio Narrators
-  {
-    id: "en-US-ChristopherNeural",
-    name: "Christopher",
+    id: "am_michael",
+    name: "Michael (Kokoro)",
     gender: "male",
     provider: "standard",
-    description: "Resonant, authoritative, dignified delivery",
+    description: "Solemn, classical scripture reader",
   },
   {
-    id: "en-US-EricNeural",
-    name: "Eric",
+    id: "am_eric",
+    name: "Eric (Kokoro)",
     gender: "male",
     provider: "standard",
-    description: "Calm, contemplative, prayerful cadence",
+    description: "Deep, clear narrative voice",
   },
   {
-    id: "en-US-BrianNeural",
-    name: "Brian",
-    gender: "male",
-    provider: "standard",
-    description: "Steady, grounded scripture reader",
-  },
-  {
-    id: "en-GB-RyanNeural",
-    name: "Ryan",
-    gender: "male",
-    provider: "standard",
-    description: "Distinguished British classical cathedral delivery",
-  },
-  {
-    id: "en-US-MichelleNeural",
-    name: "Michelle",
+    id: "af_bella",
+    name: "Bella (Kokoro)",
     gender: "female",
     provider: "standard",
-    description: "Gentle, peaceful, quiet devotional cadence",
+    description: "Gentle, peaceful devotional reader",
   },
   {
-    id: "en-US-EmmaNeural",
-    name: "Emma",
+    id: "af_nicole",
+    name: "Nicole (Kokoro)",
     gender: "female",
     provider: "standard",
-    description: "Measured, clear, dignified narrative delivery",
+    description: "Clear, authoritative narrative delivery",
+  },
+  {
+    id: "af_sarah",
+    name: "Sarah (Kokoro)",
+    gender: "female",
+    provider: "standard",
+    description: "Dignified, warm scripture reader",
+  },
+  {
+    id: "af_sky",
+    name: "Sky (Kokoro)",
+    gender: "female",
+    provider: "standard",
+    description: "Bright, uplifting scripture narrator",
   },
 ];
+
+export const SERVER_VOICES: VoiceOption[] = KOKORO_VOICES;
 
 export interface WebVoiceOption {
   id: string;
@@ -342,14 +312,14 @@ if (typeof window !== "undefined" && "speechSynthesis" in window) {
 }
 
 export function getSavedVoiceGender(): VoiceGender {
-  if (typeof window === "undefined") return "male";
+  if (typeof window === "undefined") return "female";
   try {
     const saved = localStorage.getItem(GENDER_STORAGE_KEY);
     if (saved === "female" || saved === "male") return saved;
   } catch (e) {
     // fallback
   }
-  return "male";
+  return "female";
 }
 
 export function setSavedVoiceGender(gender: VoiceGender) {
@@ -357,17 +327,17 @@ export function setSavedVoiceGender(gender: VoiceGender) {
   try {
     localStorage.setItem(GENDER_STORAGE_KEY, gender);
 
-    // Default to the high-fidelity natural voice for the selected gender
-    const defaultVoice = gender === "female" ? "en-US-JennyNeural" : "en-US-GuyNeural";
+    // Default to the high-fidelity Kokoro voice for the selected gender
+    const defaultVoice = gender === "female" ? KOKORO_DEFAULT_VOICE : KOKORO_DEFAULT_MALE_VOICE;
     const currentSaved = localStorage.getItem(VOICE_STORAGE_KEY);
-    const naturalMatch = SERVER_VOICES.find((v) => v.id === currentSaved);
+    const kokoroMatch = SERVER_VOICES.find((v) => v.id === currentSaved);
     
     // If no saved voice or current saved voice has opposite gender, update to default for this gender
-    if (!currentSaved || (naturalMatch && naturalMatch.gender !== gender)) {
+    if (!currentSaved || (kokoroMatch && kokoroMatch.gender !== gender)) {
       localStorage.setItem(VOICE_STORAGE_KEY, defaultVoice);
       window.dispatchEvent(
         new CustomEvent("gtc_voice_changed", {
-          detail: { voiceId: defaultVoice, gender, name: gender === "female" ? "Jenny" : "Guy" }
+          detail: { voiceId: defaultVoice, gender, name: gender === "female" ? "Heart" : "Adam" }
         })
       );
     } else {
@@ -383,20 +353,24 @@ export function setSavedVoiceGender(gender: VoiceGender) {
 }
 
 /**
- * Retrieve the saved voice ID from localStorage or select the high-fidelity natural default.
+ * Retrieve the saved voice ID from localStorage or select the high-fidelity Kokoro default.
  * Restores seamlessly after page reload without falling back to robotic browser voices.
  */
 export function getSavedVoiceId(): string {
   const gender = getSavedVoiceGender();
-  const defaultVoice = gender === "female" ? "en-US-JennyNeural" : "en-US-GuyNeural";
+  const defaultVoice = gender === "female" ? KOKORO_DEFAULT_VOICE : KOKORO_DEFAULT_MALE_VOICE;
   if (typeof window === "undefined") return defaultVoice;
   try {
     const saved = localStorage.getItem(VOICE_STORAGE_KEY);
     if (saved && saved.trim()) {
       const trimmed = saved.trim();
-      // Upgrade legacy voice defaults or invalid aliases
-      if (trimmed === "gemini:Aoede") return "gemini:Zephyr";
-      return trimmed;
+      // Upgrade legacy voice defaults or invalid aliases to Kokoro
+      if (trimmed === "en-US-GuyNeural" || trimmed === "gemini:Puck") return "am_adam";
+      if (trimmed === "en-US-JennyNeural" || trimmed === "gemini:Kore") return "af_heart";
+      if (trimmed.startsWith("af_") || trimmed.startsWith("am_")) return trimmed;
+      const match = SERVER_VOICES.find((v) => v.id === trimmed);
+      if (match) return match.id;
+      return defaultVoice;
     }
   } catch (e) {
     // fallback
@@ -787,8 +761,8 @@ export const audioContextManager = new AudioContextStateManager();
 
 let sharedAudioElement: HTMLAudioElement | null = null;
 
-// 0.05s silent WAV audio data URI to prime HTMLAudioElement on iOS Safari and Android Chrome
-const SILENT_WAV_DATA_URI = "data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQQAAAAAAP8A";
+// Valid 46-byte RFC-compliant PCM silent WAV data URI to prime HTMLAudioElement on iOS Safari and Android Chrome
+const SILENT_WAV_DATA_URI = "data:audio/wav;base64,UklGRiYAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQIAAAAAAA==";
 
 /**
  * Creates or retrieves the single master HTMLAudioElement.
@@ -823,11 +797,9 @@ export function getOrCreateMasterAudioElement(): HTMLAudioElement | null {
         };
 
         sharedAudioElement.muted = false;
-        if (!isIOS()) {
-          try {
-            sharedAudioElement.volume = getSavedAudioVolume();
-          } catch {}
-        }
+        try {
+          sharedAudioElement.volume = getSavedAudioVolume();
+        } catch {}
 
         if (typeof document !== "undefined" && document.body) {
           sharedAudioElement.style.position = "fixed";
@@ -856,7 +828,6 @@ export function getSharedAudioPlayer(): HTMLAudioElement | null {
 /**
  * Universal Hardware Audio Unlocker
  * Wakes up AudioContext, primes HTMLAudioElement for iOS Safari / Android Chrome, and prepares synthesis.
- * Note: Never overrides player.src with dummy audio during active playback flows to prevent AbortError.
  */
 export function unlockAudio(): boolean {
   if (typeof window === "undefined") return false;
@@ -864,14 +835,17 @@ export function unlockAudio(): boolean {
     // 1. Hardware Web Audio API Unlock via manager
     audioContextManager.ensureRunning().catch(() => {});
 
-    // 2. Hardware HTMLAudioElement ready state
+    // 2. Hardware HTMLAudioElement ready state & mobile gesture priming
     const player = getOrCreateMasterAudioElement();
     if (player) {
       player.muted = false;
-      if (!isIOS()) {
-        try {
-          player.volume = getSavedAudioVolume();
-        } catch {}
+      try {
+        player.volume = getSavedAudioVolume();
+      } catch {}
+      // Prime iOS Safari media pipeline during user gesture if player is idle or ended
+      if (!player.src || player.ended) {
+        player.src = SILENT_WAV_DATA_URI;
+        player.play().catch(() => {});
       }
     }
 
@@ -911,6 +885,24 @@ class GlobalAudioEngine {
   private listeners: Set<(state: GlobalAudioState) => void> = new Set();
   private keepAliveInterval: any = null;
   private currentPlaySessionId: number = 0;
+  private currentBlobUrl: string | null = null;
+  private prefetchBlobMap: Map<string, string> = new Map();
+  private abortController: AbortController | null = null;
+
+  public cleanupBlobUrls() {
+    if (this.currentBlobUrl) {
+      try {
+        URL.revokeObjectURL(this.currentBlobUrl);
+      } catch {}
+      this.currentBlobUrl = null;
+    }
+    this.prefetchBlobMap.forEach((url) => {
+      try {
+        URL.revokeObjectURL(url);
+      } catch {}
+    });
+    this.prefetchBlobMap.clear();
+  }
 
   constructor() {
     if (typeof window !== "undefined") {
@@ -1048,12 +1040,32 @@ class GlobalAudioEngine {
 
     this.currentPlaySessionId = Date.now();
     const sessionId = this.currentPlaySessionId;
+    if (this.abortController) {
+      try { this.abortController.abort(); } catch {}
+      this.abortController = null;
+    }
+    this.cleanupBlobUrls();
 
     // 1. Hardware unlock immediately within user touch/click gesture
     unlockAudio();
     this.isMuted = false;
     setSavedMuteState(false);
     this.errorMessage = null;
+
+    // Keep mobile audio pipeline engaged during async Kokoro TTS generation
+    const warmupPlayer = this.getAudioElement();
+    if (warmupPlayer) {
+      warmupPlayer.muted = false;
+      try {
+        warmupPlayer.volume = this.isMuted ? 0 : Math.max(0.01, this.volume);
+      } catch {}
+      try {
+        warmupPlayer.src = SILENT_WAV_DATA_URI;
+        warmupPlayer.loop = true;
+        const p = warmupPlayer.play();
+        if (p) p.catch(() => {});
+      } catch {}
+    }
 
     // 2. Build segments
     const segments = buildSegmentsFromTrack(track);
@@ -1124,6 +1136,7 @@ class GlobalAudioEngine {
     this.playbackStatus = "PAUSED";
     if (this.audio) {
       try {
+        this.audio.loop = false;
         this.audio.pause();
       } catch {}
     }
@@ -1192,6 +1205,11 @@ class GlobalAudioEngine {
 
   public stop() {
     this.currentPlaySessionId = Date.now();
+    if (this.abortController) {
+      try { this.abortController.abort(); } catch {}
+      this.abortController = null;
+    }
+    this.cleanupBlobUrls();
     this.isPlaying = false;
     this.isLoading = false;
     this.isFinished = false;
@@ -1209,6 +1227,7 @@ class GlobalAudioEngine {
 
     if (this.audio) {
       try {
+        this.audio.loop = false;
         this.audio.pause();
         this.audio.currentTime = 0;
         this.audio.removeAttribute("src");
@@ -1249,6 +1268,13 @@ class GlobalAudioEngine {
   public setVoice(newVoiceId: string) {
     this.activeVoiceId = newVoiceId;
     setSavedVoiceId(newVoiceId);
+
+    // Clear prefetch map since narrator voice changed
+    this.prefetchBlobMap.forEach((url) => {
+      try { URL.revokeObjectURL(url); } catch {}
+    });
+    this.prefetchBlobMap.clear();
+
     const naturalMatch = SERVER_VOICES.find(
       (v) => v.id.toLowerCase() === newVoiceId.toLowerCase() || v.name.toLowerCase() === newVoiceId.toLowerCase()
     );
@@ -1262,7 +1288,7 @@ class GlobalAudioEngine {
         this.narratorName = formatPersonVoiceName(resolved.voice.name);
         this.activeGender = resolved.gender;
       } else {
-        this.narratorName = formatPersonVoiceName(newVoiceId) || (this.activeGender === "female" ? "Jenny" : "Guy");
+        this.narratorName = formatPersonVoiceName(newVoiceId) || (this.activeGender === "female" ? "Heart" : "Adam");
       }
     }
     console.log(`[GlobalAudioEngine] Voice selector changed to: "${this.activeVoiceId}" (${this.narratorName})`);
@@ -1284,8 +1310,18 @@ class GlobalAudioEngine {
   public setGender(gender: VoiceGender) {
     this.activeGender = gender;
     setSavedVoiceGender(gender);
-    const defaultVoice = gender === "female" ? "en-US-JennyNeural" : "en-US-GuyNeural";
+    const defaultVoice = gender === "female" ? KOKORO_DEFAULT_VOICE : KOKORO_DEFAULT_MALE_VOICE;
     this.setVoice(defaultVoice);
+  }
+
+  public retryCurrentSegment() {
+    unlockAudio();
+    this.errorMessage = null;
+    this.playbackStatus = "GENERATING";
+    this.isLoading = true;
+    this.isPlaying = false;
+    this.notify();
+    this.playCurrentSegment(this.currentSegmentIndex, this.currentPlaySessionId, 0);
   }
 
   public setPlaybackRate(rate: number) {
@@ -1367,8 +1403,8 @@ class GlobalAudioEngine {
     this.isFinished = false;
     this.errorMessage = null;
 
-    // Loading status while audio buffers
-    this.playbackStatus = "READY";
+    // User-facing loading status while Kokoro audio generates and buffers
+    this.playbackStatus = "GENERATING";
     this.isLoading = true;
     this.isPlaying = false;
     this.notify();
@@ -1380,31 +1416,199 @@ class GlobalAudioEngine {
       } catch {}
     }
 
-    // High-fidelity natural voice streaming via /api/tts
-    const targetVoice = this.activeVoiceId || getSavedVoiceId() || (this.activeGender === "female" ? "en-US-JennyNeural" : "en-US-GuyNeural");
-    const audio = this.getAudioElement();
+    const targetVoice = this.activeVoiceId || getSavedVoiceId() || (this.activeGender === "female" ? KOKORO_DEFAULT_VOICE : KOKORO_DEFAULT_MALE_VOICE);
+    const audioUrl = getAudioTTSUrl(formattedText, targetVoice, this.activeGender);
 
-    if (audio) {
+    if (this.abortController) {
+      try { this.abortController.abort(); } catch {}
+      this.abortController = null;
+    }
+    this.abortController = new AbortController();
+    const signal = this.abortController.signal;
+
+    // Diagnostic Stage 1: TTS request starts (sensitive Scripture text redacted)
+    console.debug(
+      `[Audio:Diag:Stage1] TTS request starts | Voice: ${targetVoice} | TextLen: ${formattedText.length} chars | Segment: ${index + 1}/${this.segments.length}`
+    );
+    // Diagnostic Stage 2: Exact request URL (masking sensitive user content)
+    console.debug(
+      `[Audio:Diag:Stage2] Exact request URL: ${audioUrl.replace(/text=[^&]+/, "text=[REDACTED_SCRIPTURE_TEXT]")}`
+    );
+
+    (async () => {
       try {
-        this.stopKeepAlive();
+        let objectUrl: string;
 
-        const audioUrl = getAudioTTSUrl(formattedText, targetVoice, this.activeGender);
+        // Check if next segment was already prefetched as a Blob Object URL
+        const prefetched = this.prefetchBlobMap.get(audioUrl);
+        if (prefetched) {
+          console.debug("[Audio:Diag:Prefetch] Using prefetched Blob Object URL for segment:", index + 1);
+          objectUrl = prefetched;
+          this.prefetchBlobMap.delete(audioUrl);
+        } else {
+          const fetchTimeout = setTimeout(() => {
+            if (!signal.aborted) this.abortController?.abort();
+          }, 35000);
+
+          let res: Response;
+          try {
+            res = await fetch(audioUrl, {
+              method: "GET",
+              headers: { Accept: "audio/mpeg, audio/*;q=0.9" },
+              signal,
+            });
+          } catch (fetchErr: any) {
+            clearTimeout(fetchTimeout);
+            if (this.currentPlaySessionId !== sessionId || signal.aborted) return;
+            console.debug("[Audio:Diag:FetchError] Primary fetch failed:", fetchErr?.message || fetchErr);
+
+            // Resilient CORS fallback: Direct fetch to Kokoro Cloud Run
+            console.debug("[Audio:Diag:Fallback] Attempting direct fetch to Kokoro Cloud Run service...");
+            try {
+              res = await fetch("https://kokoro-tts-751619998879.europe-west2.run.app/v1/audio/speech", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  model: "kokoro",
+                  input: formattedText,
+                  voice: targetVoice,
+                  response_format: "mp3",
+                }),
+                signal,
+              });
+            } catch (directErr: any) {
+              console.debug("[Audio:Diag:DirectError] Direct Kokoro Cloud Run fetch failed:", directErr);
+              const isCors = directErr?.name === "TypeError" || String(directErr).includes("Failed to fetch") || String(directErr).includes("NetworkError");
+              throw new Error(isCors ? "CORS_FAILED: Failed to fetch TTS endpoint from mobile browser" : `TTS_REQUEST_FAILED: ${directErr?.message || "Network request failed"}`);
+            }
+          }
+          clearTimeout(fetchTimeout);
+
+          if (this.currentPlaySessionId !== sessionId) return;
+
+          // Diagnostic Stage 3: HTTP status
+          console.debug(`[Audio:Diag:Stage3] HTTP status: ${res.status} (${res.statusText})`);
+          // Diagnostic Stage 4: response.ok
+          console.debug(`[Audio:Diag:Stage4] response.ok: ${res.ok}`);
+          // Diagnostic Stage 5: response.headers Content-Type
+          const contentType = res.headers.get("content-type") || "";
+          console.debug(`[Audio:Diag:Stage5] response.headers Content-Type: "${contentType}"`);
+          // Diagnostic Stage 6: response Content-Length if available
+          const contentLength = res.headers.get("content-length");
+          console.debug(`[Audio:Diag:Stage6] response Content-Length: ${contentLength !== null ? contentLength + " bytes" : "unavailable"}`);
+
+          if (!res.ok) {
+            let errorDetail = "";
+            try {
+              if (contentType.includes("application/json")) {
+                const json = await res.json();
+                errorDetail = json.details || json.error || "";
+              } else {
+                errorDetail = await res.text();
+              }
+            } catch {}
+            console.debug(`[Audio:Diag:HttpError] HTTP ${res.status}: ${errorDetail}`);
+            if (res.status === 503 || res.status === 502 || res.status === 504) {
+              throw new Error(`TTS_REQUEST_FAILED: Kokoro service responded with HTTP ${res.status}`);
+            }
+            throw new Error(`HTTP_ERROR: Server returned HTTP ${res.status} ${res.statusText}`);
+          }
+
+          if (contentType.includes("application/json")) {
+            const json = await res.json().catch(() => ({}));
+            throw new Error(`INVALID_AUDIO: Expected audio but received JSON (${json.error || json.details || "Unknown"})`);
+          }
+
+          // Diagnostic Stage 7: response.blob() success/failure
+          let rawBlob: Blob;
+          try {
+            rawBlob = await res.blob();
+            console.debug("[Audio:Diag:Stage7] response.blob() SUCCESS");
+          } catch (blobErr: any) {
+            console.debug("[Audio:Diag:Stage7] response.blob() FAILURE:", blobErr);
+            throw new Error(`INVALID_AUDIO: Failed to decode response stream as Blob (${blobErr?.message || ""})`);
+          }
+
+          // Diagnostic Stage 8: Blob MIME type
+          console.debug(`[Audio:Diag:Stage8] Blob MIME type: "${rawBlob.type}"`);
+          // Diagnostic Stage 9: Blob size in bytes
+          console.debug(`[Audio:Diag:Stage9] Blob size in bytes: ${rawBlob.size}`);
+
+          if (!rawBlob || rawBlob.size === 0) {
+            throw new Error("EMPTY_AUDIO: Audio blob is 0 bytes");
+          }
+
+          if (!rawBlob.type.includes("audio") && rawBlob.type !== "") {
+            throw new Error(`INVALID_AUDIO: Received MIME type "${rawBlob.type}", expected audio/mpeg`);
+          }
+
+          const mp3Blob = rawBlob.type.includes("audio")
+            ? rawBlob
+            : new Blob([rawBlob], { type: "audio/mpeg" });
+
+          // Diagnostic Stage 10: URL.createObjectURL() success
+          try {
+            objectUrl = URL.createObjectURL(mp3Blob);
+            console.debug(`[Audio:Diag:Stage10] URL.createObjectURL() SUCCESS: ${objectUrl}`);
+          } catch (objUrlErr: any) {
+            console.debug("[Audio:Diag:Stage10] URL.createObjectURL() FAILURE:", objUrlErr);
+            throw new Error(`AUDIO_ELEMENT_ERROR: URL.createObjectURL failed (${objUrlErr?.message || ""})`);
+          }
+        }
+
+        if (this.currentPlaySessionId !== sessionId) {
+          try { URL.revokeObjectURL(objectUrl); } catch {}
+          return;
+        }
+
+        // Revoke previous segment's object URL to prevent memory leaks
+        if (this.currentBlobUrl && this.currentBlobUrl !== objectUrl) {
+          try { URL.revokeObjectURL(this.currentBlobUrl); } catch {}
+        }
+        this.currentBlobUrl = objectUrl;
+
+        // Diagnostic Stage 11: HTMLAudioElement creation
+        let audio = this.getAudioElement();
+        if (!audio) {
+          audio = new Audio();
+          this.audio = audio;
+        }
+        console.debug(
+          `[Audio:Diag:Stage11] HTMLAudioElement ready | id="${audio.id || "anonymous"}" | tagName=${audio.tagName}`
+        );
+
+        this.stopKeepAlive();
 
         try {
           audio.pause();
         } catch {}
 
         audio.playbackRate = this.playbackRate;
-        audio.volume = this.isMuted ? 0 : Math.max(0.01, this.volume);
-        audio.muted = this.isMuted;
+        try {
+          audio.volume = this.isMuted ? 0 : Math.max(0.01, this.volume);
+          audio.muted = this.isMuted;
+        } catch {}
         audio.preload = "auto";
+        (audio as any).playsInline = true;
+        audio.setAttribute("playsinline", "true");
+        audio.setAttribute("webkit-playsinline", "true");
+        audio.setAttribute("x-webkit-airplay", "allow");
 
-        // Assign listeners BEFORE setting src to avoid missed events
+        // Diagnostic Stage 14: audio.canPlayType()
+        const canMpeg = audio.canPlayType("audio/mpeg");
+        const canMp3 = audio.canPlayType("audio/mp3");
+        console.debug(
+          `[Audio:Diag:Stage14] audio.canPlayType('audio/mpeg'): "${canMpeg}", canPlayType('audio/mp3'): "${canMp3}"`
+        );
+        if (!canMpeg && !canMp3) {
+          console.warn("[Audio:Diag:Stage14] Browser reports no support for audio/mpeg or audio/mp3");
+        }
+
+        // Assign listeners BEFORE setting src to avoid missed events or race conditions
         audio.onplay = () => {
           if (this.currentPlaySessionId !== sessionId) return;
           console.log(
-            `[GlobalAudioEngine:Audio] 🎙️ Playing natural neural voice segment ${index + 1}/${this.segments.length}: ` +
-            `"${formattedText.substring(0, 45)}..." | Voice: ${this.narratorName} (${targetVoice})`
+            `[GlobalAudioEngine:Audio] 🎙️ Playing Kokoro voice segment ${index + 1}/${this.segments.length} | Voice: ${this.narratorName} (${targetVoice})`
           );
           this.playbackStatus = "PLAYING";
           this.isPlaying = true;
@@ -1418,15 +1622,24 @@ class GlobalAudioEngine {
           }
           this.currentTrack?.onPlaybackStateChange?.(true);
 
-          // Fast background prefetch for next verse to ensure seamless zero-gap transitions
+          // Fast background prefetch for next verse as Blob Object URL to guarantee zero-gap transitions
           if (index + 1 < this.segments.length) {
             const nextSeg = this.segments[index + 1];
             const nextText = formatBibleTextForSpeech(nextSeg.text);
             if (nextText) {
-              const prefetchUrl = getAudioTTSUrl(nextText, targetVoice, this.activeGender);
-              const prefetchAudio = new Audio();
-              prefetchAudio.preload = "auto";
-              prefetchAudio.src = prefetchUrl;
+              const nextUrl = getAudioTTSUrl(nextText, targetVoice, this.activeGender);
+              if (!this.prefetchBlobMap.has(nextUrl)) {
+                fetch(nextUrl, { headers: { Accept: "audio/mpeg, audio/*;q=0.9" } })
+                  .then((r) => (r.ok ? r.blob() : null))
+                  .then((b) => {
+                    if (b && b.size > 0 && this.currentPlaySessionId === sessionId) {
+                      const pBlob = b.type.includes("audio") ? b : new Blob([b], { type: "audio/mpeg" });
+                      const pUrl = URL.createObjectURL(pBlob);
+                      this.prefetchBlobMap.set(nextUrl, pUrl);
+                    }
+                  })
+                  .catch(() => {});
+              }
             }
           }
         };
@@ -1441,7 +1654,25 @@ class GlobalAudioEngine {
           }
         };
 
+        // Diagnostic Stage 17: audio.onloadedmetadata
+        audio.onloadedmetadata = () => {
+          console.debug(
+            `[Audio:Diag:Stage17] audio.onloadedmetadata | duration=${audio.duration}s | readyState=${audio.readyState}`
+          );
+        };
+
+        // Diagnostic Stage 18: audio.oncanplay
+        audio.oncanplay = () => {
+          console.debug(
+            `[Audio:Diag:Stage18] audio.oncanplay | readyState=${audio.readyState}`
+          );
+        };
+
+        // Diagnostic Stage 19: audio.onended
         audio.onended = () => {
+          console.debug(
+            `[Audio:Diag:Stage19] audio.onended for segment ${index + 1}/${this.segments.length}`
+          );
           if (this.currentPlaySessionId !== sessionId) return;
           if (index + 1 < this.segments.length) {
             this.playCurrentSegment(index + 1, sessionId);
@@ -1450,57 +1681,103 @@ class GlobalAudioEngine {
           }
         };
 
+        // Diagnostic Stage 16: audio.onerror
         audio.onerror = (e) => {
           if (this.currentPlaySessionId !== sessionId) return;
-          console.warn(`[GlobalAudioEngine:Audio] Audio stream notice (attempt ${retryCount + 1}):`, e);
+          const mediaError = audio.error;
+          const code = mediaError?.code ?? "unknown";
+          const msg = mediaError?.message ?? "";
+          console.debug(`[Audio:Diag:Stage16] audio.onerror: code=${code}, message="${msg}"`, e);
 
-          // If a Gemini AI voice failed or timed out, immediately recover with Studio Neural
-          if (targetVoice.startsWith("gemini:") || retryCount === 0) {
-            const fallbackVoice = this.activeGender === "female" ? "en-US-JennyNeural" : "en-US-GuyNeural";
-            console.log(`[GlobalAudioEngine:Audio] Recovering with high-reliability Studio Neural voice ("${fallbackVoice}")...`);
-            this.activeVoiceId = fallbackVoice;
+          if (retryCount < 1) {
+            console.log(`[GlobalAudioEngine:Audio] Retrying current segment (attempt ${retryCount + 2})...`);
             this.playCurrentSegment(index, sessionId, retryCount + 1);
             return;
           }
 
-          // Resilient fallback to browser speech synthesis if server is completely unreachable
-          this.fallbackToNaturalWebSpeech(formattedText, index, sessionId);
+          this.playbackStatus = "ERROR";
+          this.isLoading = false;
+          this.isPlaying = false;
+          this.errorMessage = `AUDIO_ELEMENT_ERROR: Code ${code} (${msg || "Media playback failed"})`;
+          this.notify();
+          this.currentTrack?.onPlaybackStateChange?.(false);
         };
 
-        audio.src = audioUrl;
-        audio.load();
+        // Diagnostic Stage 12: audio.src assignment
+        audio.loop = false;
+        audio.src = objectUrl;
+        console.debug(`[Audio:Diag:Stage12] audio.src assigned: ${audio.src}`);
 
+        // Diagnostic Stage 13: audio.load()
+        audio.load();
+        console.debug("[Audio:Diag:Stage13] audio.load() executed");
+
+        // Diagnostic Stage 15: audio.play() success/failure
         const playPromise = audio.play();
         if (playPromise !== undefined) {
-          playPromise.catch((err) => {
-            if (this.currentPlaySessionId !== sessionId) return;
-            if (err.name === "NotAllowedError") {
-              console.warn("[GlobalAudioEngine:Audio] Autoplay blocked, awaiting user click:", err);
-              this.hasAutoplayBlock = true;
-              this.isLoading = false;
-              this.isPlaying = false;
-              this.playbackStatus = "READY";
-              this.notify();
-            } else if (err.name !== "AbortError") {
-              console.warn(`[GlobalAudioEngine:Audio] Playback exception (attempt ${retryCount + 1}):`, err);
-              if (retryCount === 0) {
-                const fallbackVoice = this.activeGender === "female" ? "en-US-JennyNeural" : "en-US-GuyNeural";
-                this.activeVoiceId = fallbackVoice;
-                this.playCurrentSegment(index, sessionId, 1);
-              } else {
-                this.fallbackToNaturalWebSpeech(formattedText, index, sessionId);
+          playPromise
+            .then(() => {
+              console.debug("[Audio:Diag:Stage15] audio.play() SUCCESS");
+            })
+            .catch((err) => {
+              console.debug(`[Audio:Diag:Stage15] audio.play() FAILURE: name="${err?.name}", message="${err?.message}"`, err);
+              if (this.currentPlaySessionId !== sessionId) return;
+              if (err?.name === "NotAllowedError") {
+                this.hasAutoplayBlock = true;
+                this.isLoading = false;
+                this.isPlaying = false;
+                this.playbackStatus = "READY";
+                this.errorMessage = null;
+                console.debug("[Audio:Diag:Stage15] Autoplay blocked by browser policy. Status set to READY for user tap.");
+                this.notify();
+              } else if (err?.name !== "AbortError") {
+                if (retryCount < 1) {
+                  this.playCurrentSegment(index, sessionId, retryCount + 1);
+                } else {
+                  this.playbackStatus = "ERROR";
+                  this.isLoading = false;
+                  this.isPlaying = false;
+                  this.errorMessage = `AUDIO_ELEMENT_ERROR: Playback rejected (${err?.name || "Unknown"})`;
+                  this.notify();
+                  this.currentTrack?.onPlaybackStateChange?.(false);
+                }
               }
-            }
-          });
+            });
         }
-        return;
-      } catch (err) {
-        console.warn("[GlobalAudioEngine:Audio] Error configuring audio stream:", err);
-      }
-    }
+      } catch (err: any) {
+        if (this.currentPlaySessionId !== sessionId) return;
+        if (signal.aborted) return;
 
-    // Audio element unavailable: try Web Speech synthesis
-    this.fallbackToNaturalWebSpeech(formattedText, index, sessionId);
+        const rawMsg = err?.message || String(err);
+        let category = "UNKNOWN_ERROR";
+
+        if (rawMsg.startsWith("TTS_REQUEST_FAILED") || rawMsg.startsWith("CORS_FAILED") ||
+            rawMsg.startsWith("HTTP_ERROR") || rawMsg.startsWith("EMPTY_AUDIO") ||
+            rawMsg.startsWith("INVALID_AUDIO") || rawMsg.startsWith("AUDIO_ELEMENT_ERROR") ||
+            rawMsg.startsWith("PLAYBACK_BLOCKED") || rawMsg.startsWith("UNSUPPORTED_AUDIO")) {
+          category = rawMsg.split(":")[0].trim();
+        } else if (rawMsg.includes("Failed to fetch") || rawMsg.includes("NetworkError")) {
+          category = "CORS_FAILED";
+        } else if (rawMsg.includes("HTTP ")) {
+          category = "HTTP_ERROR";
+        }
+
+        console.debug(`[Audio:Diag:Catch] Pipeline error categorized as [${category}]:`, rawMsg, err);
+
+        if (retryCount < 1 && category !== "PLAYBACK_BLOCKED" && category !== "UNSUPPORTED_AUDIO") {
+          console.log(`[GlobalAudioEngine:Audio] Retrying current segment fetch (attempt ${retryCount + 2})...`);
+          this.playCurrentSegment(index, sessionId, retryCount + 1);
+          return;
+        }
+
+        this.playbackStatus = "ERROR";
+        this.isLoading = false;
+        this.isPlaying = false;
+        this.errorMessage = rawMsg.startsWith(category) ? rawMsg : `${category}: ${rawMsg}`;
+        this.notify();
+        this.currentTrack?.onPlaybackStateChange?.(false);
+      }
+    })();
   }
 
   private fallbackToNaturalWebSpeech(formattedText: string, index: number, sessionId: number) {
@@ -1673,6 +1950,10 @@ if (typeof window !== "undefined" && !hasSetupGlobalUnlock) {
 }
 
 export const PREFERRED_MALE_VOICES = [
+  "Adam",
+  "Michael",
+  "am_adam",
+  "am_michael",
   "Guy",
   "Christopher",
   "Eric",
@@ -1680,25 +1961,21 @@ export const PREFERRED_MALE_VOICES = [
   "David",
   "Mark",
   "George",
-  "Steffan",
-  "Andrew",
   "Brian",
-  "en-US-GuyNeural",
-  "en-US-ChristopherNeural",
-  "en-US-EricNeural",
-  "en-US-BrianNeural",
-  "en-GB-RyanNeural"
 ];
 
 export const PREFERRED_FEMALE_VOICES = [
+  "Heart",
+  "Bella",
+  "Nicole",
+  "Sarah",
+  "af_heart",
+  "af_bella",
+  "af_nicole",
+  "af_sarah",
   "Jenny",
   "Michelle",
   "Emma",
-  "Ava",
-  "Samantha",
-  "en-US-JennyNeural",
-  "en-US-MichelleNeural",
-  "en-US-EmmaNeural"
 ];
 
 /**
@@ -1709,13 +1986,6 @@ export function getAudioTTSUrl(text: string, voiceId?: string, gender?: VoiceGen
   const clean = text.trim();
   const activeGender = gender || getSavedVoiceGender();
   const activeVoiceId = voiceId || getSavedVoiceId();
-
-  console.log(`[AudioTTS URL] Requesting TTS stream:`, {
-    selectedVoice: activeVoiceId,
-    gender: activeGender,
-    textLength: clean.length,
-    snippet: clean.substring(0, 40) + "..."
-  });
 
   return `/api/tts?voice=${encodeURIComponent(activeVoiceId)}&gender=${encodeURIComponent(activeGender)}&text=${encodeURIComponent(clean)}`;
 }
@@ -1730,7 +2000,7 @@ export function getNaturalTTSUrl(text: string, genderOrVoice?: VoiceGender | str
     // If the saved voice matches the requested gender, use the saved voice
     const targetVoice = (savedGender === genderOrVoice)
       ? savedVoiceId
-      : (genderOrVoice === "female" ? "en-US-JennyNeural" : "en-US-GuyNeural");
+      : (genderOrVoice === "female" ? KOKORO_DEFAULT_VOICE : KOKORO_DEFAULT_MALE_VOICE);
     return getAudioTTSUrl(text, targetVoice, genderOrVoice);
   }
   return getAudioTTSUrl(text, genderOrVoice);

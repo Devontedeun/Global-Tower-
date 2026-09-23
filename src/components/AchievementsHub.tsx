@@ -45,6 +45,7 @@ interface AchievementsHubProps {
   isRegistered?: boolean;
   onOpenBible?: () => void;
   onOpenPrayers?: () => void;
+  onNavigate?: (view: string) => void;
   className?: string;
 }
 
@@ -53,6 +54,7 @@ export const AchievementsHub: React.FC<AchievementsHubProps> = ({
   isRegistered = true,
   onOpenBible,
   onOpenPrayers,
+  onNavigate,
   className = ""
 }) => {
   const metrics = useMemo(() => {
@@ -527,11 +529,23 @@ export const AchievementsHub: React.FC<AchievementsHubProps> = ({
                 <div className="pt-2 flex items-center justify-center gap-3">
                   <button
                     onClick={() => {
+                      const cat = activeModalAchievement.category;
                       setActiveModalAchievement(null);
-                      if (activeModalAchievement.category === "scripture" && onOpenBible) {
-                        onOpenBible();
-                      } else if (activeModalAchievement.category === "prayer" && onOpenPrayers) {
-                        onOpenPrayers();
+                      if (cat === "scripture" || cat === "audio") {
+                        if (onOpenBible) onOpenBible();
+                        else if (onNavigate) onNavigate("bible");
+                      } else if (cat === "prayer" || cat === "fellowship") {
+                        if (onOpenPrayers) onOpenPrayers();
+                        else if (onNavigate) onNavigate("prayers");
+                      } else if (cat === "notes") {
+                        if (onNavigate) onNavigate("library");
+                        else if (onOpenBible) onOpenBible();
+                      } else if (cat === "streak") {
+                        if (onNavigate) onNavigate("plans");
+                        else if (onOpenBible) onOpenBible();
+                      } else {
+                        if (onOpenBible) onOpenBible();
+                        else if (onNavigate) onNavigate("bible");
                       }
                     }}
                     className="w-full py-3 bg-[#2D2D2D] dark:bg-white text-white dark:text-[#162033] rounded-2xl text-xs font-bold hover:bg-[#C5A059] dark:hover:bg-amber-400 transition-colors shadow-md cursor-pointer"
