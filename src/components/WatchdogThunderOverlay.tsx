@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { Zap, ShieldAlert, Sparkles } from "lucide-react";
+import { isCurrentAdminUser } from "../lib/storage";
 
 interface ThunderEventData {
   intensity?: "normal" | "intense" | "apocalyptic";
@@ -7,10 +8,18 @@ interface ThunderEventData {
   timestamp: number;
 }
 
-export const WatchdogThunderOverlay: React.FC = () => {
+interface WatchdogThunderOverlayProps {
+  isAdmin?: boolean;
+}
+
+export const WatchdogThunderOverlay: React.FC<WatchdogThunderOverlayProps> = ({ isAdmin }) => {
   const [activeThunder, setActiveThunder] = useState<ThunderEventData | null>(null);
 
+  const authorized = isAdmin ?? isCurrentAdminUser();
+
   useEffect(() => {
+    if (!authorized) return;
+
     const handleThunder = (e: any) => {
       const data: ThunderEventData = e.detail || { timestamp: Date.now() };
       setActiveThunder(data);
@@ -26,9 +35,9 @@ export const WatchdogThunderOverlay: React.FC = () => {
     return () => {
       window.removeEventListener("gtc_watchdog_thunder_event", handleThunder);
     };
-  }, []);
+  }, [authorized]);
 
-  if (!activeThunder) return null;
+  if (!authorized || !activeThunder) return null;
 
   const isApocalyptic = activeThunder.intensity === "apocalyptic";
 

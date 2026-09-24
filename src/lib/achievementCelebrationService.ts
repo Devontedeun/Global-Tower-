@@ -46,6 +46,15 @@ class AchievementCelebrationService {
     this.isSoundMuted = muted;
   }
 
+  public clearAllCelebratedState(): void {
+    this.celebratedSet.clear();
+    if (typeof window !== "undefined") {
+      try {
+        localStorage.removeItem(STORAGE_KEY_SEEN_ACHIEVEMENTS);
+      } catch {}
+    }
+  }
+
   public isUserRegistered(): boolean {
     try {
       const user = Storage.getUser();

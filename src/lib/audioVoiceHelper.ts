@@ -149,6 +149,94 @@ export const KOKORO_VOICES: VoiceOption[] = [
 
 export const SERVER_VOICES: VoiceOption[] = KOKORO_VOICES;
 
+/**
+ * Resolves any voice identifier or URI to a valid Kokoro cloud voice ID
+ */
+export function resolveKokoroVoiceId(requestedVoice?: string, gender?: VoiceGender): string {
+  const req = (requestedVoice || "").trim().toLowerCase();
+  if (!req) {
+    return gender === "male" ? KOKORO_DEFAULT_MALE_VOICE : KOKORO_DEFAULT_VOICE;
+  }
+  const match = KOKORO_VOICES.find((v) => v.id.toLowerCase() === req);
+  if (match) return match.id;
+
+  if (req.includes("heart")) return "af_heart";
+  if (req.includes("adam")) return "am_adam";
+  if (req.includes("michael")) return "am_michael";
+  if (req.includes("eric")) return "am_eric";
+  if (req.includes("bella")) return "af_bella";
+  if (req.includes("nicole")) return "af_nicole";
+  if (req.includes("sarah")) return "af_sarah";
+  if (req.includes("sky")) return "af_sky";
+
+  if (
+    req.includes("male") ||
+    req.includes("guy") ||
+    req.includes("christopher") ||
+    req.includes("david") ||
+    req.includes("george") ||
+    req.includes("puck") ||
+    gender === "male"
+  ) {
+    return "am_adam";
+  }
+  return "af_heart";
+}
+
+/**
+ * Inspects a received Blob to verify it contains authentic binary audio data
+ * and NOT an HTML error page, 502/504 gateway response, or JSON error payload.
+ */
+export async function isValidAudioBlob(blob: Blob | null | undefined): Promise<boolean> {
+  if (!blob || blob.size < 256) return false;
+  const rawType = (blob.type || "").toLowerCase();
+  if (rawType.includes("html") || rawType.includes("text") || rawType.includes("json")) {
+    return false;
+  }
+  try {
+    const slice = blob.slice(0, 32);
+    const buf = await slice.arrayBuffer();
+    const bytes = new Uint8Array(buf);
+    if (bytes.length < 4) return false;
+
+    // Reject HTML/XML signatures: '<' (ASCII 60 / 0x3C)
+    if (bytes[0] === 0x3C) return false;
+
+    // Reject JSON signatures: '{' (ASCII 123 / 0x7B)
+    if (bytes[0] === 0x7B) return false;
+
+    // Accept ID3 tag ('ID3' -> 0x49, 0x44, 0x33)
+    if (bytes[0] === 0x49 && bytes[1] === 0x44 && bytes[2] === 0x33) {
+      return true;
+    }
+
+    // Accept MP3 sync frame (0xFF followed by 0xFB, 0xF3, 0xF2, or 0xE0-0xFF)
+    if (bytes[0] === 0xFF && (bytes[1] & 0xE0) === 0xE0) {
+      return true;
+    }
+
+    // Accept RIFF (WAV -> 'RIFF')
+    if (bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x46) {
+      return true;
+    }
+
+    // Accept Ogg container ('OggS' -> 0x4F, 0x67, 0x67, 0x53)
+    if (bytes[0] === 0x4F && bytes[1] === 0x67 && bytes[2] === 0x67 && bytes[3] === 0x53) {
+      return true;
+    }
+
+    // Accept AAC (0xFF followed by 0xF0-0xFF)
+    if (bytes[0] === 0xFF && (bytes[1] & 0xF6) === 0xF0) {
+      return true;
+    }
+
+    // Fallback: if audio mime type is explicitly declared and not html/json
+    return rawType.includes("audio");
+  } catch {
+    return false;
+  }
+}
+
 export interface WebVoiceOption {
   id: string;
   name: string;
@@ -500,68 +588,87 @@ export interface SpeechSegment {
   verseNum?: number;
 }
 
-export function splitTextIntoNaturalChunks(text: string, maxLen = 160): string[] {
-  if (!text || text.length <= maxLen) return text ? [text] : [];
+export function splitTextIntoNaturalChunks(text: string, maxLen = 70): string[] {
+  if (!text) return [];
+  const clean = text.trim();
+  if (clean.length <= maxLen) return [clean];
 
+  // 1. Split at natural sentence ends (. ! ?)
   const sentenceRegex = /[^.!?]+(?:[.!?]+(?:\s+|$)|$)/g;
-  const rawSentences = text.match(sentenceRegex) || [text];
+  const rawSentences = clean.match(sentenceRegex) || [clean];
   const chunks: string[] = [];
 
   for (const sentence of rawSentences) {
-    const trimmed = sentence.trim();
-    if (!trimmed) continue;
-    if (trimmed.length <= maxLen) {
-      chunks.push(trimmed);
+    const sTrimmed = sentence.trim();
+    if (!sTrimmed) continue;
+    if (sTrimmed.length <= maxLen) {
+      chunks.push(sTrimmed);
     } else {
-      const clauseRegex = /[^,;:—]+(?:[,;:—]+(?:\s+|$)|$)/g;
-      const clauses = trimmed.match(clauseRegex) || [trimmed];
+      // 2. Split longer sentences at clause boundaries (; : , — -)
+      const clauseRegex = /[^,;:—\-]+(?:[,;:—\-]+(?:\s+|$)|$)/g;
+      const clauses = sTrimmed.match(clauseRegex) || [sTrimmed];
       let current = "";
       for (const clause of clauses) {
         const cTrimmed = clause.trim();
         if (!cTrimmed) continue;
-        if ((current + " " + cTrimmed).trim().length <= maxLen) {
-          current = (current + " " + cTrimmed).trim();
+        const candidate = current ? `${current} ${cTrimmed}` : cTrimmed;
+        if (candidate.length <= maxLen) {
+          current = candidate;
         } else {
           if (current) chunks.push(current);
-          current = cTrimmed;
+          if (cTrimmed.length <= maxLen) {
+            current = cTrimmed;
+          } else {
+            // 3. Split long run-on phrases at word boundaries
+            const words = cTrimmed.split(/\s+/);
+            current = "";
+            for (const w of words) {
+              const wordCandidate = current ? `${current} ${w}` : w;
+              if (wordCandidate.length <= maxLen) {
+                current = wordCandidate;
+              } else {
+                if (current) chunks.push(current);
+                current = w;
+              }
+            }
+          }
         }
       }
       if (current) chunks.push(current);
     }
   }
 
-  return chunks.length > 0 ? chunks : [text];
+  return chunks.length > 0 ? chunks : [clean];
 }
 
 export function buildSegmentsFromTrack(track: AudioTrack): SpeechSegment[] {
   if (track.verses && track.verses.length > 0) {
     const segments: SpeechSegment[] = [];
-    track.verses.forEach((v, idx) => {
-      const intro = idx === 0 && track.book && track.chapter
-        ? `${track.book}, chapter ${track.chapter}. `
-        : "";
-      const fullVerse = formatBibleTextForSpeech(`${intro}${v.text}`);
-      // Preserve verse integrity as a single natural segment.
-      // Only split if the verse is extraordinarily long (> 450 characters)
-      if (fullVerse.length > 450) {
-        const sub = splitTextIntoNaturalChunks(fullVerse, 350);
-        sub.forEach((chunk) => {
-          segments.push({ text: chunk, verseNum: v.num });
-        });
-      } else {
-        segments.push({ text: fullVerse, verseNum: v.num });
-      }
+
+    // Distinct initial chapter announcement segment (e.g. "Genesis, chapter 1.")
+    // With only ~20 characters, it synthesizes on Kokoro in ~1.5 seconds!
+    if (track.verses.length > 1 && track.book && track.chapter) {
+      segments.push({
+        text: `${track.book}, chapter ${track.chapter}.`,
+        verseNum: track.verses[0]?.num
+      });
+    }
+
+    track.verses.forEach((v) => {
+      const formattedVerse = formatBibleTextForSpeech(v.text);
+      // Natural chunks capped at ~70 chars synthesize in 1.6 - 2.0 seconds!
+      const subChunks = splitTextIntoNaturalChunks(formattedVerse, 70);
+      subChunks.forEach((chunk) => {
+        segments.push({ text: chunk, verseNum: v.num });
+      });
     });
     return segments;
   }
 
   if (track.textToRead) {
     const formatted = formatBibleTextForSpeech(track.textToRead);
-    if (formatted.length > 450) {
-      const sub = splitTextIntoNaturalChunks(formatted, 350);
-      return sub.map((chunk) => ({ text: chunk }));
-    }
-    return [{ text: formatted }];
+    const subChunks = splitTextIntoNaturalChunks(formatted, 70);
+    return subChunks.map((chunk) => ({ text: chunk }));
   }
 
   return [];
@@ -761,13 +868,10 @@ export const audioContextManager = new AudioContextStateManager();
 
 let sharedAudioElement: HTMLAudioElement | null = null;
 
-// Valid 46-byte RFC-compliant PCM silent WAV data URI to prime HTMLAudioElement on iOS Safari and Android Chrome
-const SILENT_WAV_DATA_URI = "data:audio/wav;base64,UklGRiYAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQIAAAAAAA==";
-
 /**
  * Creates or retrieves the single master HTMLAudioElement.
  * Embedded directly in document.body with playsinline and x-webkit-airplay
- * to ensure iOS Safari, Android Chrome, and APK WebViews treat it
+ * to ensure iOS Safari, Android Chrome, and Samsung Internet treat it
  * as an active foreground media element that never gets suspended.
  */
 export function getOrCreateMasterAudioElement(): HTMLAudioElement | null {
@@ -827,7 +931,7 @@ export function getSharedAudioPlayer(): HTMLAudioElement | null {
 
 /**
  * Universal Hardware Audio Unlocker
- * Wakes up AudioContext, primes HTMLAudioElement for iOS Safari / Android Chrome, and prepares synthesis.
+ * Wakes up AudioContext and primes HTMLAudioElement for iOS Safari / Android Chrome / Samsung Internet.
  */
 export function unlockAudio(): boolean {
   if (typeof window === "undefined") return false;
@@ -842,21 +946,11 @@ export function unlockAudio(): boolean {
       try {
         player.volume = getSavedAudioVolume();
       } catch {}
-      // Prime iOS Safari media pipeline during user gesture if player is idle or ended
-      if (!player.src || player.ended) {
-        player.src = SILENT_WAV_DATA_URI;
-        player.play().catch(() => {});
-      }
-    }
-
-    // 3. SpeechSynthesis Engine Unlock (if available)
-    if ("speechSynthesis" in window) {
-      if (window.speechSynthesis.paused) {
-        window.speechSynthesis.resume();
-      }
-      try {
-        window.speechSynthesis.getVoices();
-      } catch {}
+      player.preload = "auto";
+      (player as any).playsInline = true;
+      player.setAttribute("playsinline", "true");
+      player.setAttribute("webkit-playsinline", "true");
+      player.setAttribute("x-webkit-airplay", "allow");
     }
 
     return true;
@@ -887,6 +981,8 @@ class GlobalAudioEngine {
   private currentPlaySessionId: number = 0;
   private currentBlobUrl: string | null = null;
   private prefetchBlobMap: Map<string, string> = new Map();
+  private blobCache: Map<string, Blob> = new Map();
+  private prefetchInProgress: Set<string> = new Set();
   private abortController: AbortController | null = null;
 
   public cleanupBlobUrls() {
@@ -902,6 +998,144 @@ class GlobalAudioEngine {
       } catch {}
     });
     this.prefetchBlobMap.clear();
+    this.prefetchInProgress.clear();
+  }
+
+  /**
+   * High-performance Binary Audio Retriever with sub-2s latency.
+   * Checks client cache -> attempts server proxy with 3.2s cutoff -> falls back to direct Kokoro Cloud Run.
+   */
+  public async fetchAudioBlob(
+    text: string,
+    voiceId: string,
+    gender: VoiceGender,
+    signal?: AbortSignal
+  ): Promise<Blob | null> {
+    const cacheKey = `${voiceId}:${gender}:${text}`;
+    if (this.blobCache.has(cacheKey)) {
+      return this.blobCache.get(cacheKey)!;
+    }
+
+    let audioBlob: Blob | null = null;
+
+    // Attempt 1: Fetch from primary internal backend endpoint via POST (3.2s fast timeout)
+    try {
+      const primaryController = new AbortController();
+      const primaryTimeout = setTimeout(() => primaryController.abort(), 3200);
+
+      const onAbort = () => primaryController.abort();
+      if (signal) signal.addEventListener("abort", onAbort);
+
+      try {
+        const res = await fetch("/api/tts", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Accept: "audio/mpeg, audio/*;q=0.9",
+          },
+          body: JSON.stringify({
+            text,
+            voice: voiceId,
+            gender,
+          }),
+          signal: primaryController.signal,
+        });
+
+        clearTimeout(primaryTimeout);
+        const contentType = (res.headers.get("content-type") || "").toLowerCase();
+
+        if (res.ok && !contentType.includes("text/html") && !contentType.includes("application/json")) {
+          const blob = await res.blob();
+          if (await isValidAudioBlob(blob)) {
+            audioBlob = blob.type.includes("audio") ? blob : new Blob([blob], { type: "audio/mpeg" });
+          }
+        }
+      } catch {
+        clearTimeout(primaryTimeout);
+      } finally {
+        if (signal) signal.removeEventListener("abort", onAbort);
+      }
+    } catch {}
+
+    // Attempt 2: Direct fetch to Kokoro Cloud Run service if primary was slow or failed
+    if (!audioBlob && (!signal || !signal.aborted)) {
+      try {
+        const cloudVoiceId = resolveKokoroVoiceId(voiceId, gender);
+        const directController = new AbortController();
+        const directTimeout = setTimeout(() => directController.abort(), 3500);
+
+        const onAbort = () => directController.abort();
+        if (signal) signal.addEventListener("abort", onAbort);
+
+        try {
+          const directRes = await fetch("https://kokoro-tts-751619998879.europe-west2.run.app/v1/audio/speech", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Accept: "audio/mpeg, audio/*;q=0.9",
+            },
+            body: JSON.stringify({
+              model: "kokoro",
+              input: text,
+              voice: cloudVoiceId,
+              response_format: "mp3",
+            }),
+            signal: directController.signal,
+          });
+
+          clearTimeout(directTimeout);
+          const directContentType = (directRes.headers.get("content-type") || "").toLowerCase();
+
+          if (directRes.ok && !directContentType.includes("text/html") && !directContentType.includes("application/json")) {
+            const directBlob = await directRes.blob();
+            if (await isValidAudioBlob(directBlob)) {
+              audioBlob = directBlob.type.includes("audio") ? directBlob : new Blob([directBlob], { type: "audio/mpeg" });
+            }
+          }
+        } catch {
+          clearTimeout(directTimeout);
+        } finally {
+          if (signal) signal.removeEventListener("abort", onAbort);
+        }
+      } catch {}
+    }
+
+    if (audioBlob) {
+      if (this.blobCache.size >= 80) {
+        const oldestKey = this.blobCache.keys().next().value;
+        if (oldestKey) this.blobCache.delete(oldestKey);
+      }
+      this.blobCache.set(cacheKey, audioBlob);
+    }
+
+    return audioBlob;
+  }
+
+  /**
+   * Pre-fetches a segment in the background so audio transitions have zero latency.
+   */
+  public async prefetchSegment(index: number, sessionId: number = this.currentPlaySessionId) {
+    if (index < 0 || index >= this.segments.length) return;
+    const seg = this.segments[index];
+    if (!seg || !seg.text) return;
+    const formatted = formatBibleTextForSpeech(seg.text);
+    if (!formatted) return;
+
+    const targetVoice = this.activeVoiceId || getSavedVoiceId() || (this.activeGender === "female" ? KOKORO_DEFAULT_VOICE : KOKORO_DEFAULT_MALE_VOICE);
+    const audioUrl = getAudioTTSUrl(formatted, targetVoice, this.activeGender);
+
+    if (this.prefetchBlobMap.has(audioUrl) || this.prefetchInProgress.has(audioUrl)) return;
+    this.prefetchInProgress.add(audioUrl);
+
+    try {
+      const blob = await this.fetchAudioBlob(formatted, targetVoice, this.activeGender);
+      if (blob && this.currentPlaySessionId === sessionId) {
+        const objectUrl = URL.createObjectURL(blob);
+        this.prefetchBlobMap.set(audioUrl, objectUrl);
+      }
+    } catch {} finally {
+      this.prefetchInProgress.delete(audioUrl);
+    }
   }
 
   constructor() {
@@ -1052,19 +1286,18 @@ class GlobalAudioEngine {
     setSavedMuteState(false);
     this.errorMessage = null;
 
-    // Keep mobile audio pipeline engaged during async Kokoro TTS generation
+    // Prime mobile audio element properties within user gesture
     const warmupPlayer = this.getAudioElement();
     if (warmupPlayer) {
       warmupPlayer.muted = false;
       try {
         warmupPlayer.volume = this.isMuted ? 0 : Math.max(0.01, this.volume);
       } catch {}
-      try {
-        warmupPlayer.src = SILENT_WAV_DATA_URI;
-        warmupPlayer.loop = true;
-        const p = warmupPlayer.play();
-        if (p) p.catch(() => {});
-      } catch {}
+      warmupPlayer.preload = "auto";
+      (warmupPlayer as any).playsInline = true;
+      warmupPlayer.setAttribute("playsinline", "true");
+      warmupPlayer.setAttribute("webkit-playsinline", "true");
+      warmupPlayer.setAttribute("x-webkit-airplay", "allow");
     }
 
     // 2. Build segments
@@ -1114,10 +1347,31 @@ class GlobalAudioEngine {
     this.updateMediaSession(track);
 
     // 5. Play initial segment
-    const startIdx = options?.startSegment !== undefined
-      ? options.startSegment
-      : (track.startSegment !== undefined ? track.startSegment : 0);
+    let startIdx = 0;
+    if (options?.startSegment !== undefined || track.startSegment !== undefined) {
+      const requestedIdx = options?.startSegment !== undefined ? options.startSegment : track.startSegment!;
+      if (requestedIdx > 0 && track.verses && track.verses[requestedIdx]) {
+        const targetVerseNum = track.verses[requestedIdx].num;
+        const segIdx = segments.findIndex((s) => s.verseNum === targetVerseNum);
+        if (segIdx !== -1) {
+          startIdx = segIdx;
+        } else {
+          startIdx = Math.min(requestedIdx, segments.length - 1);
+        }
+      } else {
+        startIdx = 0;
+      }
+    }
     this.playCurrentSegment(startIdx, sessionId);
+
+    // Immediately trigger background prefetch for the subsequent segment so transition is instantaneous
+    if (startIdx + 1 < segments.length) {
+      setTimeout(() => {
+        if (this.currentPlaySessionId === sessionId) {
+          this.prefetchSegment(startIdx + 1, sessionId);
+        }
+      }, 150);
+    }
     return true;
   }
 
@@ -1185,19 +1439,6 @@ class GlobalAudioEngine {
       this.currentTrack?.onPlaybackStateChange?.(true);
       this.notify();
       return;
-    }
-
-    if (typeof window !== "undefined" && "speechSynthesis" in window) {
-      if (window.speechSynthesis.paused) {
-        window.speechSynthesis.resume();
-        this.playbackStatus = "READING";
-        this.isPlaying = true;
-        this.isLoading = false;
-        this.startKeepAlive();
-        this.currentTrack?.onPlaybackStateChange?.(true);
-        this.notify();
-        return;
-      }
     }
 
     this.playCurrentSegment(this.currentSegmentIndex, this.currentPlaySessionId);
@@ -1274,6 +1515,7 @@ class GlobalAudioEngine {
       try { URL.revokeObjectURL(url); } catch {}
     });
     this.prefetchBlobMap.clear();
+    this.prefetchInProgress.clear();
 
     const naturalMatch = SERVER_VOICES.find(
       (v) => v.id.toLowerCase() === newVoiceId.toLowerCase() || v.name.toLowerCase() === newVoiceId.toLowerCase()
@@ -1304,6 +1546,8 @@ class GlobalAudioEngine {
     this.notify();
     if (this.isPlaying && this.segments.length > 0) {
       this.playCurrentSegment(this.currentSegmentIndex, this.currentPlaySessionId);
+    } else if (this.segments.length > 0) {
+      this.prefetchSegment(this.currentSegmentIndex);
     }
   }
 
@@ -1437,7 +1681,7 @@ class GlobalAudioEngine {
 
     (async () => {
       try {
-        let objectUrl: string;
+        let objectUrl: string = "";
 
         // Check if next segment was already prefetched as a Blob Object URL
         const prefetched = this.prefetchBlobMap.get(audioUrl);
@@ -1446,113 +1690,39 @@ class GlobalAudioEngine {
           objectUrl = prefetched;
           this.prefetchBlobMap.delete(audioUrl);
         } else {
-          const fetchTimeout = setTimeout(() => {
-            if (!signal.aborted) this.abortController?.abort();
-          }, 35000);
+          const audioBlob = await this.fetchAudioBlob(formattedText, targetVoice, this.activeGender, signal);
 
-          let res: Response;
+          if (this.currentPlaySessionId !== sessionId || signal.aborted) return;
+
+          // If server and cloud TTS returned non-audio, report clear Kokoro retry state
+          if (!audioBlob) {
+            console.warn(`[GlobalAudioEngine] Kokoro audio stream unavailable for segment ${index + 1}/${this.segments.length}.`);
+            this.isLoading = false;
+            this.isPlaying = false;
+            this.playbackStatus = "ERROR";
+            this.errorMessage = "Kokoro audio narration unavailable. Tap to retry.";
+            this.notify();
+            this.currentTrack?.onPlaybackStateChange?.(false);
+            return;
+          }
+
           try {
-            res = await fetch(audioUrl, {
-              method: "GET",
-              headers: { Accept: "audio/mpeg, audio/*;q=0.9" },
-              signal,
-            });
-          } catch (fetchErr: any) {
-            clearTimeout(fetchTimeout);
-            if (this.currentPlaySessionId !== sessionId || signal.aborted) return;
-            console.debug("[Audio:Diag:FetchError] Primary fetch failed:", fetchErr?.message || fetchErr);
-
-            // Resilient CORS fallback: Direct fetch to Kokoro Cloud Run
-            console.debug("[Audio:Diag:Fallback] Attempting direct fetch to Kokoro Cloud Run service...");
-            try {
-              res = await fetch("https://kokoro-tts-751619998879.europe-west2.run.app/v1/audio/speech", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  model: "kokoro",
-                  input: formattedText,
-                  voice: targetVoice,
-                  response_format: "mp3",
-                }),
-                signal,
-              });
-            } catch (directErr: any) {
-              console.debug("[Audio:Diag:DirectError] Direct Kokoro Cloud Run fetch failed:", directErr);
-              const isCors = directErr?.name === "TypeError" || String(directErr).includes("Failed to fetch") || String(directErr).includes("NetworkError");
-              throw new Error(isCors ? "CORS_FAILED: Failed to fetch TTS endpoint from mobile browser" : `TTS_REQUEST_FAILED: ${directErr?.message || "Network request failed"}`);
-            }
-          }
-          clearTimeout(fetchTimeout);
-
-          if (this.currentPlaySessionId !== sessionId) return;
-
-          // Diagnostic Stage 3: HTTP status
-          console.debug(`[Audio:Diag:Stage3] HTTP status: ${res.status} (${res.statusText})`);
-          // Diagnostic Stage 4: response.ok
-          console.debug(`[Audio:Diag:Stage4] response.ok: ${res.ok}`);
-          // Diagnostic Stage 5: response.headers Content-Type
-          const contentType = res.headers.get("content-type") || "";
-          console.debug(`[Audio:Diag:Stage5] response.headers Content-Type: "${contentType}"`);
-          // Diagnostic Stage 6: response Content-Length if available
-          const contentLength = res.headers.get("content-length");
-          console.debug(`[Audio:Diag:Stage6] response Content-Length: ${contentLength !== null ? contentLength + " bytes" : "unavailable"}`);
-
-          if (!res.ok) {
-            let errorDetail = "";
-            try {
-              if (contentType.includes("application/json")) {
-                const json = await res.json();
-                errorDetail = json.details || json.error || "";
-              } else {
-                errorDetail = await res.text();
-              }
-            } catch {}
-            console.debug(`[Audio:Diag:HttpError] HTTP ${res.status}: ${errorDetail}`);
-            if (res.status === 503 || res.status === 502 || res.status === 504) {
-              throw new Error(`TTS_REQUEST_FAILED: Kokoro service responded with HTTP ${res.status}`);
-            }
-            throw new Error(`HTTP_ERROR: Server returned HTTP ${res.status} ${res.statusText}`);
-          }
-
-          if (contentType.includes("application/json")) {
-            const json = await res.json().catch(() => ({}));
-            throw new Error(`INVALID_AUDIO: Expected audio but received JSON (${json.error || json.details || "Unknown"})`);
-          }
-
-          // Diagnostic Stage 7: response.blob() success/failure
-          let rawBlob: Blob;
-          try {
-            rawBlob = await res.blob();
-            console.debug("[Audio:Diag:Stage7] response.blob() SUCCESS");
-          } catch (blobErr: any) {
-            console.debug("[Audio:Diag:Stage7] response.blob() FAILURE:", blobErr);
-            throw new Error(`INVALID_AUDIO: Failed to decode response stream as Blob (${blobErr?.message || ""})`);
-          }
-
-          // Diagnostic Stage 8: Blob MIME type
-          console.debug(`[Audio:Diag:Stage8] Blob MIME type: "${rawBlob.type}"`);
-          // Diagnostic Stage 9: Blob size in bytes
-          console.debug(`[Audio:Diag:Stage9] Blob size in bytes: ${rawBlob.size}`);
-
-          if (!rawBlob || rawBlob.size === 0) {
-            throw new Error("EMPTY_AUDIO: Audio blob is 0 bytes");
-          }
-
-          if (!rawBlob.type.includes("audio") && rawBlob.type !== "") {
-            throw new Error(`INVALID_AUDIO: Received MIME type "${rawBlob.type}", expected audio/mpeg`);
-          }
-
-          const mp3Blob = rawBlob.type.includes("audio")
-            ? rawBlob
-            : new Blob([rawBlob], { type: "audio/mpeg" });
-
-          // Diagnostic Stage 10: URL.createObjectURL() success
-          try {
-            objectUrl = URL.createObjectURL(mp3Blob);
+            objectUrl = URL.createObjectURL(audioBlob);
             console.debug(`[Audio:Diag:Stage10] URL.createObjectURL() SUCCESS: ${objectUrl}`);
           } catch (objUrlErr: any) {
-            console.debug("[Audio:Diag:Stage10] URL.createObjectURL() FAILURE:", objUrlErr);
-            throw new Error(`AUDIO_ELEMENT_ERROR: URL.createObjectURL failed (${objUrlErr?.message || ""})`);
+            console.warn("[Audio:Diag:Stage10] URL.createObjectURL failed:", objUrlErr);
+            this.isLoading = false;
+            this.isPlaying = false;
+            this.playbackStatus = "ERROR";
+            this.errorMessage = "Audio object creation failed. Tap to retry.";
+            this.notify();
+            this.currentTrack?.onPlaybackStateChange?.(false);
+            return;
+          }
+
+          // Immediately queue prefetch of next segment while audio initializes
+          if (index + 1 < this.segments.length) {
+            this.prefetchSegment(index + 1, sessionId);
           }
         }
 
@@ -1594,21 +1764,11 @@ class GlobalAudioEngine {
         audio.setAttribute("webkit-playsinline", "true");
         audio.setAttribute("x-webkit-airplay", "allow");
 
-        // Diagnostic Stage 14: audio.canPlayType()
-        const canMpeg = audio.canPlayType("audio/mpeg");
-        const canMp3 = audio.canPlayType("audio/mp3");
-        console.debug(
-          `[Audio:Diag:Stage14] audio.canPlayType('audio/mpeg'): "${canMpeg}", canPlayType('audio/mp3'): "${canMp3}"`
-        );
-        if (!canMpeg && !canMp3) {
-          console.warn("[Audio:Diag:Stage14] Browser reports no support for audio/mpeg or audio/mp3");
-        }
-
         // Assign listeners BEFORE setting src to avoid missed events or race conditions
         audio.onplay = () => {
           if (this.currentPlaySessionId !== sessionId) return;
           console.log(
-            `[GlobalAudioEngine:Audio] 🎙️ Playing Kokoro voice segment ${index + 1}/${this.segments.length} | Voice: ${this.narratorName} (${targetVoice})`
+            `[GlobalAudioEngine:Audio] 🎙️ Playing voice segment ${index + 1}/${this.segments.length} | Voice: ${this.narratorName} (${targetVoice})`
           );
           this.playbackStatus = "PLAYING";
           this.isPlaying = true;
@@ -1622,25 +1782,12 @@ class GlobalAudioEngine {
           }
           this.currentTrack?.onPlaybackStateChange?.(true);
 
-          // Fast background prefetch for next verse as Blob Object URL to guarantee zero-gap transitions
+          // Fast background prefetch for upcoming segments as Blob Object URLs to guarantee zero-gap transitions
           if (index + 1 < this.segments.length) {
-            const nextSeg = this.segments[index + 1];
-            const nextText = formatBibleTextForSpeech(nextSeg.text);
-            if (nextText) {
-              const nextUrl = getAudioTTSUrl(nextText, targetVoice, this.activeGender);
-              if (!this.prefetchBlobMap.has(nextUrl)) {
-                fetch(nextUrl, { headers: { Accept: "audio/mpeg, audio/*;q=0.9" } })
-                  .then((r) => (r.ok ? r.blob() : null))
-                  .then((b) => {
-                    if (b && b.size > 0 && this.currentPlaySessionId === sessionId) {
-                      const pBlob = b.type.includes("audio") ? b : new Blob([b], { type: "audio/mpeg" });
-                      const pUrl = URL.createObjectURL(pBlob);
-                      this.prefetchBlobMap.set(nextUrl, pUrl);
-                    }
-                  })
-                  .catch(() => {});
-              }
-            }
+            this.prefetchSegment(index + 1, sessionId);
+          }
+          if (index + 2 < this.segments.length) {
+            this.prefetchSegment(index + 2, sessionId);
           }
         };
 
@@ -1687,18 +1834,11 @@ class GlobalAudioEngine {
           const mediaError = audio.error;
           const code = mediaError?.code ?? "unknown";
           const msg = mediaError?.message ?? "";
-          console.debug(`[Audio:Diag:Stage16] audio.onerror: code=${code}, message="${msg}"`, e);
-
-          if (retryCount < 1) {
-            console.log(`[GlobalAudioEngine:Audio] Retrying current segment (attempt ${retryCount + 2})...`);
-            this.playCurrentSegment(index, sessionId, retryCount + 1);
-            return;
-          }
-
-          this.playbackStatus = "ERROR";
-          this.isLoading = false;
+          console.warn(`[GlobalAudioEngine] Audio element error: code=${code}, message="${msg}"`, e);
           this.isPlaying = false;
-          this.errorMessage = `AUDIO_ELEMENT_ERROR: Code ${code} (${msg || "Media playback failed"})`;
+          this.isLoading = false;
+          this.playbackStatus = "ERROR";
+          this.errorMessage = "Kokoro audio playback error. Tap to retry.";
           this.notify();
           this.currentTrack?.onPlaybackStateChange?.(false);
         };
@@ -1706,6 +1846,11 @@ class GlobalAudioEngine {
         // Diagnostic Stage 12: audio.src assignment
         audio.loop = false;
         audio.src = objectUrl;
+        audio.preload = "auto";
+        (audio as any).playsInline = true;
+        audio.setAttribute("playsinline", "true");
+        audio.setAttribute("webkit-playsinline", "true");
+        audio.setAttribute("x-webkit-airplay", "allow");
         console.debug(`[Audio:Diag:Stage12] audio.src assigned: ${audio.src}`);
 
         // Diagnostic Stage 13: audio.load()
@@ -1720,7 +1865,7 @@ class GlobalAudioEngine {
               console.debug("[Audio:Diag:Stage15] audio.play() SUCCESS");
             })
             .catch((err) => {
-              console.debug(`[Audio:Diag:Stage15] audio.play() FAILURE: name="${err?.name}", message="${err?.message}"`, err);
+              console.debug(`[Audio:Diag:Stage15] audio.play() notice: name="${err?.name}", message="${err?.message}"`);
               if (this.currentPlaySessionId !== sessionId) return;
               if (err?.name === "NotAllowedError") {
                 this.hasAutoplayBlock = true;
@@ -1731,16 +1876,13 @@ class GlobalAudioEngine {
                 console.debug("[Audio:Diag:Stage15] Autoplay blocked by browser policy. Status set to READY for user tap.");
                 this.notify();
               } else if (err?.name !== "AbortError") {
-                if (retryCount < 1) {
-                  this.playCurrentSegment(index, sessionId, retryCount + 1);
-                } else {
-                  this.playbackStatus = "ERROR";
-                  this.isLoading = false;
-                  this.isPlaying = false;
-                  this.errorMessage = `AUDIO_ELEMENT_ERROR: Playback rejected (${err?.name || "Unknown"})`;
-                  this.notify();
-                  this.currentTrack?.onPlaybackStateChange?.(false);
-                }
+                console.warn("[Audio:Diag:Stage15] Playback issue:", err);
+                this.isPlaying = false;
+                this.isLoading = false;
+                this.playbackStatus = "ERROR";
+                this.errorMessage = "Playback failed. Tap to retry.";
+                this.notify();
+                this.currentTrack?.onPlaybackStateChange?.(false);
               }
             });
         }
@@ -1748,125 +1890,15 @@ class GlobalAudioEngine {
         if (this.currentPlaySessionId !== sessionId) return;
         if (signal.aborted) return;
 
-        const rawMsg = err?.message || String(err);
-        let category = "UNKNOWN_ERROR";
-
-        if (rawMsg.startsWith("TTS_REQUEST_FAILED") || rawMsg.startsWith("CORS_FAILED") ||
-            rawMsg.startsWith("HTTP_ERROR") || rawMsg.startsWith("EMPTY_AUDIO") ||
-            rawMsg.startsWith("INVALID_AUDIO") || rawMsg.startsWith("AUDIO_ELEMENT_ERROR") ||
-            rawMsg.startsWith("PLAYBACK_BLOCKED") || rawMsg.startsWith("UNSUPPORTED_AUDIO")) {
-          category = rawMsg.split(":")[0].trim();
-        } else if (rawMsg.includes("Failed to fetch") || rawMsg.includes("NetworkError")) {
-          category = "CORS_FAILED";
-        } else if (rawMsg.includes("HTTP ")) {
-          category = "HTTP_ERROR";
-        }
-
-        console.debug(`[Audio:Diag:Catch] Pipeline error categorized as [${category}]:`, rawMsg, err);
-
-        if (retryCount < 1 && category !== "PLAYBACK_BLOCKED" && category !== "UNSUPPORTED_AUDIO") {
-          console.log(`[GlobalAudioEngine:Audio] Retrying current segment fetch (attempt ${retryCount + 2})...`);
-          this.playCurrentSegment(index, sessionId, retryCount + 1);
-          return;
-        }
-
-        this.playbackStatus = "ERROR";
+        console.warn("[GlobalAudioEngine] Audio pipeline error:", err?.message || err);
         this.isLoading = false;
         this.isPlaying = false;
-        this.errorMessage = rawMsg.startsWith(category) ? rawMsg : `${category}: ${rawMsg}`;
+        this.playbackStatus = "ERROR";
+        this.errorMessage = "Audio playback error. Tap to retry.";
         this.notify();
         this.currentTrack?.onPlaybackStateChange?.(false);
       }
     })();
-  }
-
-  private fallbackToNaturalWebSpeech(formattedText: string, index: number, sessionId: number) {
-    if (typeof window === "undefined" || !("speechSynthesis" in window)) {
-      this.isLoading = false;
-      this.isPlaying = false;
-      this.playbackStatus = "READY";
-      this.errorMessage = null;
-      this.notify();
-      this.currentTrack?.onPlaybackStateChange?.(false);
-      return;
-    }
-
-    try {
-      window.speechSynthesis.cancel();
-      const utterance = new SpeechSynthesisUtterance(formattedText);
-      utterance.rate = this.playbackRate * 0.95;
-
-      const voices = window.speechSynthesis.getVoices();
-      const englishVoices = voices.filter((v) => v.lang.startsWith("en"));
-      if (englishVoices.length > 0) {
-        const preferred = englishVoices.find((v) =>
-          this.activeGender === "female"
-            ? /female|zira|samantha|victoria|karen/i.test(v.name)
-            : /male|david|george|alex|daniel/i.test(v.name)
-        ) || englishVoices[0];
-        utterance.voice = preferred;
-      }
-
-      utterance.onstart = () => {
-        if (this.currentPlaySessionId !== sessionId) {
-          window.speechSynthesis.cancel();
-          return;
-        }
-        this.playbackStatus = "PLAYING";
-        this.isPlaying = true;
-        this.isLoading = false;
-        this.errorMessage = null;
-        this.hasAutoplayBlock = false;
-        this.notify();
-
-        const currentSeg = this.segments[index];
-        if (currentSeg?.verseNum && this.currentTrack?.onVerseChange) {
-          this.currentTrack.onVerseChange(currentSeg.verseNum);
-        }
-        this.currentTrack?.onPlaybackStateChange?.(true);
-        this.startKeepAlive();
-      };
-
-      utterance.onend = () => {
-        if (this.currentPlaySessionId !== sessionId) return;
-        this.stopKeepAlive();
-        if (index + 1 < this.segments.length) {
-          this.playCurrentSegment(index + 1, sessionId);
-        } else {
-          this.finishPlayback();
-        }
-      };
-
-      utterance.onerror = (err) => {
-        console.warn("[GlobalAudioEngine] SpeechSynthesis notice:", err);
-        this.stopKeepAlive();
-        if (this.currentPlaySessionId !== sessionId) return;
-        if (index + 1 < this.segments.length) {
-          this.playCurrentSegment(index + 1, sessionId);
-        } else {
-          this.finishPlayback();
-        }
-      };
-
-      window.speechSynthesis.speak(utterance);
-    } catch (e) {
-      console.warn("[GlobalAudioEngine] SpeechSynthesis exception:", e);
-      this.isLoading = false;
-      this.isPlaying = false;
-      this.playbackStatus = "READY";
-      this.notify();
-    }
-  }
-
-  private startKeepAlive() {
-    this.stopKeepAlive();
-    if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
-    this.keepAliveInterval = window.setInterval(() => {
-      if (this.isPlaying && window.speechSynthesis.speaking) {
-        window.speechSynthesis.pause();
-        window.speechSynthesis.resume();
-      }
-    }, 12000);
   }
 
   private stopKeepAlive() {

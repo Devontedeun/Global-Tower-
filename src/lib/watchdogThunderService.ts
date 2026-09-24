@@ -6,7 +6,7 @@
  */
 
 import { WatchdogIncident } from "./backgroundMaintenance";
-import { isSuperAdminEmail } from "./storage";
+import { isSuperAdminEmail, isCurrentAdminUser } from "./storage";
 
 export interface ThunderTriggerOptions {
   sound?: boolean;
@@ -72,6 +72,13 @@ class WatchdogThunderService {
    */
   public triggerThunder(options?: ThunderTriggerOptions): void {
     if (typeof window === "undefined") return;
+
+    // STRICT PRIVACY & UX SHIELD:
+    // Watchdog thunder, seismic screen vibrations, and lightning alarms are strictly for Admin accounts.
+    // They must NEVER fire or interrupt regular users.
+    if (!isCurrentAdminUser()) {
+      return;
+    }
 
     const sound = options?.sound ?? this.isAudioEnabled;
     const screenVibrate = options?.screenVibrate ?? this.isVibrationEnabled;

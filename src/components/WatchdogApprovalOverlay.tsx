@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { Sparkles, CheckCircle2, ShieldCheck, X } from "lucide-react";
 import { WatchdogApprovalData } from "../lib/watchdogApprovalService";
+import { isCurrentAdminUser } from "../lib/storage";
 
 // Pristine SVG Dove with anatomically proportioned outspread wings & tail
 const DoveGraphic: React.FC<{ size?: number; flip?: boolean }> = ({ size = 56, flip = false }) => (
@@ -80,10 +81,18 @@ const DoveGraphic: React.FC<{ size?: number; flip?: boolean }> = ({ size = 56, f
   </svg>
 );
 
-export const WatchdogApprovalOverlay: React.FC = () => {
+interface WatchdogApprovalOverlayProps {
+  isAdmin?: boolean;
+}
+
+export const WatchdogApprovalOverlay: React.FC<WatchdogApprovalOverlayProps> = ({ isAdmin }) => {
   const [activeApproval, setActiveApproval] = useState<WatchdogApprovalData | null>(null);
 
+  const authorized = isAdmin ?? isCurrentAdminUser();
+
   useEffect(() => {
+    if (!authorized) return;
+
     const handleApproval = (e: any) => {
       const data: WatchdogApprovalData = e.detail || {
         pingCount: 1,
@@ -109,9 +118,9 @@ export const WatchdogApprovalOverlay: React.FC = () => {
     return () => {
       window.removeEventListener("gtc_watchdog_approval_event", handleApproval);
     };
-  }, []);
+  }, [authorized]);
 
-  if (!activeApproval) return null;
+  if (!authorized || !activeApproval) return null;
 
   // Staggered dove coordinates & motion tracks
   const doves = [

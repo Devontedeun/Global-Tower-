@@ -396,47 +396,56 @@ async function synthesizeKokoroTTS(
   voice: string = "af_heart",
   maxRetries = 1
 ): Promise<Buffer | null> {
-  for (let attempt = 0; attempt <= maxRetries; attempt++) {
-    try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 30000);
+  const voicesToTry = [voice];
+  const defaultFallbackVoice = voice.startsWith("am_") ? "am_adam" : "af_heart";
+  if (!voicesToTry.includes(defaultFallbackVoice)) {
+    voicesToTry.push(defaultFallbackVoice);
+  }
 
-      const response = await fetch(KOKORO_TTS_ENDPOINT, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Accept": "audio/mpeg"
-        },
-        body: JSON.stringify({
-          model: "kokoro",
-          input: text,
-          voice: voice,
-          response_format: "mp3"
-        }),
-        signal: controller.signal
-      });
+  for (const currentVoice of voicesToTry) {
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 4000);
 
-      clearTimeout(timeoutId);
+        const response = await fetch(KOKORO_TTS_ENDPOINT, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Accept": "audio/mpeg"
+          },
+          body: JSON.stringify({
+            model: "kokoro",
+            input: text,
+            voice: currentVoice,
+            response_format: "mp3"
+          }),
+          signal: controller.signal,
+          keepalive: true
+        });
 
-      if (!response.ok) {
-        const errorText = await response.text().catch(() => "");
-        console.warn(`[TTS:Kokoro] HTTP ${response.status} from Kokoro endpoint (attempt ${attempt + 1}/${maxRetries + 1}): ${errorText}`);
-        if (attempt < maxRetries) {
-          await new Promise((r) => setTimeout(r, 500));
-          continue;
+        clearTimeout(timeoutId);
+
+        if (!response.ok) {
+          const errorText = await response.text().catch(() => "");
+          console.warn(`[TTS:Kokoro] HTTP ${response.status} from Kokoro endpoint (attempt ${attempt + 1}/${maxRetries + 1}, voice ${currentVoice}): ${errorText.slice(0, 150)}`);
+          if (attempt < maxRetries) {
+            await new Promise((r) => setTimeout(r, 200 * (attempt + 1)));
+            continue;
+          }
+          break; // Try fallback voice
         }
-        return null;
-      }
 
-      const arrayBuffer = await response.arrayBuffer();
-      const buffer = Buffer.from(arrayBuffer);
-      if (buffer.length > 0) {
-        return buffer;
-      }
-    } catch (err: any) {
-      console.warn(`[TTS:Kokoro] Fetch notice (attempt ${attempt + 1}/${maxRetries + 1}):`, err?.message || err);
-      if (attempt < maxRetries) {
-        await new Promise((r) => setTimeout(r, 500));
+        const arrayBuffer = await response.arrayBuffer();
+        const buffer = Buffer.from(arrayBuffer);
+        if (buffer.length > 0) {
+          return buffer;
+        }
+      } catch (err: any) {
+        console.warn(`[TTS:Kokoro] Fetch notice (attempt ${attempt + 1}/${maxRetries + 1}, voice ${currentVoice}):`, err?.message || err);
+        if (attempt < maxRetries) {
+          await new Promise((r) => setTimeout(r, 200 * (attempt + 1)));
+        }
       }
     }
   }
@@ -472,7 +481,7 @@ async function synthesizeReverentNeuralTTS(
 // Comprehensive Text-to-Speech Engine
 // Zero-API scripture voice synthesis engine with seamless caching and resilient fallback
 const ttsAudioCache = new Map<string, Buffer>();
-const MAX_TTS_CACHE_SIZE = 500;
+const MAX_TTS_CACHE_SIZE = 2000;
 
 function sendAudioWithRange(
   req: express.Request,
@@ -490,7 +499,7 @@ function sendAudioWithRange(
   const range = req.headers.range;
 
   res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS");
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, HEAD, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Range, Content-Type, Accept-Encoding");
   res.setHeader("Access-Control-Expose-Headers", "Content-Range, Content-Length, Accept-Ranges, X-Voice-Engine, X-Voice-Name, X-Voice-Requested, X-Voice-Locale, X-Voice-Fallback");
   res.setHeader("Content-Type", contentType);
@@ -651,6 +660,7 @@ app.all("/api/tts", async (req, res) => {
     }
 
     if (!res.headersSent) {
+      res.setHeader("Content-Type", "application/json");
       return res.status(503).json({
         error: "TTS_REQUEST_FAILED",
         details: "Kokoro TTS service is currently unreachable. Please retry in a few moments."
@@ -659,6 +669,7 @@ app.all("/api/tts", async (req, res) => {
   } catch (err: any) {
     console.warn("[TTS] Endpoint error:", err?.message || err);
     if (!res.headersSent) {
+      res.setHeader("Content-Type", "application/json");
       return res.status(500).json({ error: "HTTP_ERROR", details: err?.message || "Internal audio server error" });
     }
   }
@@ -1442,6 +1453,8 @@ async function startServer() {
 
   app.listen(PORT, "0.0.0.0", () => {
     console.log(`Global Tower of Christ server running on http://0.0.0.0:${PORT}`);
+    // Warm up Kokoro TTS endpoint asynchronously in the background so initial requests are lightning fast
+    synthesizeKokoroTTS("In the beginning God created the heaven and the earth.", "af_heart", 1).catch(() => {});
   });
 }
 

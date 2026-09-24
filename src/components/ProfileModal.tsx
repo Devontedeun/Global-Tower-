@@ -98,11 +98,21 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
 
   const appCurrentVersion = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '1.0.1';
 
-  const [healthReport, setHealthReport] = useState<SystemHealthReport | null>(() => backgroundMaintenance.getLastReport());
+  const isSuperAdmin =
+    user.role === "super_admin" ||
+    user.role === "ministry_admin" ||
+    (user.role as string) === "admin" ||
+    isSuperAdminEmail(user.email) ||
+    isSuperAdminEmail(currentUser?.email || "");
+
+  const [healthReport, setHealthReport] = useState<SystemHealthReport | null>(() =>
+    isSuperAdmin ? backgroundMaintenance.getLastReport() : null
+  );
 
   useEffect(() => {
+    if (!isSuperAdmin) return;
     return backgroundMaintenance.onHealthChange(setHealthReport);
-  }, []);
+  }, [isSuperAdmin]);
 
   const handleManualCheckForUpdates = async () => {
     try {
@@ -235,10 +245,6 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
   }, [username, user.username, user.id]);
 
   if (!isOpen) return null;
-
-  const isSuperAdmin =
-    user.role === "super_admin" ||
-    isSuperAdminEmail(user.email);
 
   const handleSave = async () => {
     setSaveError(null);
@@ -767,40 +773,42 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
               </div>
             </div>
 
-            {/* Subsystem Health Diagnostics & Watchdog Status */}
-            <div className="p-3.5 bg-[#FAF6EE]/50 border border-[#E5E0D5] rounded-2xl space-y-2">
-              <div className="flex items-center justify-between">
-                <div className="text-xs font-bold text-[#2D2D2D] font-serif flex items-center gap-1.5">
-                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-                  <span>Subsystem Health & Watchdog</span>
+            {/* Subsystem Health Diagnostics & Watchdog Status (Super Admin / Apostle Accounts Only) */}
+            {isSuperAdmin && (
+              <div className="p-3.5 bg-[#FAF6EE]/50 border border-[#E5E0D5] rounded-2xl space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="text-xs font-bold text-[#2D2D2D] font-serif flex items-center gap-1.5">
+                    <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>Subsystem Health & Watchdog</span>
+                  </div>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+                    {healthReport ? `${healthReport.score}/100 Optimal` : "100/100 Optimal"}
+                  </span>
                 </div>
-                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
-                  {healthReport ? `${healthReport.score}/100 Optimal` : "100/100 Optimal"}
-                </span>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 pt-1 text-[11px] text-[#7A7468]">
+                  <div className="flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
+                    <span>API Ping: {healthReport?.latencyMs !== null && healthReport?.latencyMs !== undefined ? `${healthReport.latencyMs}ms` : "Active"}</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
+                    <span>Storage: Verified</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
+                    <span>Audio Engine: Ready</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
+                    <span>TTS Neural: Online</span>
+                  </div>
+                  <div className="flex items-center gap-1.5 col-span-2 sm:col-span-2">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
+                    <span>Self-Healing Watchdog: Standing by</span>
+                  </div>
+                </div>
               </div>
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 pt-1 text-[11px] text-[#7A7468]">
-                <div className="flex items-center gap-1.5">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
-                  <span>API Ping: {healthReport?.latencyMs !== null && healthReport?.latencyMs !== undefined ? `${healthReport.latencyMs}ms` : "Active"}</span>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
-                  <span>Storage: Verified</span>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
-                  <span>Audio Engine: Ready</span>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
-                  <span>TTS Neural: Online</span>
-                </div>
-                <div className="flex items-center gap-1.5 col-span-2 sm:col-span-2">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
-                  <span>Self-Healing Watchdog: Standing by</span>
-                </div>
-              </div>
-            </div>
+            )}
           </div>
 
           {/* Account Management & Deletion (Right to Erasure) */}

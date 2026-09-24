@@ -9,8 +9,8 @@ export const BIBLE_STUDY_PLANS: BibleStudyPlan[] = [
     totalDays: 30,
     author: "Apostle R.Sango",
     imageGradient: "from-amber-600 to-amber-800",
-    isEnrolled: true,
-    currentDay: 3,
+    isEnrolled: false,
+    currentDay: 1,
     days: [
       {
         day: 1,
@@ -25,7 +25,7 @@ export const BIBLE_STUDY_PLANS: BibleStudyPlan[] = [
           "What lingering feelings of guilt or unworthiness are you still holding onto that Christ has already completely wiped away?"
         ],
         prayer: "Lord Jesus, thank You for justifying me by faith and filling my heart with Your supernatural peace. I reject the enemy's accusations and stand boldly in the righteousness You purchased for me at the cross. Amen.",
-        isCompleted: true
+        isCompleted: false
       },
       {
         day: 2,
@@ -40,7 +40,7 @@ export const BIBLE_STUDY_PLANS: BibleStudyPlan[] = [
           "How can you actively wield the sword of the Spirit (the spoken Word of God) against doubts and fears?"
         ],
         prayer: "Heavenly Father, I gird my mind with Your truth and put on the breastplate of righteousness today. I lift up the shield of faith to quench every arrow of doubt and declare victory in the mighty name of Jesus. Amen.",
-        isCompleted: true
+        isCompleted: false
       },
       {
         day: 3,

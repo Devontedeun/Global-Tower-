@@ -5,6 +5,8 @@
  * and Super Admin confirmation notifications whenever the 5-minute watchdog ping approves.
  */
 
+import { isCurrentAdminUser } from "./storage";
+
 export interface WatchdogApprovalData {
   pingCount: number;
   score: number;
@@ -53,6 +55,13 @@ class WatchdogApprovalService {
    */
   public triggerApproval(data?: Partial<WatchdogApprovalData>): void {
     if (typeof window === "undefined") return;
+
+    // STRICT PRIVACY & UX SHIELD:
+    // Watchdog ping approval overlays, God rays, and floating doves are strictly for Admin accounts.
+    // They must NEVER fire or interrupt regular users.
+    if (!isCurrentAdminUser()) {
+      return;
+    }
 
     const now = Date.now();
     // Prevent overlapping spam triggers within 10 seconds unless manually triggered

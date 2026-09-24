@@ -59,6 +59,43 @@ export function isSuperAdminEmail(email?: string): boolean {
   return false;
 }
 
+/**
+ * Checks if the current browser session belongs to an authorized Admin / Super Admin.
+ * Used to ensure Watchdog visual alerts, audio chimes, thunder haptics, and telemetry
+ * are ONLY ever active for Super Admin accounts and NEVER visible or audible to regular users.
+ */
+export function isCurrentAdminUser(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    const rawProfile = localStorage.getItem("gtc_user_profile") || localStorage.getItem("gtc_user");
+    if (rawProfile) {
+      const u = JSON.parse(rawProfile);
+      if (
+        u?.role === "super_admin" ||
+        u?.role === "ministry_admin" ||
+        u?.role === "admin" ||
+        isSuperAdminEmail(u?.email)
+      ) {
+        return true;
+      }
+    }
+    const session = localStorage.getItem("gtc_active_session") || localStorage.getItem("gtc_auth_session");
+    if (session) {
+      const s = JSON.parse(session);
+      if (
+        s?.profile?.role === "super_admin" ||
+        s?.profile?.role === "ministry_admin" ||
+        s?.profile?.role === "admin" ||
+        s?.user?.role === "super_admin" ||
+        isSuperAdminEmail(s?.profile?.email || s?.user?.email)
+      ) {
+        return true;
+      }
+    }
+  } catch {}
+  return false;
+}
+
 export const APOSTLE_SANGO_ADMIN: UserProfile = {
   id: "u-apostle-sango-admin",
   name: "Apostle R.Sango",
@@ -96,8 +133,8 @@ export const BELOVED_BRETHREN_USER: UserProfile = {
   email: "brethren@globaltowerofchrist.org",
   role: "user",
   avatarUrl: "bg-[#C5A059]",
-  interests: ["Bible Study", "Sermons", "Prayer", "Worship", "Dominion", "Victory"],
-  favoriteTeachers: ["Apostle R.Sango"],
+  interests: [],
+  favoriteTeachers: [],
   notificationPrefs: {
     dailyScripture: true,
     newSermons: true,
@@ -139,147 +176,12 @@ const STORAGE_KEYS = {
   WATCH_PROGRESS: "gtc_watch_progress",
 };
 
-const defaultBookmarks = (): VerseBookmark[] => [
-  {
-    id: "bm-1",
-    book: "Romans",
-    chapter: 8,
-    verseNumber: 37,
-    translation: "ESV",
-    text: "No, in all these things we are more than conquerors through him who loved us.",
-    collection: "Dominion & Victory",
-    createdAt: "2026-08-10T12:00:00Z"
-  },
-  {
-    id: "bm-2",
-    book: "Psalms",
-    chapter: 23,
-    verseNumber: 1,
-    translation: "KJV",
-    text: "The LORD is my shepherd; I shall not want.",
-    collection: "Comfort",
-    createdAt: "2026-08-12T14:00:00Z"
-  }
-];
-
-const defaultHighlights = (): VerseHighlight[] => [
-  { id: "hl-1", book: "John", chapter: 1, verseNumber: 1, color: "gold", createdAt: "2026-08-11T00:00:00Z" },
-  { id: "hl-2", book: "Romans", chapter: 8, verseNumber: 1, color: "amber", createdAt: "2026-08-12T00:00:00Z" }
-];
-
-const defaultNotes = (): StudyNote[] => [
-  {
-    id: "note-1",
-    title: "The Covenant Authority of Believers",
-    content: "In Ephesians 1 and 2, Paul reminds us that we are seated with Christ in heavenly places. Worship is our posture of victory, not pleading out of defeat.",
-    scriptureRef: "Ephesians 2:6",
-    tags: ["Dominion", "Worship", "Authority"],
-    folder: "Sermon Study",
-    isPrivate: true,
-    createdAt: "2026-08-14T10:00:00Z",
-    updatedAt: "2026-08-14T10:00:00Z"
-  }
-];
-
-const defaultDreams = (): DreamEntry[] => [
-  {
-    id: "dream-1",
-    title: "Standing beside a crystal river in bright morning light",
-    date: "2026-08-15",
-    description: "I was standing on the bank of a pure crystal river. As the sun rose, light shone directly across the water and a deep sense of supernatural peace came over me.",
-    emotions: ["Peaceful", "Reverent", "Refreshed"],
-    symbols: ["River", "Light", "Sunrise"],
-    people: ["Alone with the Lord"],
-    isPrivate: true,
-    notes: "Felt like a call to spend more time in quiet morning prayer and allow the Holy Spirit to renew my strength.",
-    createdAt: "2026-08-15T07:30:00Z",
-    aiInsight: {
-      summary: "Biblical themes of the Holy Spirit (Living Water), divine illumination, and spiritual cleansing.",
-      biblicalThemes: ["Living Water", "Holy Spirit Renewal", "Divine Illumination"],
-      extractedEventsAndSymbols: {
-        events: ["Standing on bank of crystal river", "Sunrise illuminating water", "Experience of supernatural peace"],
-        symbols: ["River", "Light", "Sunrise"],
-        emotions: ["Peaceful", "Reverent", "Refreshed"],
-        keyContext: "Morning communion by waters of spiritual rest"
-      },
-      thematicExplorations: [
-        {
-          themeName: "Living Water and the Spirit of God",
-          biblicalTeaching: "Water and rivers in Scripture represent the refreshing flow of the Holy Spirit, cleansing the heart and satisfying spiritual thirst.",
-          crossReferences: ["John 7:38-39", "Psalm 46:4", "Revelation 22:1"]
-        }
-      ],
-      relevantScriptures: [
-        {
-          reference: "John 7:38-39",
-          text: "Whoever believes in me, as the Scripture has said, 'Out of his heart will flow rivers of living water.'",
-          context: "Jesus proclaims the indwelling presence and flow of the Holy Spirit for believers.",
-          whyRelevant: "Directly connects the river motif to the outpouring and refreshing life of the Holy Spirit.",
-          relevanceScore: 5,
-          relevanceCategory: "direct_biblical_theme"
-        },
-        {
-          reference: "Psalm 46:4",
-          text: "There is a river whose streams make glad the city of God, the holy habitation of the Most High.",
-          context: "The river represents God's constant, peace-giving provision and eternal security.",
-          whyRelevant: "Speaks directly to the peace experienced beside the river of God's presence.",
-          relevanceScore: 4,
-          relevanceCategory: "direct_biblical_theme"
-        }
-      ],
-      generalDiscernmentScriptures: [
-        {
-          reference: "1 Thessalonians 5:21",
-          text: "Test everything; hold fast what is good.",
-          context: "Apostolic instruction for evaluating all spiritual impressions and experiences.",
-          whyRelevant: "General discernment principle for grounding experiences in God's Word.",
-          relevanceScore: 1,
-          relevanceCategory: "general_discernment"
-        }
-      ],
-      possibleInterpretations: [
-        {
-          angle: "Spiritual Refreshing & Infilling",
-          explanation: "An encouragement to drink deeply from God's presence through worship and Scripture.",
-          symbolicMeaning: "Water indicates cleansing and the presence of the Holy Spirit."
-        }
-      ],
-      questionsForReflection: [
-        "Is there any dryness or exhaustion in your spiritual walk that God is inviting you to bring to Him?",
-        "How can you make more intentional space for daily communion with Jesus?"
-      ],
-      relatedTeachings: ["Walking in the Spirit & Living Waters", "The Discipline of Daily Quiet Time"],
-      disclaimer: "This spiritual insight is provided for biblical study and reflection only. Interpretations are not infallible revelations and should always be tested against Scripture (1 Thess 5:21)."
-    }
-  }
-];
-
-const defaultVisions = (): VisionEntry[] => [
-  {
-    id: "vision-1",
-    title: "Golden Lampstand & Harvest Fields",
-    date: "2026-08-11",
-    description: "During praise and worship, I saw an open golden lampstand illuminating fields of golden wheat ready for harvest across different nations.",
-    context: "Occurred during the ministry night worship session.",
-    scriptures: ["Matthew 9:37-38", "Zechariah 4:2-6", "Revelation 1:20"],
-    personalReflections: "Felt a strong burden for global missions, evangelism, and supporting Christian media reaching unreached cities.",
-    isPrivate: false,
-    followUpNotes: "Shared with our prayer ministry team for intercession.",
-    createdAt: "2026-08-11T20:00:00Z"
-  }
-];
-
-const defaultFeedback = (): FeedbackItem[] => [
-  {
-    id: "fb-1",
-    type: "feature",
-    title: "Add French Audio Bible Voice",
-    description: "Would love to have French audio narration alongside English for our fellowship in West Africa.",
-    userEmail: "lydia.dupont@fr.ministry.com",
-    status: "in_progress",
-    date: "2026-08-14"
-  }
-];
+const defaultBookmarks = (): VerseBookmark[] => [];
+const defaultHighlights = (): VerseHighlight[] => [];
+const defaultNotes = (): StudyNote[] => [];
+const defaultDreams = (): DreamEntry[] => [];
+const defaultVisions = (): VisionEntry[] => [];
+const defaultFeedback = (): FeedbackItem[] => [];
 
 export const Storage = {
   getUser(): UserProfile {
@@ -340,6 +242,15 @@ export const Storage = {
   },
 
   clearAllMockData(): void {
+    this.initNewUserAccount();
+  },
+
+  /**
+   * Initializes a completely pristine, empty slate for new accounts:
+   * 0 bookmarks, 0 highlights, 0 notes, 0 dreams, 0 visions, 0 prayers,
+   * 0 saved sermons, 0 chapters read, 0 audio minutes, 0 streak, 0 achievements.
+   */
+  initNewUserAccount(_uid?: string): void {
     try {
       localStorage.setItem("gtc_mock_data_cleared", "true");
       localStorage.setItem(STORAGE_KEYS.BOOKMARKS, JSON.stringify([]));
@@ -351,6 +262,13 @@ export const Storage = {
       localStorage.setItem(STORAGE_KEYS.FEEDBACK, JSON.stringify([]));
       localStorage.setItem(STORAGE_KEYS.SAVED_SERMONS, JSON.stringify([]));
       localStorage.setItem(STORAGE_KEYS.WATCH_PROGRESS, JSON.stringify({}));
+      localStorage.setItem("gtc_chapters_read_set", JSON.stringify([]));
+      localStorage.setItem("gtc_audio_minutes_total", "0");
+      localStorage.setItem("gtc_activity_days_log", JSON.stringify({}));
+      localStorage.setItem("gtc_reading_streaks", "0");
+      localStorage.setItem("gtc_celebrated_achievements_v1", JSON.stringify([]));
+      localStorage.removeItem(STORAGE_KEYS.RECENT_READ);
+      localStorage.removeItem("gtc_recent_dream_scriptures");
 
       // Reset study plans to pristine 0% progress
       const pristinePlans = BIBLE_STUDY_PLANS.map((plan) => ({
@@ -368,9 +286,13 @@ export const Storage = {
       if (typeof window !== "undefined") {
         window.dispatchEvent(new CustomEvent("gtc_data_cleared"));
         window.dispatchEvent(new CustomEvent("gtc_study_plans_updated"));
+        window.dispatchEvent(new CustomEvent("gtc_notes_updated", { detail: [] }));
+        window.dispatchEvent(new CustomEvent("gtc_dreams_updated", { detail: [] }));
+        window.dispatchEvent(new CustomEvent("gtc_visions_updated", { detail: [] }));
+        window.dispatchEvent(new CustomEvent("gtc_metrics_updated"));
       }
     } catch (e) {
-      console.error("Error clearing mock data:", e);
+      console.error("Error initializing clean new user account:", e);
     }
   },
 
@@ -764,9 +686,9 @@ export const Storage = {
     try {
       const data = localStorage.getItem(STORAGE_KEYS.SAVED_SERMONS);
       const parsed = data ? JSON.parse(data) : null;
-      return Array.isArray(parsed) ? parsed : ["sermon-1", "sermon-2"];
+      return Array.isArray(parsed) ? parsed : [];
     } catch {
-      return ["sermon-1"];
+      return [];
     }
   },
   toggleSaveSermon(sermonId: string): string[] {
@@ -1171,7 +1093,7 @@ export const Storage = {
     const currentUser = this.getUser();
 
     // 1. Chapters Read - Comprehensive Entire App Scan
-    // Aggregates: BibleHub reads, recent reading, bookmarks, highlights, study notes, completed study plan scripture assignments
+    // Aggregates: BibleHub reads, bookmarks, highlights, study notes, completed study plan scripture assignments
     const chaptersReadSet = new Set<string>();
     try {
       const raw = localStorage.getItem("gtc_chapters_read_set");
@@ -1182,14 +1104,6 @@ export const Storage = {
             if (typeof item === "string" && item.trim()) chaptersReadSet.add(item.trim());
           });
         }
-      }
-    } catch {}
-
-    // Scan recent reading
-    try {
-      const recent = this.getRecentReading();
-      if (recent && recent.book && recent.chapter) {
-        chaptersReadSet.add(`${recent.book} ${recent.chapter}`.trim());
       }
     } catch {}
 
@@ -1279,9 +1193,6 @@ export const Storage = {
       if (p.isUserCreated && !countedPrayerIds.has(p.id)) {
         prayersOfferedCount++;
         countedPrayerIds.add(p.id);
-      }
-      if (p.prayedCount && p.prayedCount > 0 && !p.hasUserPrayed && !p.isUserCreated) {
-        prayersOfferedCount += p.prayedCount;
       }
     });
 

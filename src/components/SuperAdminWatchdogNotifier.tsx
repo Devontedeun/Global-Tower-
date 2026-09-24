@@ -711,14 +711,21 @@ export function SuperAdminWatchdogNotifier({ isSuperAdmin: propIsSuperAdmin }: S
  * Super Admin Top Bar Watchdog Indicator Badge
  * Appears next to Profile / Settings ONLY if the logged-in user is a Super Admin.
  */
-export function SuperAdminWatchdogBadge() {
+interface SuperAdminWatchdogBadgeProps {
+  isSuperAdmin?: boolean;
+}
+
+export function SuperAdminWatchdogBadge({ isSuperAdmin: propIsSuperAdmin }: SuperAdminWatchdogBadgeProps = {}) {
   const { currentUser, userProfile } = useAuth();
   const [incidents, setIncidents] = useState<WatchdogIncident[]>(() => backgroundMaintenance.getIncidents());
   const [healthReport, setHealthReport] = useState<SystemHealthReport | null>(() => backgroundMaintenance.getLastReport());
 
   const isSuperAdmin =
-    userProfile?.role === "super_admin" ||
-    isSuperAdminEmail(userProfile?.email || currentUser?.email || "");
+    propIsSuperAdmin ??
+    (userProfile?.role === "super_admin" ||
+      userProfile?.role === "ministry_admin" ||
+      (userProfile?.role as string) === "admin" ||
+      isSuperAdminEmail(userProfile?.email || currentUser?.email || ""));
 
   useEffect(() => {
     if (!isSuperAdmin) return;
@@ -732,7 +739,7 @@ export function SuperAdminWatchdogBadge() {
     };
   }, [isSuperAdmin]);
 
-  // Hidden for regular users
+  // Strictly hidden for regular users
   if (!isSuperAdmin) return null;
 
   const unresolvedCount = incidents.filter((i) => !i.resolved).length;

@@ -616,7 +616,7 @@ export const LIVE_EVENTS_DATABASE: LiveEvent[] = [
     tags: ["Live Worship", "Dominion", "Prophetic Prayer", "Deliverance"],
     scriptureReferences: ["Romans 8:37", "Ephesians 2:6", "John 4:23-24"],
     description: "Join thousands of believers worldwide for an anointed night of deep intercessory prayer, prophetic worship, and preaching on Kingdom Victory.",
-    isRegistered: true,
+    isRegistered: false,
     chatArchive: [
       { id: "c1", user: "Sister Marie (Paris)", role: "Member", avatar: "https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=100", text: "Connecting from France. Glory to Jesus for this broadcast!", time: "18:02" },
       { id: "c2", user: "Pastor Emmanuel (Lagos)", role: "Speaker", avatar: "https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?w=100", text: "Praying in agreement for supernatural breakthroughs and deliverance tonight.", time: "18:04", pinned: true },
@@ -651,7 +651,7 @@ export const LIVE_EVENTS_DATABASE: LiveEvent[] = [
     tags: ["Authority", "Ephesians", "Faith", "Replay Available"],
     scriptureReferences: ["Ephesians 1:19-23", "Ephesians 2:6", "Colossians 2:15"],
     description: "Full unedited recorded replay of the live Sunday service on overcoming spiritual defeat and walking in apostolic power.",
-    isRegistered: true,
+    isRegistered: false,
     chatArchive: [
       { id: "rc1", user: "Sister Angela (Dallas)", text: "This message transformed my prayer life!", time: "10:14" },
       { id: "rc2", user: "Minister Caleb (Accra)", text: "Hallelujah! Christ has disarmed principalities and powers.", time: "10:28" }
@@ -695,7 +695,7 @@ export const LIVE_EVENTS_DATABASE: LiveEvent[] = [
     tags: ["Youth", "Discernment", "Q&A", "Dreams & Visions"],
     scriptureReferences: ["Joel 2:28", "1 Thessalonians 5:21", "1 John 4:1"],
     description: "Interactive session addressing young people's questions on dreams, spiritual gifts, biblical discernment, and holy living.",
-    isRegistered: true
+    isRegistered: false
   }
 ];
 
@@ -905,7 +905,7 @@ export const PRAYER_ITEMS_INITIAL: PrayerItem[] = [
     isPrivate: false,
     scriptures: ["Philippians 4:19"],
     prayedCount: 120,
-    hasUserPrayed: true,
+    hasUserPrayed: false,
     authorName: "Caleb N.",
     createdAt: "2026-08-14T09:00:00Z"
   }

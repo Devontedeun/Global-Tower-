@@ -327,9 +327,6 @@ export default function App() {
           </div>
         </footer>
 
-        {/* Super Admin Watchdog Notifier (Only alerts Super Admin if anomaly occurs) */}
-        <SuperAdminWatchdogNotifier />
-
         {/* Redeployment and Version Update Notifier */}
         <VersionUpdateNotifier />
       </div>
@@ -401,7 +398,7 @@ export default function App() {
               </button>
 
               {/* Super Admin Watchdog Telemetry & Anomaly Badge (Exclusive to Super Admin) */}
-              <SuperAdminWatchdogBadge />
+              {isSuperAdmin && <SuperAdminWatchdogBadge isSuperAdmin={true} />}
 
               {/* Global Theme Toggle: Light / Midnight Sanctuary */}
               <ThemeToggle />
@@ -812,15 +809,17 @@ export default function App() {
       {/* Feedback Modal */}
       <FeedbackModal isOpen={isFeedbackOpen} onClose={() => setIsFeedbackOpen(false)} />
 
-      {/* Watchdog Visual Overlays (Thunder on anomaly; God Rays & Floating Doves on approved ping) */}
-      <WatchdogThunderOverlay />
-      <WatchdogApprovalOverlay />
+      {/* Watchdog Visual Overlays & Console (Exclusive to Authorized Super Admin Accounts Only) */}
+      {isSuperAdmin && (
+        <>
+          <WatchdogThunderOverlay isAdmin={true} />
+          <WatchdogApprovalOverlay isAdmin={true} />
+          <SuperAdminWatchdogNotifier isSuperAdmin={true} />
+        </>
+      )}
 
       {/* Achievement Celebrations: Heavenly Sound & 3-Second Central Axis Rotation Overlay */}
       <AchievementCelebrationOverlay />
-
-      {/* Super Admin Watchdog Notifier (Exclusive alerts & diagnostic remediation for Super Admin only) */}
-      <SuperAdminWatchdogNotifier isSuperAdmin={isSuperAdmin} />
 
       {/* Redeployment and Version Update Notifier */}
       <VersionUpdateNotifier />

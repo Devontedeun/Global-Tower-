@@ -584,6 +584,15 @@ class BackgroundMaintenanceWatchdog {
           player.networkState !== HTMLMediaElement.NETWORK_NO_SOURCE
         );
 
+        if (currentSrc && currentSrc.startsWith("data:")) {
+          try {
+            player.pause();
+            player.removeAttribute("src");
+          } catch {}
+          this.markSubsystemIncidentsResolved("audio");
+          return { healthy: true, description: "Audio engine primed and ready" };
+        }
+
         if (player.error && hasActiveMediaSource && !currentSrc.startsWith("blob:")) {
           console.warn("[Maintenance Watchdog] Audio element encountered error on active stream, auto-resetting source.");
           const errorCode = player.error.code;

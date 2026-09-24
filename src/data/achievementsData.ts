@@ -581,10 +581,14 @@ export const ACHIEVEMENTS_LIST: Achievement[] = [
       glow: "shadow-cyan-500/25",
       accent: "#06B6D4"
     },
-    checkUnlocked: (_m, custom) => ({
-      isUnlocked: !!custom?.isRegisteredUser,
-      currentProgress: custom?.isRegisteredUser ? 1 : 0
-    })
+    checkUnlocked: (m, custom) => {
+      const hasFaithActivity = m.totalChaptersRead >= 1 || m.prayersOfferedCount >= 1 || m.studyNotesCount >= 1;
+      const unlocked = Boolean(custom?.isRegisteredUser && hasFaithActivity);
+      return {
+        isUnlocked: unlocked,
+        currentProgress: unlocked ? 1 : 0
+      };
+    }
   },
   {
     id: "guided_steps",

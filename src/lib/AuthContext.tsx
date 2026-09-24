@@ -18,6 +18,7 @@ import {
 import { UserProfile, UserRole } from "../types";
 import { Storage, DEFAULT_USER, APOSTLE_SANGO_ADMIN, isSuperAdminEmail, FOUNDER_SUPERADMIN_EMAILS } from "./storage";
 import { UserDataService } from "./userDataService";
+import { achievementCelebrationService } from "./achievementCelebrationService";
 
 export interface AppUser {
   uid: string;
